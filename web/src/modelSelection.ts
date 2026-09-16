@@ -9,13 +9,23 @@ export type ModelConfig = {
   settings: Record<string, string | number>;
 };
 
-export const harnesses = [
-  ["tools_v5", "Focused tools + provider continuation"],
-  ["tools_v4", "Focused tools + prompt cache"],
-  ["tools_v3", "Focused tools"],
-  ["tools_v2", "Full-context tools"],
-  ["operate_v1", "Classic single-operation interface"],
-] as const;
+export const CURRENT_HARNESS = "tools_v5";
+export const harnesses = [[CURRENT_HARNESS, "Current harness (v5)"]] as const;
+
+// Historical settings still need a stable preference order when aliases are
+// deduplicated. This list does not define selectable harnesses.
+const harnessOrder = [
+  "operate_v1",
+  "tools_v2",
+  "tools_v3",
+  "tools_v4",
+  CURRENT_HARNESS,
+];
+
+export function harnessLabel(model: ModelConfig) {
+  const id = String(model.settings.harness_interface ?? "operate_v1");
+  return id === CURRENT_HARNESS ? harnesses[0][1] : `Legacy harness (${id})`;
+}
 
 export function modelKey(model: Pick<ModelConfig, "provider" | "model">) {
   return `model:${model.provider}:${encodeURIComponent(model.model)}`;
@@ -35,9 +45,8 @@ export function modelLabel(model: ModelConfig) {
 export function modelCatalog(models: Record<string, ModelConfig>) {
   const result: Record<string, ModelConfig> = {};
   const rank = (model: ModelConfig) =>
-    harnesses.length -
-    harnesses.findIndex(
-      ([id]) => id === (model.settings.harness_interface ?? "operate_v1"),
+    harnessOrder.indexOf(
+      String(model.settings.harness_interface ?? "operate_v1"),
     );
   for (const model of Object.values(models)) {
     const key = modelKey(model);
@@ -83,15 +92,13 @@ export function configureModel(
   effort: string,
   harness: string,
 ): ModelConfig {
-  if (
-    !harnesses.some(([id]) => id === harness) ||
-    (harness === "tools_v4" && !supportsCachedHarness(model)) ||
-    (harness === "tools_v5" &&
-      model.provider === "openai" &&
-      !supportsCachedHarness(model))
-  )
+  if (harness !== CURRENT_HARNESS)
     throw new Error(
-      "Configure cache pricing before selecting the cached harness.",
+      "Legacy harnesses are unavailable for new runs. Use the current harness.",
+    );
+  if (model.provider === "openai" && !supportsCachedHarness(model))
+    throw new Error(
+      "The current harness requires a supported OpenAI model with cache read/write pricing configured.",
     );
   if (effort && !effortOptions(model).includes(effort))
     throw new Error("Unsupported reasoning effort for this model.");

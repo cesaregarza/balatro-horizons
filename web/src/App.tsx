@@ -7,7 +7,10 @@ import { Trajectory, type TimelinePoint } from "./Trajectory";
 import { ModelControls } from "./ModelControls";
 import {
   configureModel,
+  CURRENT_HARNESS,
   effortDefault,
+  harnesses,
+  harnessLabel,
   modelCatalog,
   modelKey,
   modelLabel,
@@ -32,7 +35,7 @@ export default function App() {
     [preset, setPreset] = useState("pilot"),
     [seed, setSeed] = useState("");
   const [effort, setEffort] = useState("medium"),
-    [runHarness, setRunHarness] = useState("tools_v5");
+    [runHarness, setRunHarness] = useState<string>(CURRENT_HARNESS);
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
@@ -56,7 +59,8 @@ export default function App() {
     ]);
   const [priorSeedExposure, setPriorSeedExposure] = useState(false);
   const [modelSettings, setModelSettings] = useState("{}");
-  const [harnessInterface, setHarnessInterface] = useState("tools_v5");
+  const [harnessInterface, setHarnessInterface] =
+    useState<string>(CURRENT_HARNESS);
   const [provider, setProvider] = useState("openai"),
     [model, setModel] = useState("");
   const [inputRate, setInputRate] = useState(""),
@@ -79,9 +83,7 @@ export default function App() {
     setAgent(value);
     if (catalog[value]) {
       setEffort(effortDefault(catalog[value]));
-      setRunHarness(
-        String(catalog[value].settings.harness_interface ?? "operate_v1"),
-      );
+      setRunHarness(CURRENT_HARNESS);
     }
   }
   async function saveModelDefaults() {
@@ -746,9 +748,7 @@ export default function App() {
                     />
                   </label>
                 </div>
-                {provider === "openai" &&
-                  (harnessInterface === "tools_v4" ||
-                    harnessInterface === "tools_v5") && (
+                {provider === "openai" && (
                   <div className="field-grid">
                     <label>
                       Cache read $ / million tokens
@@ -791,33 +791,24 @@ export default function App() {
                     : "Credential has not been configured."}
                 </p>
                 <label>
-                  Game interface
+                  Harness
                   <select
+                    aria-label="Harness"
                     value={harnessInterface}
                     onChange={(e) => setHarnessInterface(e.target.value)}
                   >
-                    <option value="tools_v5">
-                      Focused context with provider continuation
-                    </option>
-                    <option value="tools_v4">
-                      Focused context with reusable cache prefix
-                    </option>
-                    <option value="tools_v3">
-                      Focused context with paged lookups
-                    </option>
-                    <option value="tools_v2">
-                      Named game tools with on-demand details
-                    </option>
-                    <option value="operate_v1">
-                      Original single-operation interface
-                    </option>
+                    {harnesses.map(([id, label]) => (
+                      <option key={id} value={id}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <p className="muted">
-                  Focused context keeps the current board visible and loads
-                  details in small pages on request. Older lookup results can be
-                  reloaded. Existing players keep their saved interface until
-                  you update them.
+                  Includes on-demand tools, provider continuation within each
+                  decision, and prompt caching for supported OpenAI models.
+                  Saving updates defaults for new runs; existing runs keep their
+                  recorded harness.
                 </p>
                 <label>
                   Additional model settings (JSON)
@@ -836,8 +827,6 @@ export default function App() {
                     inputRate === "" ||
                     outputRate === "" ||
                     (provider === "openai" &&
-                      (harnessInterface === "tools_v4" ||
-                        harnessInterface === "tools_v5") &&
                       (cachedRate === "" || writeRate === ""))
                   }
                   onClick={() =>
@@ -854,9 +843,7 @@ export default function App() {
                           model,
                           input_usd_per_million: +inputRate,
                           output_usd_per_million: +outputRate,
-                          ...(provider === "openai" &&
-                          (harnessInterface === "tools_v4" ||
-                            harnessInterface === "tools_v5")
+                          ...(provider === "openai"
                             ? {
                                 cached_input_usd_per_million: +cachedRate,
                                 cache_write_input_usd_per_million: +writeRate,
@@ -892,15 +879,7 @@ export default function App() {
                   <p key={name}>
                     <b>{modelLabel(value)}</b>
                     {" · "}
-                    {value.settings?.harness_interface === "tools_v5"
-                      ? "Focused context · provider continuation"
-                      : value.settings?.harness_interface === "tools_v4"
-                        ? "Focused context · reusable cache prefix"
-                      : value.settings?.harness_interface === "tools_v3"
-                        ? "Focused context"
-                        : value.settings?.harness_interface === "tools_v2"
-                          ? "Named tools"
-                          : "Original interface"}{" "}
+                    {harnessLabel(value)}{" "}
                     <button
                       onClick={() => {
                         setProvider(value.provider);
@@ -918,12 +897,13 @@ export default function App() {
                             : String(value.cache_write_input_usd_per_million),
                         );
                         setPriceDate(value.pricing_date);
-                        setHarnessInterface(
-                          String(
-                            value.settings.harness_interface ?? "operate_v1",
-                          ),
+                        setHarnessInterface(CURRENT_HARNESS);
+                        setModelSettings(
+                          JSON.stringify({
+                            ...value.settings,
+                            harness_interface: CURRENT_HARNESS,
+                          }),
                         );
-                        setModelSettings(JSON.stringify(value.settings));
                       }}
                     >
                       Edit connection
@@ -1064,8 +1044,10 @@ export default function App() {
                     </label>
                   ))}
                   <p className="muted">
-                    Uses each model’s saved effort and harness defaults from
-                    Start a run.
+                    New plans use the current harness and each model’s saved
+                    effort. OpenAI models need cache read/write prices in
+                    Settings. Existing frozen plans keep their original
+                    settings.
                   </p>
                 </fieldset>
               </div>
@@ -1082,7 +1064,11 @@ export default function App() {
                         throw new Error(
                           "Model is no longer configured. Refresh the workbench.",
                         );
-                      chosen[key] = available[key];
+                      chosen[key] = configureModel(
+                        available[key],
+                        effortDefault(available[key]),
+                        CURRENT_HARNESS,
+                      );
                     }
                     setConfig(
                       await api("/settings", "PUT", {

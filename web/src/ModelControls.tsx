@@ -1,5 +1,6 @@
 import {
   effortOptions,
+  CURRENT_HARNESS,
   harnesses,
   supportsCachedHarness,
   type ModelConfig,
@@ -57,9 +58,7 @@ export function ModelControls({
                 key={id}
                 value={id}
                 disabled={
-                  (id === "tools_v4" ||
-                    (id === "tools_v5" && model.provider === "openai")) &&
-                  !supportsCachedHarness(model)
+                  model.provider === "openai" && !supportsCachedHarness(model)
                 }
               >
                 {label}
@@ -69,11 +68,14 @@ export function ModelControls({
         </label>
       </div>
       <p className="muted">
-        Focused tools load details on demand. Provider continuation preserves
-        reasoning across helper calls within one decision. All modes use tools
-        to submit moves.
-        {model.provider === "openai" && !supportsCachedHarness(model) &&
-          " The cached harness requires a supported OpenAI model with cache pricing configured."}
+        The current harness loads details on demand and preserves provider
+        reasoning across helper calls within a decision. Prompt caching is
+        included for supported OpenAI models.
+        {model.settings.harness_interface !== CURRENT_HARNESS &&
+          " This model has a legacy saved default; new runs use the current harness."}
+        {model.provider === "openai" &&
+          !supportsCachedHarness(model) &&
+          " Configure a supported model and cache read/write prices in Settings before starting."}
       </p>
     </>
   );

@@ -72,7 +72,7 @@ The [skill-enabled harness](docs/harness-skills.md) gives new runs a compact cat
 
 The [OpenAI/Luna harness guide](docs/openai-harness.md) includes the pinned smoke preset and a one-run command with a persistent campaign spending ledger.
 
-The [named-tools revision](docs/harness-tools-v2.md) adds direct gameplay tools, on-demand public inspection, and actionable rejection feedback. Select the game interface in **Models & budgets**; existing configurations retain the original interface until changed.
+The [named-tools revision](docs/harness-tools-v2.md) documents the earlier interface. New app runs use **Current harness (v5)**, including direct gameplay tools, on-demand inspection, provider continuation, and actionable rejection feedback. Historical configurations retain their recorded interfaces.
 
 The [Balatro Horizons Guide](docs/balatro-guide/README.md) is the canonical rules
 and strategy reference for the harness. Its modular chapters compile into
@@ -176,10 +176,11 @@ The application accepts only the explicitly configured HTTPS origin and retains 
 
 ## Focused model context
 
-The run form selects **Model**, **Reasoning effort**, and **Harness** separately.
-Save defaults per model; each run freezes the exact configuration. The focused
-cached harness (`tools_v4`) supports on-demand details and a stable prompt-cache
-prefix. Legacy interfaces remain available for comparison. Configure provider
+The run form selects **Model** and **Reasoning effort** and uses **Current harness
+(v5)**. Save defaults per model; each run freezes the exact configuration. The
+current harness includes on-demand details, provider continuation within each
+decision, and prompt caching for supported OpenAI models. Legacy interfaces are
+retained for historical runs but are no longer selectable in the app. Configure provider
 models and verified pricing in **Models & budgets**; credentials stay in the
 backend environment. See [model selection](docs/model-selection.md),
 [focused context](docs/harness-focused-context.md), and
