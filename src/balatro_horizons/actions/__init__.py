@@ -1,0 +1,1 @@
+"""Public action validation."""

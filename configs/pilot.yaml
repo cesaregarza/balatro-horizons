@@ -1,0 +1,29 @@
+benchmark:
+  name: balatro-horizons
+  protocol_version: "0.1"
+  track: structured-core
+  objective: native_run_win
+  target_ante: 8
+environment:
+  adapter: balatrobot
+  deck: RED
+  stake: GOLD
+  unlock_profile: dedicated_fully_unlocked
+  resolved_manifest: private/environment.lock.json
+  require_live_certification: true
+sampling:
+  split: development
+  seed_manifest: private/dev.json
+  seed_count: 20
+  model_replicates_per_seed: 2
+  max_infrastructure_replacements: 1
+budgets:
+  max_game_actions: 1500
+  max_provider_calls: 2000
+  max_consecutive_invalid_actions: 3
+  paid_calls_enabled: false
+  max_episode_cost_usd: null
+  max_batch_cost_usd: null
+execution:
+  workers: 1
+

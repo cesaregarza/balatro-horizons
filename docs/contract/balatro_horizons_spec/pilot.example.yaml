@@ -1,0 +1,58 @@
+# Proposed configuration; requires the implementation and resolved host dependencies.
+benchmark:
+  name: balatro-horizons
+  protocol_version: "0.1"
+  track: structured-core
+  objective: native_run_win
+  target_ante: 8
+
+environment:
+  adapter: balatrobot
+  deck: YELLOW
+  stake: GOLD
+  unlock_profile: dedicated_fully_unlocked
+  resolved_manifest: private/environment.lock.json
+  require_live_certification: true
+
+sampling:
+  split: development
+  seed_manifest: private/dev.json
+  seed_count: 20
+  model_replicates_per_seed: 2
+  max_infrastructure_replacements: 1
+
+agents:
+  - id: model_a
+    provider: ${PROVIDER_A}
+    model: ${MODEL_A}
+    credentials_env: PROVIDER_A_API_KEY
+  - id: model_b
+    provider: ${PROVIDER_B}
+    model: ${MODEL_B}
+    credentials_env: PROVIDER_B_API_KEY
+
+harness:
+  prompt: configs/prompts/core.txt
+  rules_manifest: private/rules.lock.json
+  recent_public_events: 20
+  memory_max_characters: 4096
+  optional_decision_notes: true
+  max_helper_calls_per_decision: 8
+  max_consecutive_invalid_actions: 3
+  tools: [rules.lookup, history.read, arithmetic]
+
+budgets:
+  max_game_actions: 1500
+  max_provider_calls: 2000
+  max_input_tokens_per_call: 32768
+  max_output_tokens_per_call: 8192
+  paid_calls_enabled: false
+  max_episode_cost_usd: null
+  max_batch_cost_usd: null
+  pricing_manifest: null
+
+execution:
+  workers: 1
+  checkpoint_policy: every_verified_decision_boundary
+  raw_engine_logs: private
+  export_policy: sanitized_public

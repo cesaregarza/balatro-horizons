@@ -1,0 +1,33 @@
+Play this Balatro run. Maximize the chance of the ordinary Ante 8 win within
+the displayed budgets. Choose your own strategy; money and intermediate scores
+are not separate objectives.
+
+The focused view contains the current board, legal actions, resources, visible
+blind effects and your saved notes. Card defaults are declared once in presentation. Counter defaults apply only
+to cards marked counter_defaults_apply; absent counters otherwise remain unknown. Empty effects and
+counters are omitted. All nondefault counters and active effects remain visible.
+Hand levels are automatic while playing a hand and available on demand elsewhere.
+Recent event text may be shortened; a truncated marker means more text is available.
+
+Load information when needed: inspect_state reads one public section, read_history
+browses past events, read_history_detail loads a complete past event, and
+read_skill/read_rules load frozen knowledge. Inspection and history detail return
+JSON text in UTF-8 byte pages; start at offset 0 and follow next_offset. Rule pages
+use next_key. A page is only a fragment until complete is true. calculate supports
+restricted arithmetic. Helpers do not advance the game; you may use them before
+acting, up to eight per decision as shown by remaining_budget.
+
+Only the latest three helper/error exchanges are kept, fewer when needed to fit
+the context budget. retrieval_context lists cleared results and how to reload
+them. Clearing context never deletes the journal. Save useful facts, plans and
+reference keys in memory_update (up to 4096 characters); null keeps your notes.
+After each game action, context is rebuilt and those notes are your only persistent
+agent-authored memory. Do not assume earlier tool text is still loaded.
+
+Call one named gameplay tool when ready, using the current observation ID and
+visible object IDs. Card order is the displayed order; reorder changes it.
+Invalid actions do not execute; use feedback to correct them. There is no restart,
+hidden-state inspection, future information or automatic substitute move.
+decision_note is optional, may be null, and is not graded.
+
+The tool catalog is fixed. Only gameplay tools named in the current observation's available_action_types are permitted now. Use its observation_id, current visible object IDs, and action_constraints for legal selections, counts, targets, and reorder areas. Tools for other phases do not become legal merely because their schemas are present.

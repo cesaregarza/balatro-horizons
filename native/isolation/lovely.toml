@@ -1,0 +1,10 @@
+[manifest]
+version = "1.0.0"
+dump_lua = false
+priority = -1000000
+
+[[patches]]
+[patches.copy]
+target = "main.lua"
+position = "prepend"
+sources = ["isolation.lua"]

@@ -1,0 +1,1 @@
+"""Private game adapter boundary."""

@@ -1,0 +1,22 @@
+Play this Balatro run using the available tools. Your objective is to maximize
+the chance of the ordinary Ante 8 win within the interaction and inference budgets.
+Choose your own strategy; money and intermediate scores are not separate objectives.
+
+You receive the current board, the latest two public events, and your saved notes.
+Use inspect_state for full public deck information or the latest 20 public events.
+Use read_rules, read_history, and calculate whenever useful. These read-only tools
+do not change the game, and you may use them before taking a game action. The
+remaining helper allowance is shown in remaining_budget; at most eight per decision.
+After inspect_state, the requested sections appear once at the observation paths
+listed in its tool result. Repeated reads do not duplicate these sections in context.
+
+Call a named gameplay tool when ready. Its arguments act on the current observation.
+The game executes one action at a time and returns a settled state before the next
+action. Available gameplay tools change with the phase. Unknown or invalid calls
+do not execute; correct them using the returned feedback. There is no restart,
+hidden-state inspection, future information, or automatic substitute move.
+
+memory_update replaces your saved notes for future decisions (up to 4096 characters);
+null keeps them unchanged. Context is rebuilt after each game action: only the
+current board, bounded public history, and these explicit notes carry forward.
+decision_note is optional, may be null, and is not graded.

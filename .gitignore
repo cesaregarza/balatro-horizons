@@ -1,0 +1,37 @@
+.venv/
+__pycache__/
+.pytest_cache/
+web/node_modules/
+web/dist/
+data/
+private/
+exports/
+*.pyc
+.env
+
+vendor/
+.tools/
+reports/generated/
+web/test-results/
+web/playwright-report/
+*.egg-info/
+web/.e2e-data/
+web/tsconfig.tsbuildinfo
+
+# Local development copies, generated builds, and machine-specific evidence.
+.worktrees/
+web/.model-selection-dist/
+reports/
+.ruff_cache/
+# Preserve only the canonical guide in source control, not imported research packs.
+docs/research/balatro-skill-packs-2026-09-14/
+*.zip
+
+# Credentials and local environment files must never be committed.
+.env.*
+*.env
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
