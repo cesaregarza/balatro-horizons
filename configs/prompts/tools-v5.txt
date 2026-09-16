@@ -39,13 +39,21 @@ reorder areas. Tools for other phases do not become legal merely because their
 schemas are present.
 
 <!-- BEGIN ALWAYS-LOADED.md -->
-# Persistent instructions
+# Mechanics to retain across decisions
 
-- Apply visible deck, stake, boss, voucher and Joker effects over the defaults below.
-- Ordinary interest pays $1 per full $5 of eligible cash, capped at $5; active effects can change this.
-- Ordinary unused hands pay $1 each. Use native settlement timing for income and costs.
+These are ordinary defaults. Current public effects can modify or
+override them.
+
+- Ordinary interest pays $1 per full $5 of eligible cash at settlement,
+  capped at $5. Eligible balances below $5 earn no ordinary interest.
+  Active deck effects, vouchers, and other public effects can change this.
+- Ordinary unused hands pay $1 each at settlement.
+- Borrowing capacity permits spending below $0; it is not additional
+  cash. Money received while your balance is negative first reduces
+  that negative balance.
 - Score beyond the current blind's target does not carry forward.
-- Cash, surviving deck changes, Jokers and hand levels persist across rounds.
-- Skipping forgoes the played round's normal settlement and shop; its tag grants its own reward.
-- Look up uncertain rules. Preserve useful facts and plans in memory_update.
+- Money, deck changes, Jokers, and hand upgrades persist across rounds,
+  subject to their effects.
+- Skipping a blind forgoes its normal played-round settlement and shop;
+  the displayed skip tag provides its own reward.
 <!-- END ALWAYS-LOADED.md -->
