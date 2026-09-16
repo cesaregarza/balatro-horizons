@@ -96,8 +96,9 @@ same offline script. Hosted CI has not run until the candidate is published.
 
 One consolidated unpaid suite passed without a repeated collection or a runtime
 fix. It used 22 game launches across collection, three-pass replay and direct-save
-proofs, and branch verification. A separate web-worker startup check is part of
-deployment. These are calibration and assisted diagnostics, excluded from model
+proofs, and branch verification. One additional startup through the deployed web
+worker reached `BLIND_SELECT` and stopped cleanly with zero committed actions and
+zero provider calls. These are calibration and assisted diagnostics, excluded from model
 performance scores.
 
 The final local CI check passed **324 tests with no skips**, including the nine
@@ -133,6 +134,13 @@ Runtime environment fingerprint:
 Private local evidence lives in `reports/verification/native-release.json`,
 `native-settlement.json`, and `native-evidence.json`; the active gate is
 `private/capability-certificate.json`.
+
+The serving checkout passed `bh doctor` with no blockers. Deployment imported nine
+verification episodes and preserved all 356 existing public run files byte for
+byte. The existing frontend build was retained because its source did not change.
+`scripts/workbench_status.py --fail-if-running` provides a compact worker check
+for future deployments; it reports status without printing episode contents or
+the operator token. Checking status alone does not reserve the worker lock.
 
 No paid provider calls were made. Live counting with real encrypted continuations,
 live Anthropic compatibility, headless equivalence and model-performance improvement
