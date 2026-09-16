@@ -3,6 +3,14 @@
 from copy import deepcopy
 from typing import get_args
 
+from balatro_horizons.config import (
+    AUTOMATIC_PUBLIC_EVENT_COUNT,
+    MAX_ABORT_REASON_CHARACTERS,
+    MAX_ARITHMETIC_CHARACTERS,
+    MAX_DECISION_NOTE_CHARACTERS,
+    MAX_HISTORY_PAGE_EVENTS,
+    MAX_MEMORY_CHARACTERS,
+)
 from balatro_horizons.contracts import Action
 
 VERSION = "tools_v2"
@@ -115,12 +123,12 @@ def tools_for(observation, *, skills=()):
             ]
         props["memory_update"] = {
             "type": ["string", "null"],
-            "maxLength": 4096,
+            "maxLength": MAX_MEMORY_CHARACTERS,
             "description": "Replace your notes for later decisions, or null to keep them. No other private memory carries forward.",
         }
         props["decision_note"] = {
             "type": ["string", "null"],
-            "maxLength": 512,
+            "maxLength": MAX_DECISION_NOTE_CHARACTERS,
             "description": "Optional decision note; null is fine. Not graded.",
         }
         result.append(tool(name, DESCRIPTIONS[name], props))
@@ -148,18 +156,18 @@ def tools_for(observation, *, skills=()):
                 "Read past public observations and committed actions. Offset is zero-based from the start of the run; never includes future events.",
                 {
                     "offset": {"type": "integer", "minimum": 0},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": MAX_HISTORY_PAGE_EVENTS},
                 },
             ),
             tool(
                 "calculate",
                 "Evaluate arithmetic using numbers, parentheses, +, -, *, / and %. Does not advance the game.",
-                {"expression": {"type": "string", "maxLength": 256}},
+                {"expression": {"type": "string", "maxLength": MAX_ARITHMETIC_CHARACTERS}},
             ),
             tool(
                 "abort_run",
                 "End this run voluntarily. No restart is available.",
-                {"reason": {"type": "string", "maxLength": 256}},
+                {"reason": {"type": "string", "maxLength": MAX_ABORT_REASON_CHARACTERS}},
             ),
         ]
     )
@@ -191,8 +199,14 @@ def stable_tools(*, skills=()):
                 {
                     "observation_id": {"type": "integer", "minimum": 0},
                     **props,
-                    "memory_update": {"type": ["string", "null"], "maxLength": 4096},
-                    "decision_note": {"type": ["string", "null"], "maxLength": 512},
+                    "memory_update": {
+                        "type": ["string", "null"],
+                        "maxLength": MAX_MEMORY_CHARACTERS,
+                    },
+                    "decision_note": {
+                        "type": ["string", "null"],
+                        "maxLength": MAX_DECISION_NOTE_CHARACTERS,
+                    },
                 },
             )
         )
@@ -238,8 +252,10 @@ def compact_observation(observation):
     for key in ("schema_version", "episode_id", "public_state_hash"):
         result.pop(key)
     result["state"].pop("public_deck_knowledge")
-    omitted = [e["event_id"] for e in result["recent_public_events"][:-2]]
-    result["recent_public_events"] = result["recent_public_events"][-2:]
+    omitted = [
+        e["event_id"] for e in result["recent_public_events"][:-AUTOMATIC_PUBLIC_EVENT_COUNT]
+    ]
+    result["recent_public_events"] = result["recent_public_events"][-AUTOMATIC_PUBLIC_EVENT_COUNT:]
     result["details_available"] = list(INSPECT_SECTIONS)
     if result["phase"] == "BLIND_SELECT" and result["state"]["revealed_blinds"]:
         result["current_blind_id"] = result["state"]["revealed_blinds"][0]["id"]

@@ -1,11 +1,9 @@
 # Recorded public decisions only; does not authorize spending or launch Balatro.
-skills: balatro-guide-v1
+# Shared limits, guide and disabled paid execution are inherited from config.py.
 budgets:
   max_provider_calls: 4
   max_transport_attempts: 1
-  max_input_tokens_per_call: 32768
   max_output_tokens_per_call: 4096
-  paid_calls_enabled: false
   max_episode_cost_usd: 1
   max_batch_cost_usd: 1
 models:

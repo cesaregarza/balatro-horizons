@@ -1,10 +1,76 @@
 # Balatro Horizons
 
-Current research direction: see the [research return and reconciliation](docs/research/reconciliation-2026-09-14.md) before extending the study or annotation schema. It separates the user’s safety early-warning framing from unselected measurement proposals; the implementation defaults below describe the current software.
+A local benchmark workbench for studying how agents balance survival in the current
+blind, preparation for the current ante, and development across a full Balatro run.
+Models play complete native games; researchers can review decisions prospectively,
+annotate tradeoffs, and test alternative continuations at certified decisions.
+Red Deck / Gold Stake is the evaluation default; Red / White is the plumbing configuration.
 
-A local workbench for complete native Balatro runs, prospective expert review, horizon annotations, and verified alternative continuations. Red Deck / Gold Stake is the evaluation default; Red / White is the plumbing configuration.
+## What this benchmark studies
 
-The native adapter runs the licensed Windows game in `D:\BalatroHorizonsRuntime`. Python, the browser application, journals, and private checkpoints live in this Linux repository. Synthetic episodes are explicitly labeled application tests. The original local installation passed skill-enabled native verification, including fresh-process replay, direct restoration, an immutable alternative continuation and ordinary startup for Red/White and Red/Gold. A funded OpenAI Luna smoke completed a native Red/White run with a verified loss on Ante 2; Anthropic live validation remains pending. Those certificates describe the earlier implementation. The campaign-budget patch changes the implementation fingerprint and requires authorized native recertification before native use. See [verification.md](docs/verification.md) and [budget-fix validation](docs/campaign-budget-fix.md).
+The central question is **when an agent applies relevant knowledge and how it
+trades present resources against future needs**. For example, a revealed boss may
+require changing a successful build, while an already strong build may create an
+opportunity to preserve income instead of buying more immediate scoring power.
+The research horizon definitions are immediate = this blind, short = this ante,
+and long = the full run. Existing annotation labels are preserved until a
+versioned rubric migration is selected.
+
+The workbench brings these capabilities together:
+
+- **Review before reveal:** inspect the information available at a decision and
+  annotate before revealing the model's action and consequences. The server
+  tracks prior exposure, including watching a run live.
+- **Expert diagnosis:** annotate decisions or intervals, alternatives, confidence,
+  and supporting events with revision history. The research direction distinguishes
+  recognition, valuation, and planning/adaptation; a complete taxonomy-specific
+  annotation workflow remains a proposal.
+- **Testable alternatives:** create an immutable child run for an override,
+  continuation, or human takeover only where replay/restoration is certified.
+  A successful alternative supports that continuation; it does not establish a
+  uniquely optimal move or assign a causal share of the original failure.
+- **Inspectable information and protocol:** public observations mask concealed
+  information; prompt, skills, provider settings, memory policy, and delivered
+  contexts are recorded. The frozen protocol makes changes in assistance visible.
+- **Outcome and coverage accounting:** autonomous full-run wins are the primary
+  performance outcome. Reports retain unresolved slots, infrastructure failures,
+  funding interruptions, and all-attempt costs. Assisted branches are excluded
+  from autonomous scores.
+
+The intended safety application is an early-warning evaluation of a proposed
+reasoning prerequisite for longer-term strategic behavior. **The relationship to
+scheming is a research hypothesis, not a validated interpretation of a Balatro
+score.** Automatic horizon scores, a public leaderboard, and a stake staircase
+are not implemented. See the [research reconciliation](docs/research/reconciliation-2026-09-14.md)
+for accepted direction and still-unselected measurement proposals.
+
+### Relationship to other game benchmarks
+
+Long-horizon game evaluation and native Balatro play already have substantial
+precedents. The distinction here is the focus and the expert-review/branching
+workflow described above, not a claim to be the first long-horizon game benchmark.
+
+| Project | Documented focus | Balatro Horizons emphasis |
+| --- | --- | --- |
+| [BALROG](https://arxiv.org/abs/2411.13543) | Evaluates LLM/VLM agents across multiple game environments, explicitly including long-horizon planning and exploration. | Examine blind/ante/run tradeoffs within one native game, using prospective expert review and tested alternative continuations. |
+| [Evalatro](https://github.com/alesha-pro/evalatro) | Native Balatro runs, full decision replays, and a public leaderboard with a composite 0–100 score. | Autonomous wins plus coverage and failure accounting, with expert annotations and certified branches as diagnostic evidence. |
+| [BalatroBench](https://github.com/coder/balatrobench) | Analyzes BalatroLLM run artifacts and generates interactive model/strategy leaderboards. | Collect and inspect the decision evidence, control prospective exposure, and intervene through separate immutable continuations. |
+
+These are comparisons of documented project emphasis, checked 2026-09-16, not an
+exhaustive novelty review or a claim that other projects cannot support similar
+research. Native execution, long trajectories, and replay viewers are shared ideas.
+
+## Implementation status
+
+The native adapter runs the licensed Windows game in `D:\BalatroHorizonsRuntime`.
+Python, the browser application, journals, and private checkpoints live on Linux.
+Synthetic episodes are explicitly labeled application tests. The
+[September 16 release](docs/release-2026-09-16.md) records local native action,
+replay, branch, and OpenAI Terra smoke evidence for its exact source/runtime
+fingerprints. Anthropic live validation and headless equivalence remain pending.
+Executable changes, including the defaults refactor, require matching native
+certification before deployment; the earlier release is not evidence for a new
+fingerprint.
 
 ## Source checkout and private local files
 
@@ -154,6 +220,37 @@ See [native audit](docs/native-audit.md), [third-party notices](docs/THIRD_PARTY
 The private calibration panel contains fixed regression seeds selected for short diagnostic runs. It is excluded from study performance estimates and is separate from generated development panels and any held-out panel. `scripts/verify_release.py` runs the complete serial native verification; its named fixtures and baseline calibration runs make no provider calls.
 
 After `verify_release.py` passes, run `uv --directory /root/dev/balatro-horizons run python scripts/finalize_evidence.py` to validate the collected evidence, activate matching native capabilities, and write the sanitized diagnostic report. `verify_release.py --resume-certification` reuses completed collection for the same pinned runtime and repeats certification plus the branch test.
+
+## Configure shared defaults
+
+[`src/balatro_horizons/config.py`](src/balatro_horizons/config.py) is the single
+Python home for shared harness defaults. It contains:
+
+- Episode action/call/token/retry budgets and paid-execution defaults (`Limits`).
+- Context framing allowances, retrieval page sizes, retained helper results,
+  public-history length, and description truncation limits.
+- Memory/note limits shared by tool definitions and action validation, and the
+  maximum size of `ALWAYS-LOADED.md`.
+- Provider timeout, native runtime defaults, deck/stake, guide, and worker defaults.
+
+YAML files in `configs/` supply preset overrides such as White Stake, model/pricing
+settings, or smaller probe budgets. Omitted fields inherit Python defaults; the
+presets no longer repeat ordinary budget values. Saved workbench settings can
+explicitly override defaults too. Editing Python defaults does not overwrite
+those settings or change the frozen configuration of an existing episode.
+Source constants are loaded at process startup; deploy changes with matching
+certification and review the resolved run configuration before execution.
+Protocol identities, game rules, and provider-specific constraints remain in
+their owning modules. Changing defaults does not update frozen prompt prose;
+review affected prompt text when changing a protocol allowance or retention rule.
+
+The existing **32,768-token allowance is also used as a serialized-byte ceiling**
+by legacy context accounting. The refactor preserves values and behavior; it does
+not fix that unit coupling or raise spending limits. See
+[persistent instructions](docs/persistent-instructions.md#existing-context-limit-defect).
+
+The [defaults-refactor verification](docs/defaults-refactor.md) records offline
+checks and the native activation boundary for this change.
 
 ## Focused model context
 

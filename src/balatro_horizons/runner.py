@@ -23,6 +23,11 @@ from balatro_horizons.agents.tool_interface import (
     FOCUSED_INTERFACES,
     NAMED_INTERFACES,
 )
+from balatro_horizons.config import (
+    CONTEXT_FRAMING_BYTES,
+    LEGACY_GUIDE_PAGE_SIZES,
+    RECENT_PUBLIC_EVENT_LIMIT,
+)
 from balatro_horizons.contracts import Observation, RecentPublicEvent, RemainingBudget
 from balatro_horizons.engine.native import NativeFailure, NativeRejected
 from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
@@ -215,7 +220,7 @@ class Runner:
             from balatro_horizons.agents.focused import PAGE_BYTES
 
             return read_guide(self.rules, key, PAGE_BYTES)
-        for page_bytes in (4096, 2048, 1024, 512, 256, 128):
+        for page_bytes in LEGACY_GUIDE_PAGE_SIZES:
             page = read_guide(self.rules, key, page_bytes)
             proposed = exchanges + [self._exchange(raw, page)]
             ctx, delivered = decision_context(
@@ -228,7 +233,7 @@ class Runner:
             )
             encoded = json.dumps({"context": ctx, "exchanges": delivered}, ensure_ascii=False)
             if (
-                len(json.dumps(encoded, ensure_ascii=False).encode()) + 4096
+                len(json.dumps(encoded, ensure_ascii=False).encode()) + CONTEXT_FRAMING_BYTES
                 <= self.limits.max_input_tokens_per_call
             ):
                 return page
@@ -382,7 +387,7 @@ class Runner:
                         observation_id=decision,
                         issuer=self.issuer,
                         memory=self.memory,
-                        recent_events=self.recent[-20:],
+                        recent_events=self.recent[-RECENT_PUBLIC_EVENT_LIMIT:],
                         remaining_budget=RemainingBudget(
                             game_actions=self.limits.max_game_actions - self.committed,
                             provider_calls=self.limits.max_provider_calls - self.calls,
@@ -484,7 +489,7 @@ class Runner:
                         summary=json.dumps(envelope.action.model_dump(mode="json")),
                     )
                 )
-                self.recent = self.recent[-20:]
+                self.recent = self.recent[-RECENT_PUBLIC_EVENT_LIMIT:]
                 decision += 1
         except OperatorAbort:
             outcome, reason = "OPERATOR_ABORT", "OPERATOR_REQUEST"

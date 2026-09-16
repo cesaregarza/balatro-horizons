@@ -6,13 +6,15 @@ import os
 import tempfile
 from pathlib import Path
 
+from balatro_horizons.config import ALWAYS_LOADED_MAX_BYTES
+
 BEGIN = "<!-- BEGIN ALWAYS-LOADED.md -->"
 END = "<!-- END ALWAYS-LOADED.md -->"
 
 
 def render(prompt: str, instructions: str) -> str:
-    if not instructions.strip() or len(instructions.encode("utf-8")) > 1024:
-        raise ValueError("ALWAYS-LOADED.md must contain 1-1024 UTF-8 bytes")
+    if not instructions.strip() or len(instructions.encode("utf-8")) > ALWAYS_LOADED_MAX_BYTES:
+        raise ValueError(f"ALWAYS-LOADED.md must contain 1-{ALWAYS_LOADED_MAX_BYTES} UTF-8 bytes")
     if BEGIN in instructions or END in instructions:
         raise ValueError("Instructions must not contain generated-block markers")
     block = BEGIN + "\n" + instructions.strip() + "\n" + END
