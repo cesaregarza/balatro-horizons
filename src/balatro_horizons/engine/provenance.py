@@ -13,7 +13,14 @@ def implementation_fingerprint():
     # invalidate native continuation evidence; their own tests cover those layers.
     paths = [
         base / name
-        for name in ("config.py", "contracts.py", "runner.py", "service.py", "review/branches.py")
+        for name in (
+            "config.py",
+            "contracts.py",
+            "runner.py",
+            "service.py",
+            "review/branches.py",
+            "evaluation/scheduling.py",
+        )
     ]
     for directory in ("engine", "observations", "actions", "agents", "storage"):
         paths.extend(sorted((base / directory).rglob("*.py")))

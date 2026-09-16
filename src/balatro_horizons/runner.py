@@ -7,7 +7,12 @@ import uuid
 from pydantic import ValidationError
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
-from balatro_horizons.agents.budget import BudgetExhausted, Spending
+from balatro_horizons.agents.budget import (
+    BudgetExhausted,
+    Spending,
+    reservation_usd,
+    validate_paid_configuration,
+)
 from balatro_horizons.agents.protocol import KERNEL, Operation, decision_context, helper
 from balatro_horizons.agents.providers import ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import prepare_rules, read_guide, restore_knowledge
@@ -43,10 +48,7 @@ class Runner:
     def _provider(self, ctx, exchanges):
         body = self.policy.request(ctx, exchanges)
         model = self.policy.model
-        reserve = (
-            self.limits.max_input_tokens_per_call * model.maximum_input_usd_per_million
-            + self.limits.max_output_tokens_per_call * model.output_usd_per_million
-        ) / 1_000_000
+        reserve = reservation_usd(model, self.limits)
         for attempt in range(self.limits.max_transport_attempts):
             if self.stop.is_set():
                 raise OperatorAbort
@@ -54,7 +56,11 @@ class Runner:
                 raise BudgetExhausted("PROVIDER_CALL_LIMIT")
             request_id = uuid.uuid4().hex
             self.spending.reserve(
-                request_id, self.eid, reserve, self.limits.max_episode_cost_usd - self.prior_cost
+                request_id,
+                self.eid,
+                reserve,
+                self.limits.max_episode_cost_usd,
+                prior_cost=self.prior_cost,
             )
             self.calls += 1
             self.cost += reserve
@@ -248,12 +254,7 @@ class Runner:
 
     def run(self, *, eid=None, manifest=None, private=None, resume=None, history_prefix=None):
         if self.policy.paid:
-            if (
-                not self.limits.paid_calls_enabled
-                or not self.limits.max_episode_cost_usd
-                or not self.limits.max_batch_cost_usd
-            ):
-                raise ValueError("PAID_EXECUTION_NOT_AUTHORIZED")
+            validate_paid_configuration(self.policy.model, self.limits)
         self.rules = (
             restore_knowledge(self.store, resume)
             if resume
@@ -276,6 +277,7 @@ class Runner:
             self.store.root / "private_runs" / self.eid / "spending.json",
             self.limits.max_batch_cost_usd,
         )
+        cost_context = None
         start = 0
         self.prior_cost = 0.0
         if resume:
@@ -421,7 +423,8 @@ class Runner:
         except OperatorAbort:
             outcome, reason = "OPERATOR_ABORT", "OPERATOR_REQUEST"
         except BudgetExhausted as error:
-            outcome, reason = "BUDGET_EXHAUSTED", str(error)
+            outcome, reason = error.outcome, str(error)
+            cost_context = error.cost_context
         except (NativeFailure, ProviderFailure) as error:
             outcome, reason = "INFRASTRUCTURE_FAILURE", str(error)
             self.log("action_status_unknown", {"code": reason})
@@ -440,6 +443,7 @@ class Runner:
                     "committed_actions": self.committed,
                     "provider_calls": self.calls,
                     "cost_usd": self.cost,
+                    **({"cost_context": cost_context} if cost_context is not None else {}),
                     "last_verified_observation_id": self.observation.observation_id
                     if self.observation
                     else None,

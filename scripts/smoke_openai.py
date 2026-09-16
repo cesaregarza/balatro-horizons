@@ -9,7 +9,7 @@ import re
 import secrets
 from collections import Counter
 
-from balatro_horizons.agents.budget import Spending
+from balatro_horizons.agents.budget import Spending, can_afford, reservation_usd, validate_caps
 from balatro_horizons.cli import doctor
 from balatro_horizons.config import ROOT, load_config
 from balatro_horizons.review.service import ReviewService
@@ -127,14 +127,14 @@ def main():
         blockers.append("MISSING_PROVIDER_CREDENTIAL")
     campaign = ROOT / "private/openai-luna-smoke"
     ledger = campaign / "spending.json"
-    entries = json.loads(ledger.read_text()) if ledger.exists() else {}
-    total = sum(e["cost"] for e in entries.values())
-    reserve = (
-        limits.max_input_tokens_per_call * model.maximum_input_usd_per_million
-        + limits.max_output_tokens_per_call * model.output_usd_per_million
-    ) / 1_000_000
-    if total + reserve > limits.max_batch_cost_usd or reserve > limits.max_episode_cost_usd:
-        blockers.append("COST_CAP_REACHED")
+    validate_caps(limits.max_episode_cost_usd, limits.max_batch_cost_usd)
+    reserve = reservation_usd(model, limits)
+    affordable, cost_context = Spending(ledger, limits.max_batch_cost_usd).affordability(reserve)
+    total = cost_context["campaign_committed_usd"]
+    if not can_afford(0, reserve, limits.max_episode_cost_usd):
+        blockers.append("EPISODE_CAP_BELOW_RESERVATION")
+    elif not affordable:
+        blockers.append("CAMPAIGN_COST_CAP")
     check = {
         "mode": "paid_smoke" if args.allow_paid else "preflight",
         "evidence_kind": "SYNTHETIC_TEST" if args.transport_only else "NATIVE",

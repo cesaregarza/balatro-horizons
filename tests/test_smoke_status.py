@@ -1,8 +1,10 @@
 import importlib.util
 import json
+import sys
 
 import pytest
 
+from balatro_horizons.agents.budget import Spending
 from balatro_horizons.config import ROOT
 from balatro_horizons.review.service import ReviewService
 
@@ -63,3 +65,41 @@ def test_status_without_a_smoke_fails_clearly(store):
         smoke.episode_status(store)
     with pytest.raises(ValueError, match="INVALID_IDENTIFIER"):
         smoke.episode_status(store, "../private")
+
+
+@pytest.mark.parametrize(
+    "episode_cap,campaign_cap,expected",
+    [
+        (1, 0.031344, []),
+        (1, 0.031343, ["CAMPAIGN_COST_CAP"]),
+        (0.010, 0.005, ["EPISODE_CAP_BELOW_RESERVATION"]),
+    ],
+)
+def test_smoke_preflight_uses_shared_admission_without_paid_execution(
+    tmp_path,
+    monkeypatch,
+    capsys,
+    episode_cap,
+    campaign_cap,
+    expected,
+):
+    from test_openai_luna import luna
+
+    config = luna()
+    config.budgets.max_episode_cost_usd = episode_cap
+    config.budgets.max_batch_cost_usd = campaign_cap
+    ledger = tmp_path / "private/openai-luna-smoke/spending.json"
+    # Existing usage may exceed a newly supplied cap; retain it in diagnostics.
+    Spending(ledger, 1).reserve("existing", "previous", 0.01496, 1)
+    before = ledger.read_bytes()
+    monkeypatch.setattr(smoke, "ROOT", tmp_path)
+    monkeypatch.setattr(smoke, "load_config", lambda _: config)
+    monkeypatch.setattr(sys, "argv", ["smoke_openai.py", "--transport-only", "--dry-run"])
+    monkeypatch.setenv("OPENAI_API_KEY", "mock-only")
+    assert smoke.main() == int(bool(expected))
+    report = json.loads(capsys.readouterr().out)
+    assert report["blockers"] == expected
+    assert report["per_request_reserve_usd"] == 0.016384
+    assert report["campaign_accounted_usd"] == 0.01496
+    assert report["paid_calls_made"] == 0 and ledger.read_bytes() == before
+    assert not config.budgets.paid_calls_enabled

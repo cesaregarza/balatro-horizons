@@ -4,7 +4,7 @@ Current research direction: see the [research return and reconciliation](docs/re
 
 A local workbench for complete native Balatro runs, prospective expert review, horizon annotations, and verified alternative continuations. Red Deck / Gold Stake is the evaluation default; Red / White is the plumbing configuration.
 
-The native adapter runs the licensed Windows game in `D:\BalatroHorizonsRuntime`. Python, the browser application, journals, and private checkpoints live in this Linux repository. Synthetic episodes are explicitly labeled application tests. The skill-enabled native pipeline has passed local verification, including fresh-process replay, direct restoration, an immutable alternative continuation and ordinary startup with the current certificate. Native access is enabled for the certified Red/White and Red/Gold configurations. A funded OpenAI Luna smoke completed a native Red/White run with a verified loss on Ante 2; Anthropic live validation remains pending. The machine-readable native evidence and remaining gates are described in [verification.md](docs/verification.md).
+The native adapter runs the licensed Windows game in `D:\BalatroHorizonsRuntime`. Python, the browser application, journals, and private checkpoints live in this Linux repository. Synthetic episodes are explicitly labeled application tests. The original local installation passed skill-enabled native verification, including fresh-process replay, direct restoration, an immutable alternative continuation and ordinary startup for Red/White and Red/Gold. A funded OpenAI Luna smoke completed a native Red/White run with a verified loss on Ante 2; Anthropic live validation remains pending. Those certificates describe the earlier implementation. The campaign-budget patch changes the implementation fingerprint and requires authorized native recertification before native use. See [verification.md](docs/verification.md) and [budget-fix validation](docs/campaign-budget-fix.md).
 
 ## Source checkout and private local files
 
@@ -102,6 +102,15 @@ Reservations use configured token ceilings and prices before every request, incl
 Use the application's **Export public bundle** or `bh export --public` to generate schema-selected, privacy-scanned exports. Exports include annotation revisions without reviewer identity by default. They do not copy private directories. `bh human` reads the current human decision from the shared server on port 8765, and `bh human --action-file operation.json` submits an operation. CLI human runs and takeovers use that same server. Stop the worker before `bh recover`; recovery retains torn tails privately and marks unresolved actions as infrastructure failures.
 
 Batch reports include planned slots, first valid outcomes, wins, coverage, unresolved slots, outcome categories, missing-outcome bounds, and costs across all attempts. Confidence intervals resample seeds with their replicates. Paired comparisons retain seed/replicate matching. Human interventions are diagnostic evidence, not autonomous wins or proofs of optimal play.
+
+Campaign funding is separate from the agent's episode budget. An unfunded next
+paid slot creates no episode; a campaign-only interruption leaves the current
+slot unresolved and retains its costs. An episode-only cost refusal remains a
+valid `BUDGET_EXHAUSTED` non-win. If both caps bind, the current attempt is valid
+and the campaign also stops. Funding stops are durable: rerunning the same frozen
+batch cannot resume it, even with a cheaper or scripted agent next. Reports and
+public exports include `scheduling_stop`; old generic cost stops retain their
+original meaning. See [exact semantics and validation](docs/campaign-budget-fix.md).
 
 ## Validation
 

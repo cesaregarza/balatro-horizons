@@ -7,14 +7,15 @@ import queue
 import threading
 
 from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.budget import Spending
+from balatro_horizons.agents.budget import Spending, validate_paid_configuration
 from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import ROOT
 from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.engine.native import NativeGame
+from balatro_horizons.evaluation.scheduling import batch_attempts, reconcile_stop, record_stop
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.runner import OperatorAbort, Runner
-from balatro_horizons.storage.journal import digest
+from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
 
 
 class HumanPolicy:
@@ -99,25 +100,27 @@ class RunService:
         self._guard = threading.Lock()
         self.error = None
 
+    def validate_policy(self, config, agent):
+        """Validate paid admission without constructing a client or game."""
+        if agent in ("heuristic", "random_legal", "human"):
+            return None
+        if agent not in config.models:
+            raise ValueError("UNKNOWN_AGENT_CONFIGURATION")
+        model = config.models[agent]
+        amount = validate_paid_configuration(model, config.budgets)
+        key = "OPENAI_API_KEY" if model.provider == "openai" else "ANTHROPIC_API_KEY"
+        if not os.environ.get(key):
+            raise ValueError("MISSING_PROVIDER_CREDENTIAL")
+        return amount
+
     def policy(self, config, agent):
+        self.validate_policy(config, agent)
         if agent in ("heuristic", "random_legal"):
             return Baseline(agent)
         if agent == "human":
             self.human = HumanPolicy(self.stop)
             return self.human
-        if agent not in config.models:
-            raise ValueError("UNKNOWN_AGENT_CONFIGURATION")
-        model = config.models[agent]
-        if (
-            not config.budgets.paid_calls_enabled
-            or not config.budgets.max_episode_cost_usd
-            or not config.budgets.max_batch_cost_usd
-        ):
-            raise ValueError("PAID_EXECUTION_NOT_AUTHORIZED")
-        key = "OPENAI_API_KEY" if model.provider == "openai" else "ANTHROPIC_API_KEY"
-        if not os.environ.get(key):
-            raise ValueError("MISSING_PROVIDER_CREDENTIAL")
-        return DirectProvider(model, config.budgets)
+        return DirectProvider(config.models[agent], config.budgets)
 
     def execute(
         self,
@@ -210,7 +213,7 @@ class RunService:
                 raise ValueError("WORKER_BUSY")
             self.stop.clear()
             self.error = None
-            self.policy(config, agent)
+            self.validate_policy(config, agent)
             eid = self.store.create(
                 {
                     "evidence_kind": "SYNTHETIC_TEST" if offline else "NATIVE",
@@ -254,7 +257,7 @@ class RunService:
                 raise ValueError("INVALID_HUMAN_SEQUENCE")
             manifest = self.store.manifest(parent)
             chosen = "human" if mode == "human_takeover" else agent or manifest["agent"]
-            self.policy(config, chosen)  # Validate before creating immutable child records.
+            self.validate_policy(config, chosen)  # Validate before immutable child records.
             eid, checkpoint, prefix = prepare_branch(self.store, config, parent, decision, mode)
             self.stop.clear()
             seed = self.store.manifest(parent, True)["seed"]
@@ -276,14 +279,17 @@ class RunService:
             return eid
 
     def run_batch(self, config, bid, *, offline=False):
+        # Serialize invocations of this frozen campaign, including preflight and stops.
+        with locked(self.store.root / "batches" / identifier(bid) / "scheduling.lock"):
+            return self._run_batch(config, bid, offline=offline)
+
+    def _run_batch(self, config, bid, *, offline):
         plan = json.loads((self.store.root / "batches" / bid / "plan.json").read_text())
         private = json.loads((self.store.root / "batches" / bid / "private.json").read_text())
         if plan["config_hash"] != digest(config.model_dump()):
             raise ValueError("BATCH_CONFIGURATION_CHANGED")
         execution_path = self.store.root / "batches" / bid / "execution.json"
         evidence = "SYNTHETIC_TEST" if offline else "NATIVE"
-        from balatro_horizons.storage.journal import atomic_json
-
         if execution_path.exists():
             if json.loads(execution_path.read_text())["evidence_kind"] != evidence:
                 raise ValueError("BATCH_EVIDENCE_KIND_CHANGED")
@@ -292,15 +298,13 @@ class RunService:
         spending = Spending(
             self.store.root / "batches" / bid / "spending.json", config.budgets.max_batch_cost_usd
         )
+        originals = batch_attempts(self.store, plan)
+        if reconcile_stop(self.store, plan, originals) is not None:
+            return bid
         for slot in plan["slots"]:
             if self.stop.is_set():
                 break
-            attempts = [
-                r
-                for r in self.store.list_episodes()
-                if r["manifest"].get("batch_id") == bid
-                and r["manifest"].get("slot_id") == slot["slot_id"]
-            ]
+            attempts = [r for r in originals if r["manifest"]["slot_id"] == slot["slot_id"]]
             while len(attempts) < 2 and (
                 not attempts
                 or all(
@@ -310,6 +314,20 @@ class RunService:
             ):
                 if self.stop.is_set():
                     break
+                amount = self.validate_policy(config, slot["agent"])
+                if amount is not None:
+                    affordable, context = spending.affordability(amount)
+                    if not affordable:
+                        record_stop(
+                            self.store,
+                            plan,
+                            reason="CAMPAIGN_COST_CAP",
+                            stage="preflight",
+                            slot_id=slot["slot_id"],
+                            agent=slot["agent"],
+                            cost_context=context,
+                        )
+                        return bid
                 try:
                     self.execute(
                         config,
@@ -329,16 +347,13 @@ class RunService:
                 except Exception:
                     current = [
                         r
-                        for r in self.store.list_episodes()
-                        if r["manifest"].get("batch_id") == bid
-                        and r["manifest"].get("slot_id") == slot["slot_id"]
+                        for r in batch_attempts(self.store, plan)
+                        if r["manifest"]["slot_id"] == slot["slot_id"]
                     ]
                     if len(current) == len(attempts):
                         raise
-                attempts = [
-                    r
-                    for r in self.store.list_episodes()
-                    if r["manifest"].get("batch_id") == bid
-                    and r["manifest"].get("slot_id") == slot["slot_id"]
-                ]
+                originals = batch_attempts(self.store, plan)
+                if reconcile_stop(self.store, plan, originals, recovered=False) is not None:
+                    return bid
+                attempts = [r for r in originals if r["manifest"]["slot_id"] == slot["slot_id"]]
         return bid

@@ -11,6 +11,18 @@ from balatro_horizons.engine.provenance import implementation_fingerprint
 from balatro_horizons.storage.journal import digest
 
 
+def test_batch_scheduling_source_invalidates_native_fingerprint(tmp_path, monkeypatch):
+    from balatro_horizons.engine import provenance
+
+    monkeypatch.setattr(provenance, "ROOT", tmp_path)
+    source = tmp_path / "src/balatro_horizons/evaluation/scheduling.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("original scheduling")
+    before = provenance.implementation_fingerprint()
+    source.write_text("changed scheduling")
+    assert provenance.implementation_fingerprint() != before
+
+
 def test_AT24_missing_native_certificate_blocks_evaluation():
     with pytest.raises(NativeFailure):
         require_environment_certificate({"unrecognized": "environment"}, Environment())

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from balatro_horizons.contracts import ActionEnvelope, Observation
 from balatro_horizons.evaluation.batches import summarize
+from balatro_horizons.evaluation.scheduling import batch_attempts, reconcile_stop
 from balatro_horizons.storage.journal import atomic_json, digest, identifier
 
 # Require a drive-letter boundary so a public https:// link is not treated as s:/.
@@ -100,11 +101,12 @@ def episode_export(store, eid):
 
 def report_batch(store, bid, output):
     plan = json.loads((store.root / "batches" / identifier(bid) / "plan.json").read_text())
-    report = summarize(plan, store.list_episodes())
+    attempts = batch_attempts(store, plan)
+    report = {**summarize(plan, attempts), "scheduling_stop": reconcile_stop(store, plan, attempts)}
     from balatro_horizons.review.service import ReviewService
 
     review = ReviewService(store)
-    for row in store.list_episodes():
+    for row in attempts:
         if row["manifest"].get("batch_id") == bid:
             review.expose(
                 row["episode_id"],
@@ -144,17 +146,17 @@ def report_batch(store, bid, output):
 def export_batch(store, bid, output):
     plan = json.loads((store.root / "batches" / identifier(bid) / "plan.json").read_text())
     private = json.loads((store.root / "batches" / bid / "private.json").read_text())
-    episodes = [
-        episode_export(store, e["episode_id"])
-        for e in store.list_episodes()
-        if e["manifest"].get("batch_id") == bid and not e["manifest"].get("parent_episode_id")
-    ]
+    attempts = batch_attempts(store, plan)
+    episodes = [episode_export(store, e["episode_id"]) for e in attempts]
     bundle = {
         "schema_version": "1.0",
         "export_policy": "public-schema-v1",
         "plan": plan,
         "episodes": episodes,
-        "report": summarize(plan, store.list_episodes()),
+        "report": {
+            **summarize(plan, attempts),
+            "scheduling_stop": reconcile_stop(store, plan, attempts),
+        },
     }
     scan(bundle, private["seed_by_group"].values())
     output = Path(output)
