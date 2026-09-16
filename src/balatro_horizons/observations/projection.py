@@ -15,11 +15,13 @@ from balatro_horizons.contracts import (
     Progress,
     PublicBlind,
     PublicCard,
+    PublicEffect,
     PublicOffer,
     PublicState,
     RecentPublicEvent,
     RemainingBudget,
     Resources,
+    SkipReward,
 )
 
 
@@ -155,23 +157,17 @@ def project_public(
                 target=str(blind["target"]),
                 skip_allowed=bool(blind.get("skip_allowed", False)),
                 effects=[str(effect) for effect in blind.get("effects", [])],
+                status=blind.get("status", "UNKNOWN"),
+                disabled=blind.get("disabled"),
+                skip_reward=(
+                    SkipReward(**_effect(blind["skip_reward"]).model_dump())
+                    if blind.get("skip_reward")
+                    else None
+                ),
             )
             for blind in visible.get("revealed_blinds", [])
         ],
-        offers=[
-            PublicOffer(
-                id=issuer.issue("offers", str(offer["native_id"])),
-                label=str(offer["label"]),
-                kind=str(offer["kind"]),
-                price=str(offer["price"]),
-                acquire_allowed=bool(offer.get("acquire_allowed", True)),
-                buy_and_use_allowed=bool(offer.get("buy_and_use_allowed", False)),
-                min_targets=int(offer.get("min_targets", 0)),
-                max_targets=int(offer.get("max_targets", 0)),
-                effects=[str(effect) for effect in offer.get("effects", [])],
-            )
-            for offer in visible.get("offers", [])
-        ],
+        offers=[_offer(offer, issuer) for offer in visible.get("offers", [])],
         public_deck_knowledge=DeckKnowledge(
             initial_count=visible.get("deck_knowledge", {}).get("initial_count"),
             observed_draws=visible.get("deck_knowledge", {}).get("observed_draws"),
@@ -184,6 +180,16 @@ def project_public(
         ),
         hand_levels={str(k): str(v) for k, v in visible.get("hand_levels", {}).items()},
         persistent_effects=[str(effect) for effect in visible.get("persistent_effects", [])],
+        owned_vouchers=(
+            [_effect(item) for item in visible["owned_vouchers"]]
+            if visible.get("owned_vouchers") is not None
+            else None
+        ),
+        pending_tags=(
+            [_effect(item) for item in visible["pending_tags"]]
+            if visible.get("pending_tags") is not None
+            else None
+        ),
     )
     action_types = [str(kind) for kind in visible["available_action_types"]]
     constraints = _constraints(action_types, state)
@@ -218,6 +224,7 @@ def project_public(
         }
     )
     return Observation(
+        schema_version="1.1",
         episode_id=episode_id,
         observation_id=observation_id,
         public_state_hash="sha256:" + hashlib.sha256(hashed.encode()).hexdigest(),
@@ -229,6 +236,28 @@ def project_public(
         recent_public_events=recent_events or [],
         memory=memory,
         remaining_budget=remaining_budget,
+    )
+
+
+def _effect(raw):
+    return PublicEffect(label=str(raw["label"]), effects=[str(e) for e in raw.get("effects", [])])
+
+
+def _offer(raw, issuer):
+    hidden = bool(raw.get("face_down", False))
+    return PublicOffer(
+        id=issuer.issue("offers", str(raw["native_id"]), trackable=not hidden),
+        label="Face-down card" if hidden else str(raw["label"]),
+        kind="unknown" if hidden else str(raw["kind"]),
+        face_down=hidden,
+        rank=None if hidden or raw.get("rank") is None else str(raw["rank"]),
+        suit=None if hidden or raw.get("suit") is None else str(raw["suit"]),
+        price=str(raw["price"]),
+        acquire_allowed=bool(raw.get("acquire_allowed", True)),
+        buy_and_use_allowed=not hidden and bool(raw.get("buy_and_use_allowed", False)),
+        min_targets=0 if hidden else int(raw.get("min_targets", 0)),
+        max_targets=0 if hidden else int(raw.get("max_targets", 0)),
+        effects=[] if hidden else [str(e) for e in raw.get("effects", [])],
     )
 
 

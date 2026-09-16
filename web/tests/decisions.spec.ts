@@ -111,7 +111,7 @@ test("phone explorer switches between choices and details without horizontal ove
   const detail = page.getByRole("region", { name: "Decision details" });
   await expect(list.locator("button")).toHaveCount(5);
   await page.screenshot({
-    path: "/root/dev/balatro-horizons/reports/verification/decision-explorer-mobile-list.png",
+    path: test.info().outputPath("decision-explorer-mobile-list.png"),
     fullPage: true,
   });
   await list.getByRole("button", { name: /Buy Test Joker/ }).click();
@@ -128,7 +128,7 @@ test("phone explorer switches between choices and details without horizontal ove
     ),
   ).toBe(true);
   await page.screenshot({
-    path: "/root/dev/balatro-horizons/reports/verification/decision-explorer-mobile-detail.png",
+    path: test.info().outputPath("decision-explorer-mobile-detail.png"),
     fullPage: true,
   });
   await page.getByRole("button", { name: "Back to choices" }).click();

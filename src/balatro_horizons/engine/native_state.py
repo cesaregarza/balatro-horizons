@@ -22,8 +22,15 @@ def convert_card(card, area, index):
     if (card.get("state") or {}).get("debuff"):
         effects.append("Debuffed")
     rank, suit = value.get("rank"), SUITS.get(value.get("suit"), value.get("suit"))
-    label = card.get("label") or (
-        f"{rank} of {suit}" if rank and suit else card.get("set", "Unknown")
+    stone = (card.get("modifier") or {}).get("enhancement") == "STONE"
+    if stone or card.get("rank_visible") is False:
+        rank = None
+    if stone or card.get("suit_visible") is False:
+        suit = None
+    # Instrumentation used to overwrite these with e.g. "Base Card" or "Bonus Card".
+    # Playing-card identity is the visible rank/suit; enhancements remain effects.
+    label = (
+        f"{rank} of {suit}" if rank and suit else card.get("label") or card.get("set", "Unknown")
     )
     return {
         "native_id": f"{area}:{card.get('id', index)}",
@@ -87,8 +94,16 @@ def normalize(raw):
             visible["hand_levels"][key] = ", ".join(
                 f"{k}: {value[k]}" for k in ("level", "chips", "mult", "played") if k in value
             )
-    visible["persistent_effects"] = [str(k) for k in (raw.get("used_vouchers") or {})] + [
-        str(k) for k in bh.get("tags", [])
+    visible["owned_vouchers"] = bh.get("owned_vouchers")
+    if visible["owned_vouchers"] is None:
+        # Older captured engine states may contain only keys and optional descriptions.
+        visible["owned_vouchers"] = [
+            {"label": str(key), "effects": [value] if isinstance(value, str) and value else []}
+            for key, value in sorted((raw.get("used_vouchers") or {}).items())
+        ]
+    visible["pending_tags"] = [
+        tag if isinstance(tag, dict) else {"label": str(tag), "effects": []}
+        for tag in bh.get("pending_tags", bh.get("tags", []))
     ]
     current = (bh.get("blind_on_deck") or "").lower()
     for key in sorted(
@@ -103,9 +118,19 @@ def normalize(raw):
                 "kind": key.upper(),
                 "target": blind.get("score"),
                 "skip_allowed": key != "boss" and key == current and phase == "BLIND_SELECT",
-                "effects": [
-                    str(blind[k]) for k in ("effect", "tag_name", "tag_effect") if blind.get(k)
-                ],
+                "effects": [str(blind["effect"])] if blind.get("effect") else [],
+                "status": blind.get("status", "UNKNOWN"),
+                "disabled": bh.get("blind_disabled")
+                if key == current and phase == "SELECTING_HAND"
+                else None,
+                "skip_reward": (
+                    {
+                        "label": str(blind["tag_name"]),
+                        "effects": [str(blind["tag_effect"])] if blind.get("tag_effect") else [],
+                    }
+                    if key != "boss" and blind.get("tag_name")
+                    else None
+                ),
             }
         )
     pack_phase = phase in (
@@ -138,6 +163,9 @@ def normalize(raw):
                 {
                     "native_id": c["native_id"],
                     "label": c["label"],
+                    "face_down": c["face_down"],
+                    "rank": c["rank"],
+                    "suit": c["suit"],
                     "kind": kind,
                     "price": 0 if pack_phase else (card.get("cost") or {}).get("buy"),
                     "effects": c["effects"],

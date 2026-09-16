@@ -114,6 +114,14 @@ original meaning. See [exact semantics and validation](docs/campaign-budget-fix.
 
 ## Validation
 
+After installing the locked Python and web dependencies, run
+`scripts/check_offline.py --web` from this checkout (or pass `--root /path/to/checkout`).
+This runs Python tests, lint, diff checks, the frontend build, and browser tests,
+stopping at the first failure. Omit `--web` for Python-only checks. It launches no
+Balatro instance, removes provider API keys from child processes, and does not
+replace native certification. Node LTS and the Playwright browser must already
+be available.
+
 ```bash
 uv --directory /root/dev/balatro-horizons run pytest -q
 uv --directory /root/dev/balatro-horizons run ruff check src tests scripts
@@ -161,3 +169,11 @@ models and verified pricing in **Models & budgets**; credentials stay in the
 backend environment. See [model selection](docs/model-selection.md),
 [focused context](docs/harness-focused-context.md), and
 [cache validation](docs/cache-fix-2026-09-15.md). Presets keep paid calls disabled.
+
+New observations use [public information contract 1.1](docs/public-information-v1.1.md):
+visible playing-card offers retain rank/suit, blind effects and skip rewards are
+separate, owned vouchers and pending tags have native descriptions, and the model
+receives the last observed action's changes with the original selected labels.
+Concealed identities remain masked. This version changes the native extraction
+and implementation fingerprint; offline tests do not replace native installation
+and recertification before deployment.

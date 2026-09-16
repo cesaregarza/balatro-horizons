@@ -1,6 +1,7 @@
 -- Project-owned evaluator instrumentation for the pinned BalatroBot bridge.
 -- No endpoint in this file is exposed directly to playing providers.
 local json = require('json')
+local public = assert(SMODS.load_file('horizons_public.lua'))()
 local token = assert(os.getenv('BH_TOKEN'), 'Missing private bridge token')
 local runtime = assert(os.getenv('BH_RUNTIME'), 'Missing isolated runtime directory')
 local manifest_file=assert(io.open(runtime .. '/environment.lock.json','r'))
@@ -60,7 +61,7 @@ local function extend_area(raw, area)
   for i, card in ipairs(area.cards or {}) do
     local out = raw.cards[i]
     if out then
-      out.label = card.ability and card.ability.name or out.label
+      public.card_label(card, out)
       out.min_targets, out.max_targets = requirements(card)
       out.usable = allowed_use(card)
       out.sellable = card:can_sell_card()
@@ -88,8 +89,9 @@ local function inspect()
     profile_policy='fully_unlocked_v1',headless=BB_SETTINGS.headless,fast=BB_SETTINGS.fast,
     rng=G.GAME.pseudorandom, tags={},deck_composition={}}
   for _, tag in ipairs(G.GAME.tags or {}) do table.insert(state.bh.tags,tag.key) end
+  public.extend(state)
   for _, card in ipairs(G.playing_cards or {}) do
-    local key = tostring(card.base and card.base.suit)..':'..tostring(card.base and card.base.value)
+    local key = public.deck_key(card)
     state.bh.deck_composition[key]=(state.bh.deck_composition[key] or 0)+1
   end
   return state

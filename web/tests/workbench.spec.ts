@@ -54,7 +54,7 @@ test("synthetic run, progressive reveal, escaped annotation, verified branch", a
     page.getByRole("heading", { name: "Branch from this decision" }),
   ).toBeVisible();
   await page.screenshot({
-    path: "/root/dev/balatro-horizons/reports/verification/workbench-review.png",
+    path: test.info().outputPath("workbench-review.png"),
     fullPage: true,
   });
   await page.getByRole("button", { name: "Skip blind", exact: true }).click();
@@ -92,7 +92,7 @@ test("mobile control center remains usable", async ({ page }) => {
     ),
   ).toBe(true);
   await page.screenshot({
-    path: "/root/dev/balatro-horizons/reports/verification/workbench-mobile.png",
+    path: test.info().outputPath("workbench-mobile.png"),
     fullPage: true,
   });
 });

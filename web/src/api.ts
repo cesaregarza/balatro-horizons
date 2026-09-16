@@ -21,8 +21,13 @@ export type Offer = {
   buy_and_use_allowed: boolean;
   min_targets: number;
   max_targets: number;
+  face_down?: boolean;
+  rank?: string | null;
+  suit?: string | null;
 };
+export type PublicEffect = { label: string; effects: string[] };
 export type Observation = {
+  schema_version?: "1.0" | "1.1";
   episode_id: string;
   observation_id: number;
   phase: string;
@@ -43,9 +48,22 @@ export type Observation = {
       target: string;
       skip_allowed: boolean;
       effects: string[];
+      status?:
+        | "SELECT"
+        | "CURRENT"
+        | "UPCOMING"
+        | "DEFEATED"
+        | "SKIPPED"
+        | "UNKNOWN";
+      disabled?: boolean | null;
+      skip_reward?:
+        | (PublicEffect & { acquisition_condition: "skip_this_blind" })
+        | null;
     }[];
     hand_levels: Record<string, string>;
     persistent_effects: string[];
+    owned_vouchers?: PublicEffect[] | null;
+    pending_tags?: PublicEffect[] | null;
   };
 };
 export type Action = Record<string, unknown>;

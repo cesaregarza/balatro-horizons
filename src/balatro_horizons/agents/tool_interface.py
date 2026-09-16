@@ -16,11 +16,14 @@ INSPECT_SECTIONS = (
     "offers",
     "hand_levels",
     "persistent_effects",
+    "owned_vouchers",
+    "pending_tags",
     "public_deck_knowledge",
     "resources",
     "progress",
     "recent_public_events",
     "action_constraints",
+    "last_action",
 )
 ACTION_MODELS = {
     model.model_fields["type"].annotation.__args__[0]: model for model in get_args(Action)
@@ -227,6 +230,7 @@ def decode_tool(name, arguments, *, interface="tools_v2"):
 
 def compact_observation(observation):
     result = deepcopy(observation)
+    result["public_contract_version"] = result["schema_version"]
     # Full canonical observations stay in the journal and inspect_state. Remove
     # bookkeeping from automatic context, not current effects or boss information.
     for key in ("schema_version", "episode_id", "public_state_hash"):
@@ -247,7 +251,7 @@ def inspect_state(operation, observation):
         "sections": {
             section: deepcopy(
                 public[section]
-                if section in ("recent_public_events", "action_constraints")
+                if section in ("recent_public_events", "action_constraints", "last_action")
                 else public["state"][section]
             )
             for section in operation.sections

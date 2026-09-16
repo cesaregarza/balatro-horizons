@@ -198,7 +198,7 @@ def decision_context(
         for section, value in result["sections"].items():
             if section not in INSPECT_SECTIONS:
                 raise ValueError("UNKNOWN_PUBLIC_INSPECTION_SECTION")
-            if section in ("recent_public_events", "action_constraints"):
+            if section in ("recent_public_events", "action_constraints", "last_action"):
                 ctx["observation"][section] = deepcopy(value)
                 references[section] = "observation." + section
             else:

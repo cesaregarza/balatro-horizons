@@ -171,7 +171,7 @@ def focused_helper(operation, events, rules, observation):
         section = operation.section
         value = (
             public[section]
-            if section in ("recent_public_events", "action_constraints")
+            if section in ("recent_public_events", "action_constraints", "last_action")
             else public["state"][section]
         )
         return text_page(

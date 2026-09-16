@@ -248,12 +248,45 @@ export function Board({
         {o.state.revealed_blinds.map((b) => (
           <p key={b.id}>
             <b>{b.label}</b> · {b.target} chips · {b.effects.join(" · ")}
+            {b.status && <small> · {b.status.toLowerCase()}</small>}
+            {b.disabled && <strong> · Effects disabled</strong>}
+            {b.skip_reward && (
+              <span>
+                <br />
+                Offered on skip: <b>{b.skip_reward.label}</b> ·{" "}
+                {b.skip_reward.effects.join(" · ")}
+              </span>
+            )}
           </p>
         ))}
-        <p>
-          {o.state.persistent_effects.join(" · ") ||
-            "No persistent effects recorded."}
-        </p>
+        {(["owned_vouchers", "pending_tags"] as const).map((area) =>
+          o.state[area] != null ? (
+            <section
+              key={area}
+              aria-label={
+                area === "owned_vouchers" ? "Owned vouchers" : "Pending tags"
+              }
+            >
+              <h4>
+                {area === "owned_vouchers" ? "Owned vouchers" : "Pending tags"}
+              </h4>
+              {o.state[area]!.map((effect, index) => (
+                <p key={index}>
+                  <b>{effect.label}</b> · {effect.effects.join(" · ")}
+                </p>
+              ))}
+              {!o.state[area]!.length && <p className="muted">None</p>}
+            </section>
+          ) : null,
+        )}
+        {!!o.state.persistent_effects.length && (
+          <p>{o.state.persistent_effects.join(" · ")}</p>
+        )}
+        {o.state.owned_vouchers == null &&
+          o.state.pending_tags == null &&
+          !o.state.persistent_effects.length && (
+            <p>No persistent effects recorded.</p>
+          )}
       </details>
       <details>
         <summary>Hand levels</summary>

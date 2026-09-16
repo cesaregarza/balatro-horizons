@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 
 class StrictModel(BaseModel):
@@ -32,6 +32,15 @@ class PublicCard(StrictModel):
     max_targets: int = 0
 
 
+class PublicEffect(StrictModel):
+    label: str
+    effects: list[str] = Field(default_factory=list)
+
+
+class SkipReward(PublicEffect):
+    acquisition_condition: Literal["skip_this_blind"] = "skip_this_blind"
+
+
 class PublicBlind(StrictModel):
     id: str
     label: str
@@ -39,6 +48,9 @@ class PublicBlind(StrictModel):
     target: str
     skip_allowed: bool = False
     effects: list[str] = Field(default_factory=list)
+    status: Literal["SELECT", "CURRENT", "UPCOMING", "DEFEATED", "SKIPPED", "UNKNOWN"] = "UNKNOWN"
+    skip_reward: SkipReward | None = None
+    disabled: bool | None = None
 
 
 class PublicOffer(StrictModel):
@@ -51,6 +63,9 @@ class PublicOffer(StrictModel):
     min_targets: int = 0
     max_targets: int = 0
     effects: list[str] = Field(default_factory=list)
+    face_down: bool = False
+    rank: str | None = None
+    suit: str | None = None
 
 
 class Progress(StrictModel):
@@ -93,6 +108,32 @@ class PublicState(StrictModel):
     public_deck_knowledge: DeckKnowledge
     hand_levels: dict[str, str] = Field(default_factory=dict)
     persistent_effects: list[str] = Field(default_factory=list)
+    owned_vouchers: list[PublicEffect] | None = None
+    pending_tags: list[PublicEffect] | None = None
+
+
+class PublicObjectReference(StrictModel):
+    area: str
+    id: str
+    label: str
+
+
+class PublicFieldChange(StrictModel):
+    path: list[str]
+    before: JsonValue
+    after: JsonValue
+
+
+class LastAction(StrictModel):
+    version: Literal["public_delta_v1"] = "public_delta_v1"
+    source: Literal["observed_public_states"] = "observed_public_states"
+    from_observation_id: int
+    to_observation_id: int
+    action_type: str
+    selected_objects: list[PublicObjectReference]
+    added_objects: list[PublicObjectReference]
+    removed_objects: list[PublicObjectReference]
+    changes: list[PublicFieldChange]
 
 
 class RecentPublicEvent(StrictModel):
@@ -108,7 +149,7 @@ class RemainingBudget(StrictModel):
 
 
 class Observation(StrictModel):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.0"
     episode_id: str
     observation_id: int
     public_state_hash: str
@@ -120,6 +161,7 @@ class Observation(StrictModel):
     recent_public_events: list[RecentPublicEvent]
     memory: str
     remaining_budget: RemainingBudget
+    last_action: LastAction | None = None
 
 
 class SelectBlind(StrictModel):

@@ -19,6 +19,7 @@ from balatro_horizons.agents.skills import prepare_rules, read_guide, restore_kn
 from balatro_horizons.contracts import Observation, RecentPublicEvent, RemainingBudget
 from balatro_horizons.engine.native import NativeFailure, NativeRejected
 from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
+from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 from balatro_horizons.storage.journal import digest
 
@@ -278,6 +279,7 @@ class Runner:
             self.limits.max_batch_cost_usd,
         )
         cost_context = None
+        previous_action = None
         start = 0
         self.prior_cost = 0.0
         if resume:
@@ -327,6 +329,9 @@ class Runner:
                             provider_calls=self.limits.max_provider_calls - self.calls,
                         ),
                     )
+                if previous_action is not None:
+                    previous, action = previous_action
+                    self.observation.last_action = last_action(previous, self.observation, action)
                 obs_event = self.log(
                     "observation", self.observation.model_dump(mode="json"), observation_id=decision
                 )
@@ -387,6 +392,7 @@ class Runner:
                     outcome, reason = "INVALID_EVALUATION", "NATIVE_PUBLIC_LEGALITY_MISMATCH"
                     break
                 self.committed += 1
+                previous_action = (self.observation, envelope.action)
                 commit = self.log(
                     "action_commit",
                     envelope.model_dump(mode="json"),

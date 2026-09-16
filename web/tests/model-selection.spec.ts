@@ -254,7 +254,7 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
       .getByRole("heading", { name: "Start a run", exact: true })
       .locator("..")
       .screenshot({
-        path: "/root/dev/balatro-horizons/reports/verification/model-picker-mobile.png",
+        path: test.info().outputPath("model-picker-mobile.png"),
       });
     expect(
       await page.evaluate(
@@ -267,7 +267,7 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
       .getByRole("heading", { name: "Start a run", exact: true })
       .locator("..")
       .screenshot({
-        path: "/root/dev/balatro-horizons/reports/verification/model-picker-desktop.png",
+        path: test.info().outputPath("model-picker-desktop.png"),
       });
   } finally {
     await putSettings({
