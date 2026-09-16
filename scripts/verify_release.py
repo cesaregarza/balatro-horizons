@@ -181,6 +181,7 @@ def main():
     result["collection_started_with_implementation_hash"] = source
     result["implementation_hash"] = implementation_fingerprint()
     atomic_json(ROOT / "reports/verification/native-release.json", result)
+    command("verify_settlement_evidence.py")
     print(
         json.dumps({"native_release_evidence": True, "branch": child, "parent": gold}), flush=True
     )

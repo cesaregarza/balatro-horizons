@@ -1,8 +1,8 @@
 # Harness reliability changes
 
-Prepared from merged `main` (`0d0872a`) in an isolated Linux worktree. The serving
-checkout and its running process are unchanged. Native activation and direct
-provider compatibility remain unverified for this candidate.
+Implemented from merged `main` (`0d0872a`) in an isolated Linux worktree. Native
+verification passed on 2026-09-16 before deployment. Direct provider compatibility
+remains a separate, unverified gate.
 
 ## Input admission and diagnostics
 
@@ -68,11 +68,11 @@ existing percentile interval is retained and a collapsed interval is not certain
 
 ## Validation and activation
 
-Final offline gate: **312 passed, 9 native gates skipped**; Ruff and Git whitespace
+Initial offline gate: **312 passed, 9 native gates skipped**; Ruff and Git whitespace
 checks passed. Prompt freshness and added-line credential scans passed. The test
 environment uses the locked dependencies and Python 3.12.10. Two existing
 FastAPI/Starlette dependency deprecation warnings remain. No Balatro process was
-launched and no paid generation request was made for this candidate.
+launched during those offline checks and no paid generation request was made.
 
 Tests cover both providers' large helper continuations, original item ordering
 and call IDs, invalid/excessive counts without generation, byte/cost independence,
@@ -91,8 +91,49 @@ it neither launches the game nor counts tokens through a live API.
 
 The new GitHub Actions workflow runs locked Python 3.12.10 dependencies and the
 same offline script. Hosted CI has not run until the candidate is published.
-Native verification must check settlement values and row visibility through the
-whole path, preserve action transitions, and recertify the new implementation and
-runtime. Live counting with real encrypted continuations remains a separate gate.
-No native fidelity, checkpoint expansion, headless equivalence, or model-performance
-improvement is claimed from these offline tests.
+
+## Native verification, 2026-09-16
+
+One consolidated unpaid suite passed without a repeated collection or a runtime
+fix. It used 22 game launches across collection, three-pass replay and direct-save
+proofs, and branch verification. A separate web-worker startup check is part of
+deployment. These are calibration and assisted diagnostics, excluded from model
+performance scores.
+
+The final local CI check passed **324 tests with no skips**, including the nine
+evidence gates that previously lacked native artifacts. Ruff and Git whitespace
+checks passed; the same two dependency deprecation warnings remain.
+
+- Red/White and Red/Gold profiles matched across two fresh processes each.
+- Full action coverage, invalid-action isolation, native win/loss detection,
+  ordering, duplicate requests, and both acknowledgment-loss outcomes passed.
+- Three complete action-fixture replays certified recorded blind-selection,
+  cash-out, shop and multi-choice-pack boundaries. Three Gold replays additionally
+  certified the recorded hand-selection boundaries.
+- Direct saves passed three fresh-process checks at the Gold run's initial
+  blind-selection checkpoint only. Other boundaries retain their separate
+  seed-prefix proof; arbitrary direct-save restoration is not certified.
+- A separate override branch finished with its parent journal unchanged.
+- `verify_settlement_evidence.py` checked three committed cash-outs: two with an
+  interest row and one with no interest row. Public rows matched the native
+  capture, displayed totals matched balance increases, and settlements were
+  absent in 66 observations from other phases. Hidden overflow-row exclusion is
+  covered by the Lua unit test, not a newly claimed native overflow fixture.
+
+The release collector now runs this settlement check, and activation refuses a
+missing or stale settlement artifact. The check reads existing hash-checked
+journals and snapshots, requires matching implementation/environment provenance,
+and launches no additional games. Regression tests reject changed public rows
+and incorrect post-cash-out balances.
+
+Native implementation fingerprint:
+`1e1d4636586644bc240465e37214568a5a5cb5ee2adf241446c7578a4465a3fd`.
+Runtime environment fingerprint:
+`03ffd235312449ae6c2a74d9d33093d3fd0f6b4691ab13c34371fe9f93166dd3`.
+Private local evidence lives in `reports/verification/native-release.json`,
+`native-settlement.json`, and `native-evidence.json`; the active gate is
+`private/capability-certificate.json`.
+
+No paid provider calls were made. Live counting with real encrypted continuations,
+live Anthropic compatibility, headless equivalence and model-performance improvement
+remain unverified. Native verification does not establish any of those properties.
