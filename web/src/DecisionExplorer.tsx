@@ -12,6 +12,7 @@ import {
 } from "./decisionPresentation";
 import "./decisions.css";
 import { modelLabel } from "./modelSelection";
+import { downloadDecisions, type DecisionExportFormat } from "./decisionExport";
 
 export function DecisionExplorer({
   token,
@@ -27,6 +28,7 @@ export function DecisionExplorer({
   const [view, setView] = useState<View | null>(null);
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
+  const [exportError, setExportError] = useState("");
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -182,6 +184,16 @@ export function DecisionExplorer({
     }
   }
 
+  function exportDecisions(format: DecisionExportFormat) {
+    if (!ledger) return;
+    setExportError("");
+    try {
+      downloadDecisions(ledger, format);
+    } catch {
+      setExportError("Could not create the download. Try again.");
+    }
+  }
+
   return (
     <div className={`decision-explorer ${mobileDetail ? "detail-open" : ""}`}>
       <div className="review-top">
@@ -197,6 +209,27 @@ export function DecisionExplorer({
         Browse recorded choices and outcomes, including new decisions during a
         run. Opening this view records retrospective exposure.
       </p>
+      <div className="actions" aria-label="Decision exports">
+        <button
+          disabled={!ledger || !rows.length}
+          onClick={() => exportDecisions("jsonl")}
+        >
+          Export JSONL
+        </button>
+        <button disabled={!ledger} onClick={() => exportDecisions("json")}>
+          Export JSON
+        </button>
+      </div>
+      <p className="muted">
+        Download all loaded decision summaries, including choices, notes and
+        recorded changes. JSONL has one decision per line. Filters do not limit
+        the export; a running episode is labeled as a partial snapshot.
+      </p>
+      {exportError && (
+        <p className="error" role="alert">
+          {exportError}
+        </p>
+      )}
       <div className="actions explorer-live-controls">
         <label className="check">
           <input

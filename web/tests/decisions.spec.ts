@@ -1,4 +1,20 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+
+async function exported(page: Page, format: "json" | "jsonl") {
+  const download = page.waitForEvent("download");
+  await page
+    .getByRole("button", {
+      name: `Export ${format.toUpperCase()}`,
+      exact: true,
+    })
+    .click();
+  const file = await download;
+  return {
+    filename: file.suggestedFilename(),
+    content: await readFile((await file.path())!, "utf8"),
+  };
+}
 
 async function fixture(page: Page) {
   const { operator_token } = await (
@@ -49,6 +65,25 @@ test("explorer filters choices, jumps both ways, and opens retrospective annotat
   await expect(
     detail.getByRole("heading", { name: "Buy Test Joker", exact: true }),
   ).toBeVisible();
+  // The visible filter narrows to one choice; downloads still contain the run.
+  const writes: string[] = [];
+  const observe = (request: import("@playwright/test").Request) => {
+    if (request.url().includes("/api/") && request.method() !== "GET")
+      writes.push(request.url());
+  };
+  page.on("request", observe);
+  const jsonl = await exported(page, "jsonl");
+  const lines = jsonl.content
+    .trimEnd()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(jsonl.filename).toBe(`balatro-${eid}-decisions.jsonl`);
+  expect(lines.map((line) => line.decision)).toEqual([0, 1, 2, 3, 4]);
+  expect(lines.every((line) => line.snapshot_status === "finished")).toBe(true);
+  const json = JSON.parse((await exported(page, "json")).content);
+  expect(json.decisions).toHaveLength(5);
+  expect(writes).toEqual([]);
+  page.off("request", observe);
   await expect(
     detail.getByRole("button", { name: "After decision", exact: true }),
   ).toBeEnabled();
@@ -171,6 +206,12 @@ test("live explorer appends decisions, preserves the selected board, retries and
   const list = page.getByRole("region", { name: "Recorded choices" });
   const detail = page.getByRole("region", { name: "Decision details" });
   await expect(list.locator("button")).toHaveCount(1);
+  const partial = await exported(page, "jsonl");
+  expect(partial.filename).toContain("-partial.jsonl");
+  const line = JSON.parse(partial.content);
+  expect(line.snapshot_status).toBe("in_progress");
+  expect(line.run_summary).toBe(null);
+  expect(line.source_journal_head).toBe("live-1-false");
   await expect(
     page.getByText("Live · updates every 2 seconds", { exact: true }),
   ).toBeVisible();

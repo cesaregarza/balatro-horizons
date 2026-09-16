@@ -32,6 +32,60 @@ and a small verification result under `reports/verification/native-explorer*`.
 
 ## Saved reports
 
+In **Runs → Explore decisions**, use **Export JSONL** or **Export JSON**.
+The browser downloads the existing server-projected, privacy-scanned ledger;
+clicking Export makes no network request and does not control the game, update
+settings, or move a review cursor. Opening the explorer retains its normal
+retrospective exposure recording. The feature requires only a frontend update,
+not a backend or game restart.
+
+JSON has run metadata and a `decisions` array. JSONL has one object per represented
+decision, with metadata repeated so each line can be interpreted independently.
+Each decision contains separate `committed_actions` and `uncommitted_requests`
+arrays; rejected or unresolved attempts at the same decision stay on the same
+line. Raw decision IDs are preserved, including nonzero branch starting IDs.
+The download includes all loaded ledger rows, regardless of active filters.
+
+The version-1 `decision_summaries` format includes labels and selections, model
+notes, observed scoring/resource/build changes, public run/model identity,
+terminal summary when present, and the verified source journal head. It is a
+decision-summary export, not a full observation/provider transcript. Full board
+states, exact action envelopes, helper-only turns, provider prompts/outputs,
+opaque continuations, memory, annotations and private state are omitted. These
+limits are recorded in each export. Model-authored strings are JSON-escaped and
+remain data when downloaded.
+The journal head is a provenance reference, not a self-contained hash chain for
+the transformed download.
+
+An unfinished episode gets `snapshot_status: "in_progress"` and a `-partial`
+filename; it cannot acquire a terminal outcome from a later refresh. Pending
+transitions retain their recorded status. A completed episode gets `finished`.
+JSON can also represent an empty decision ledger; JSONL is disabled until a
+decision is available. Finished exports include the entire recorded decision
+ledger; a running export contains the snapshot currently loaded in the browser.
+
+Focused checks cover both downloaded formats, filter independence, partial
+snapshots, multiple attempts per decision, private-field omission, escaped notes,
+and absence of API mutations during export. Existing phone and live-update
+checks use an isolated backend and synthetic fixtures, never the running game.
+The production build and all six focused browser/export checks passed, as did
+three frontend-publisher regression cases.
+
+Frontend-only updates can be published without restarting an active worker:
+
+```sh
+.venv/bin/python scripts/deploy_frontend.py \
+  --build /tmp/completed-vite-build \
+  --dist /root/dev/balatro-horizons/web/dist \
+  --backup /tmp/previous-workbench-index.html
+```
+
+Use a fresh backup filename. The helper checks referenced assets, rejects
+conflicting existing assets, preserves old assets for open tabs, copies the
+previous index, and replaces the served index atomically after copying the new
+bundle. It never controls the service or game. This automates the recurring
+frontend-only publish procedure.
+
 Generate an ante-grouped Markdown ledger and structured JSON from one recorded run:
 
 ```sh
