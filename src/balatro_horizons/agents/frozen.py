@@ -4,7 +4,7 @@ import hashlib
 import json
 from copy import deepcopy
 
-from balatro_horizons.config import ROOT
+from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, ROOT
 from balatro_horizons.engine.provenance import implementation_fingerprint
 from balatro_horizons.storage.journal import digest
 
@@ -55,7 +55,7 @@ def freeze_protocol(config, policy, rules):
         "skills_preset": config.skills,
         "memory_policy": {
             "across_actions": "explicit_memory_only",
-            "recent_public_events": 20,
+            "recent_public_events": RECENT_PUBLIC_EVENT_LIMIT,
             "retained_results": RETAINED_RESULTS if interface in FOCUSED_INTERFACES else None,
             "page_bytes": PAGE_BYTES if interface in FOCUSED_INTERFACES else None,
             "provider_continuation": "within_decision_only" if interface == "tools_v5" else "none",

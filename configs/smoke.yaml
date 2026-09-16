@@ -1,21 +1,3 @@
-benchmark:
-  name: balatro-horizons
-  protocol_version: "0.1"
-  track: structured-core
-  objective: native_run_win
-  target_ante: 8
+# Inherit config.py defaults; White Stake is the native plumbing override.
 environment:
-  adapter: balatrobot
-  deck: RED
   stake: WHITE
-  unlock_profile: dedicated_fully_unlocked
-  resolved_manifest: private/environment.lock.json
-  require_live_certification: true
-budgets:
-  max_game_actions: 1500
-  max_provider_calls: 2000
-  max_consecutive_invalid_actions: 3
-  paid_calls_enabled: false
-execution:
-  workers: 1
-

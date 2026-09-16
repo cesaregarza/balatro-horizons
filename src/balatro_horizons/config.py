@@ -1,4 +1,9 @@
-"""Operator configuration. Never pass it wholesale to a playing policy."""
+"""Shared harness defaults and validated operator overrides.
+
+Edit defaults here, then restart with matching certification. Episode YAML and
+saved operator settings override model defaults; existing runs freeze their
+resolved configuration. Never pass the whole operator config to a player.
+"""
 
 import math
 from datetime import date
@@ -10,6 +15,36 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# Context accounting (bytes) and model allowance (tokens) have different units.
+# Historical behavior is preserved: the runner still uses the input-token
+# allowance as its byte ceiling. Separating those controls is a pending fix.
+DEFAULT_INPUT_TOKEN_LIMIT = 32_768
+CONTEXT_FRAMING_BYTES = 4_096
+CONTEXT_SETTINGS_BYTES = 1_024
+
+# Public context and retrieval. These are protocol defaults, not game mechanics.
+RECENT_PUBLIC_EVENT_LIMIT = 20
+AUTOMATIC_PUBLIC_EVENT_COUNT = 2
+EVENT_SUMMARY_CHARACTERS = 240
+HELPER_PAGE_BYTES = 2_048
+RETAINED_HELPER_RESULTS = 3
+DEFAULT_GUIDE_PAGE_BYTES = 4_096
+LEGACY_GUIDE_PAGE_SIZES = (DEFAULT_GUIDE_PAGE_BYTES, 2_048, 1_024, 512, 256, 128)
+DEFAULT_HISTORY_PAGE_EVENTS = 10
+MAX_HISTORY_PAGE_EVENTS = 20
+SKILL_DESCRIPTION_PREVIEW_CHARACTERS = 160
+ALWAYS_LOADED_MAX_BYTES = 1_024
+
+# Agent-authored fields: keep tool schemas and action validation in agreement.
+MAX_MEMORY_CHARACTERS = 4_096
+MAX_DECISION_NOTE_CHARACTERS = 512
+MAX_ARITHMETIC_CHARACTERS = 256
+MAX_ABORT_REASON_CHARACTERS = 256
+MAX_ARITHMETIC_NODES = 64
+
+# Provider transport is independent of the Windows game bridge's timeout below.
+PROVIDER_TIMEOUT_SECONDS = 90
+
 
 class Options(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
@@ -19,11 +54,13 @@ class Limits(Options):
     max_game_actions: int = Field(default=1500, ge=1)
     max_provider_calls: int = Field(default=2000, ge=1)
     max_helper_calls_per_decision: int = Field(default=8, ge=0)
-    max_input_tokens_per_call: int = Field(default=32768, ge=128)
+    max_input_tokens_per_call: int = Field(default=DEFAULT_INPUT_TOKEN_LIMIT, ge=128)
     max_output_tokens_per_call: int = Field(default=8192, ge=64)
     max_consecutive_invalid_actions: int = Field(default=3, ge=1)
     max_transport_attempts: int = Field(default=3, ge=1, le=3)
-    memory_max_characters: int = Field(default=4096, ge=0, le=4096)
+    memory_max_characters: int = Field(
+        default=MAX_MEMORY_CHARACTERS, ge=0, le=MAX_MEMORY_CHARACTERS
+    )
     paid_calls_enabled: bool = False
     max_episode_cost_usd: float | None = Field(default=None, gt=0)
     max_batch_cost_usd: float | None = Field(default=None, gt=0)

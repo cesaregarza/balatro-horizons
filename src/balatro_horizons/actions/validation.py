@@ -2,6 +2,7 @@
 
 from decimal import Decimal, InvalidOperation
 
+from balatro_horizons.config import MAX_DECISION_NOTE_CHARACTERS, MAX_MEMORY_CHARACTERS
 from balatro_horizons.contracts import (
     ActionEnvelope,
     Buy,
@@ -46,7 +47,9 @@ def targets(ids, hand, obj):
         raise InvalidAction("INVALID_TARGET_COUNT")
 
 
-def validate_action(envelope: ActionEnvelope, observation: Observation, *, memory_limit=4096):
+def validate_action(
+    envelope: ActionEnvelope, observation: Observation, *, memory_limit=MAX_MEMORY_CHARACTERS
+):
     if envelope.observation_id != observation.observation_id:
         raise InvalidAction("STALE_OBSERVATION")
     action = envelope.action
@@ -54,7 +57,10 @@ def validate_action(envelope: ActionEnvelope, observation: Observation, *, memor
         raise InvalidAction("ACTION_NOT_AVAILABLE")
     if envelope.memory_update is not None and len(envelope.memory_update) > memory_limit:
         raise InvalidAction("MEMORY_TOO_LARGE")
-    if envelope.decision_note is not None and len(envelope.decision_note) > 512:
+    if (
+        envelope.decision_note is not None
+        and len(envelope.decision_note) > MAX_DECISION_NOTE_CHARACTERS
+    ):
         raise InvalidAction("DECISION_NOTE_TOO_LARGE")
     state = observation.state
     hand = [c.id for c in state.hand]

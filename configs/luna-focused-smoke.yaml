@@ -1,16 +1,9 @@
 # Native plumbing test; opt in with scripts/smoke_openai.py --allow-paid.
 # Official standard prices verified 2026-09-14. No prompt caching or fast tier.
+# Shared limits and disabled paid execution are inherited from config.py.
 environment:
-  deck: RED
   stake: WHITE
 budgets:
-  max_game_actions: 1500
-  max_provider_calls: 2000
-  max_helper_calls_per_decision: 8
-  max_input_tokens_per_call: 32768
-  max_output_tokens_per_call: 8192
-  max_consecutive_invalid_actions: 3
-  paid_calls_enabled: false
   max_episode_cost_usd: 1
   max_batch_cost_usd: 5
 models:

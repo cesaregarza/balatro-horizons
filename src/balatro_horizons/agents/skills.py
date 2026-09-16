@@ -7,7 +7,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from balatro_horizons.config import ROOT
+from balatro_horizons.config import (
+    DEFAULT_GUIDE_PAGE_BYTES,
+    ROOT,
+    SKILL_DESCRIPTION_PREVIEW_CHARACTERS,
+)
 from balatro_horizons.storage.journal import digest
 
 
@@ -88,8 +92,8 @@ def discovery(skills, interface, *, descriptions=True):
     )
     if interface in ("tools_v3", "tools_v4", "tools_v5"):
         rows = "\n".join(
-            f"- {item['name']}: {item['description'][:160]}"
-            + ("…" if len(item["description"]) > 160 else "")
+            f"- {item['name']}: {item['description'][:SKILL_DESCRIPTION_PREVIEW_CHARACTERS]}"
+            + ("…" if len(item["description"]) > SKILL_DESCRIPTION_PREVIEW_CHARACTERS else "")
             for item in skills
         )
         return (
@@ -127,7 +131,7 @@ def restore_knowledge(store, checkpoint):
     return rules
 
 
-def read_guide(rules, requested_key, max_bytes=4096):
+def read_guide(rules, requested_key, max_bytes=DEFAULT_GUIDE_PAGE_BYTES):
     """Return an explicit page of one immutable entry; continuation keys are public."""
     key, separator, offset_text = requested_key.partition("#offset=")
     if separator and not re.fullmatch(r"[0-9]{1,7}", offset_text):

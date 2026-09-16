@@ -9,10 +9,15 @@ from balatro_horizons.agents.tool_interface import (
     compact_observation,
     tool,
 )
+from balatro_horizons.config import (
+    CONTEXT_FRAMING_BYTES,
+    CONTEXT_SETTINGS_BYTES,
+    EVENT_SUMMARY_CHARACTERS,
+)
+from balatro_horizons.config import HELPER_PAGE_BYTES as PAGE_BYTES
+from balatro_horizons.config import RETAINED_HELPER_RESULTS as RETAINED_RESULTS
 
 VERSION = "tools_v3"
-PAGE_BYTES = 2048
-RETAINED_RESULTS = 3
 CARD_DEFAULTS = {
     "face_down": False,
     "rank": None,
@@ -69,8 +74,8 @@ def focused_observation(observation):
         state.pop("hand_levels")
         view["presentation"]["deferred_sections"].append("hand_levels")
     for event in view["recent_public_events"]:
-        if len(event["summary"]) > 240:
-            event["summary"] = event["summary"][:240]
+        if len(event["summary"]) > EVENT_SUMMARY_CHARACTERS:
+            event["summary"] = event["summary"][:EVENT_SUMMARY_CHARACTERS]
             event["truncated"] = True
     return view, omitted
 
@@ -240,7 +245,7 @@ def focused_helper(operation, events, rules, observation):
 
 def context_bound(ctx, exchanges):
     # Measure actual provider message/schema serialization, including escaping.
-    # 1024 bytes cover fixed model/settings fields; the provider checks the final
+    # Settings padding covers fixed model/settings fields; the provider checks the final
     # configured body too. Taking the max keeps pruning shared across providers.
     from balatro_horizons.agents.providers import context_payload
 
@@ -256,8 +261,8 @@ def context_bound(ctx, exchanges):
             )
             for provider in ("openai", "anthropic")
         )
-        + 4096
-        + 1024
+        + CONTEXT_FRAMING_BYTES
+        + CONTEXT_SETTINGS_BYTES
     )
 
 

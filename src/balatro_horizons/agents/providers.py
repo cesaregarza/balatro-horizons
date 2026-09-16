@@ -14,6 +14,7 @@ from balatro_horizons.agents.tool_interface import (
     NAMED_INTERFACES,
     decode_tool,
 )
+from balatro_horizons.config import CONTEXT_FRAMING_BYTES, PROVIDER_TIMEOUT_SECONDS
 
 
 class ProviderFailure(RuntimeError):
@@ -230,7 +231,7 @@ class DirectProvider:
 
     def __init__(self, model, limits, client=None):
         self.model, self.limits = model.model_copy(deep=True), limits.model_copy(deep=True)
-        self.client = client or httpx.Client(timeout=90, trust_env=False)
+        self.client = client or httpx.Client(timeout=PROVIDER_TIMEOUT_SECONDS, trust_env=False)
         self.key_name = "OPENAI_API_KEY" if model.provider == "openai" else "ANTHROPIC_API_KEY"
         self.last_request = None
         self.last_response = None
@@ -260,7 +261,9 @@ class DirectProvider:
 
     def request(self, ctx, exchanges):
         settings = self.model.settings
-        definitions = ctx["tools"] if self.interface in NAMED_INTERFACES else [ctx.get("tool", TOOL)]
+        definitions = (
+            ctx["tools"] if self.interface in NAMED_INTERFACES else [ctx.get("tool", TOOL)]
+        )
         payload = context_payload(ctx, exchanges, self.model.provider, self.interface)
         self.available_tools = (
             set(ctx["allowed_tools"])
@@ -329,7 +332,7 @@ class DirectProvider:
         if "temperature" in settings:
             body["temperature"] = settings["temperature"]
         if (
-            len(json.dumps(body, ensure_ascii=False).encode()) + 4096
+            len(json.dumps(body, ensure_ascii=False).encode()) + CONTEXT_FRAMING_BYTES
             > self.limits.max_input_tokens_per_call
         ):
             raise ProviderFailure("REQUIRED_CONTEXT_EXCEEDS_LIMIT")

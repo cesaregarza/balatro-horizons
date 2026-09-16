@@ -20,7 +20,16 @@ from balatro_horizons.agents.tool_interface import (
     stable_tools,
     tools_for,
 )
-from balatro_horizons.config import ROOT
+from balatro_horizons.config import (
+    CONTEXT_FRAMING_BYTES,
+    DEFAULT_HISTORY_PAGE_EVENTS,
+    DEFAULT_INPUT_TOKEN_LIMIT,
+    MAX_ABORT_REASON_CHARACTERS,
+    MAX_ARITHMETIC_CHARACTERS,
+    MAX_ARITHMETIC_NODES,
+    MAX_HISTORY_PAGE_EVENTS,
+    ROOT,
+)
 from balatro_horizons.contracts import ActionEnvelope, StrictModel
 
 
@@ -42,17 +51,17 @@ class Skill(StrictModel):
 class History(StrictModel):
     kind: Literal["history"]
     offset: int = Field(ge=0)
-    limit: int = Field(default=10, ge=1, le=20)
+    limit: int = Field(default=DEFAULT_HISTORY_PAGE_EVENTS, ge=1, le=MAX_HISTORY_PAGE_EVENTS)
 
 
 class Arithmetic(StrictModel):
     kind: Literal["arithmetic"]
-    expression: str = Field(max_length=256)
+    expression: str = Field(max_length=MAX_ARITHMETIC_CHARACTERS)
 
 
 class Abort(StrictModel):
     kind: Literal["abort"]
-    reason: str = Field(max_length=256)
+    reason: str = Field(max_length=MAX_ABORT_REASON_CHARACTERS)
 
 
 class Inspect(StrictModel):
@@ -103,7 +112,7 @@ KERNEL = "The objective is the ordinary Ante 8 native run win. Hand scores resol
 def context(
     observation,
     *,
-    byte_limit=32768,
+    byte_limit=DEFAULT_INPUT_TOKEN_LIMIT,
     interface="operate_v1",
     skills=(),
     skill_descriptions=True,
@@ -171,7 +180,7 @@ def context(
                 result["observation"]["presentation"]["version"] = interface
             return working_context(result, [], byte_limit)[0]
     # UTF-8 bytes plus conservative framing allowance is an upper bound on text tokens.
-    while len(json.dumps(result, ensure_ascii=False).encode()) + 4096 > byte_limit:
+    while len(json.dumps(result, ensure_ascii=False).encode()) + CONTEXT_FRAMING_BYTES > byte_limit:
         events = observation["recent_public_events"]
         if not events:
             raise ValueError("REQUIRED_CONTEXT_EXCEEDS_LIMIT")
@@ -180,7 +189,13 @@ def context(
 
 
 def decision_context(
-    observation, exchanges, *, byte_limit=32768, interface="operate_v1", skills=(), frozen=None
+    observation,
+    exchanges,
+    *,
+    byte_limit=DEFAULT_INPUT_TOKEN_LIMIT,
+    interface="operate_v1",
+    skills=(),
+    frozen=None,
 ):
     """Place retrieved current-state sections once, preserving every value read."""
     ctx = context(
@@ -247,7 +262,7 @@ def decision_context(
 
 def arithmetic(expression):
     tree = ast.parse(expression, mode="eval")
-    if len(list(ast.walk(tree))) > 64:
+    if len(list(ast.walk(tree))) > MAX_ARITHMETIC_NODES:
         raise ValueError("EXPRESSION_TOO_COMPLEX")
     ops = {
         ast.Add: operator.add,
