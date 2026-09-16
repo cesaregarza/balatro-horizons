@@ -32,7 +32,7 @@ export default function App() {
     [preset, setPreset] = useState("pilot"),
     [seed, setSeed] = useState("");
   const [effort, setEffort] = useState("medium"),
-    [runHarness, setRunHarness] = useState("tools_v4");
+    [runHarness, setRunHarness] = useState("tools_v5");
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
@@ -56,7 +56,7 @@ export default function App() {
     ]);
   const [priorSeedExposure, setPriorSeedExposure] = useState(false);
   const [modelSettings, setModelSettings] = useState("{}");
-  const [harnessInterface, setHarnessInterface] = useState("tools_v4");
+  const [harnessInterface, setHarnessInterface] = useState("tools_v5");
   const [provider, setProvider] = useState("openai"),
     [model, setModel] = useState("");
   const [inputRate, setInputRate] = useState(""),
@@ -746,7 +746,9 @@ export default function App() {
                     />
                   </label>
                 </div>
-                {provider === "openai" && harnessInterface === "tools_v4" && (
+                {provider === "openai" &&
+                  (harnessInterface === "tools_v4" ||
+                    harnessInterface === "tools_v5") && (
                   <div className="field-grid">
                     <label>
                       Cache read $ / million tokens
@@ -794,6 +796,9 @@ export default function App() {
                     value={harnessInterface}
                     onChange={(e) => setHarnessInterface(e.target.value)}
                   >
+                    <option value="tools_v5">
+                      Focused context with provider continuation
+                    </option>
                     <option value="tools_v4">
                       Focused context with reusable cache prefix
                     </option>
@@ -831,7 +836,8 @@ export default function App() {
                     inputRate === "" ||
                     outputRate === "" ||
                     (provider === "openai" &&
-                      harnessInterface === "tools_v4" &&
+                      (harnessInterface === "tools_v4" ||
+                        harnessInterface === "tools_v5") &&
                       (cachedRate === "" || writeRate === ""))
                   }
                   onClick={() =>
@@ -849,7 +855,8 @@ export default function App() {
                           input_usd_per_million: +inputRate,
                           output_usd_per_million: +outputRate,
                           ...(provider === "openai" &&
-                          harnessInterface === "tools_v4"
+                          (harnessInterface === "tools_v4" ||
+                            harnessInterface === "tools_v5")
                             ? {
                                 cached_input_usd_per_million: +cachedRate,
                                 cache_write_input_usd_per_million: +writeRate,
@@ -885,8 +892,10 @@ export default function App() {
                   <p key={name}>
                     <b>{modelLabel(value)}</b>
                     {" · "}
-                    {value.settings?.harness_interface === "tools_v4"
-                      ? "Focused context · reusable cache prefix"
+                    {value.settings?.harness_interface === "tools_v5"
+                      ? "Focused context · provider continuation"
+                      : value.settings?.harness_interface === "tools_v4"
+                        ? "Focused context · reusable cache prefix"
                       : value.settings?.harness_interface === "tools_v3"
                         ? "Focused context"
                         : value.settings?.harness_interface === "tools_v2"

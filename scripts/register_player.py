@@ -38,7 +38,9 @@ def main():
     )
     parser.add_argument("--cached-input-rate", type=float)
     parser.add_argument("--cache-write-rate", type=float)
-    parser.add_argument("--interface", choices=["operate_v1", "tools_v2", "tools_v3", "tools_v4"])
+    parser.add_argument(
+        "--interface", choices=["operate_v1", "tools_v2", "tools_v3", "tools_v4", "tools_v5"]
+    )
     parser.add_argument("--pricing-date", required=True)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()

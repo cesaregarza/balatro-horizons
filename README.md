@@ -112,6 +112,14 @@ batch cannot resume it, even with a cheaper or scripted agent next. Reports and
 public exports include `scheduling_stop`; old generic cost stops retain their
 original meaning. See [exact semantics and validation](docs/campaign-budget-fix.md).
 
+The `tools_v5` harness preserves provider-native reasoning and tool-call blocks
+across helper calls within one decision, then deliberately resets provider state
+after the game action. It gives OpenAI and Anthropic the same fixed tool catalog
+and locally enforces phase availability. New traces distinguish missing,
+multiple, unavailable, malformed, incomplete, and refused operations. Public
+exports omit opaque continuation material. Existing interface versions retain
+their behavior. See [protocol details and limits](docs/provider-continuation-v1.md).
+
 ## Validation
 
 After installing the locked Python and web dependencies, run

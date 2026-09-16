@@ -6,8 +6,10 @@ from typing import get_args
 from balatro_horizons.contracts import Action
 
 VERSION = "tools_v2"
-NAMED_INTERFACES = ("tools_v2", "tools_v3", "tools_v4")
-FOCUSED_INTERFACES = ("tools_v3", "tools_v4")
+NAMED_INTERFACES = ("tools_v2", "tools_v3", "tools_v4", "tools_v5")
+FOCUSED_INTERFACES = ("tools_v3", "tools_v4", "tools_v5")
+STABLE_TOOL_INTERFACES = ("tools_v4", "tools_v5")
+CONTINUATION_INTERFACES = ("tools_v5",)
 INSPECT_SECTIONS = (
     "hand",
     "jokers",

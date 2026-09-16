@@ -23,6 +23,30 @@ def scan(value, secrets=()):
         raise ValueError("EXPORT_PRIVACY_SCAN_FAILED")
 
 
+def public_provider_payload(value):
+    """Remove opaque continuation material while retaining inspectable public output."""
+    if isinstance(value, list):
+        return [public_provider_payload(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    block_type = value.get("type")
+    result = {
+        key: public_provider_payload(item)
+        for key, item in value.items()
+        if key != "encrypted_content"
+        and not (block_type in ("thinking", "redacted_thinking") and key == "signature")
+        and not (block_type == "redacted_thinking" and key == "data")
+    }
+    omitted = (
+        "encrypted_content" in value
+        or (block_type in ("thinking", "redacted_thinking") and "signature" in value)
+        or (block_type == "redacted_thinking" and "data" in value)
+    )
+    if omitted:
+        result["opaque_continuation_omitted"] = True
+    return result
+
+
 def episode_export(store, eid):
     manifest = store.manifest(eid)
     public_manifest = {
@@ -65,6 +89,7 @@ def episode_export(store, eid):
             payload = event["payload"]
         else:
             continue
+        payload = public_provider_payload(payload)
         events.append(
             {
                 "event_id": event["event_id"],

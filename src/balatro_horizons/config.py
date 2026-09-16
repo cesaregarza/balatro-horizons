@@ -68,6 +68,7 @@ class ModelConfig(Options):
             "tools_v2",
             "tools_v3",
             "tools_v4",
+            "tools_v5",
         ):
             raise ValueError("unsupported harness interface")
         date.fromisoformat(self.pricing_date)

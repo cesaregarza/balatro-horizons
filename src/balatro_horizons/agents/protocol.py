@@ -15,6 +15,7 @@ from balatro_horizons.agents.tool_interface import (
     FOCUSED_INTERFACES,
     INSPECT_SECTIONS,
     NAMED_INTERFACES,
+    STABLE_TOOL_INTERFACES,
     compact_observation,
     stable_tools,
     tools_for,
@@ -120,7 +121,7 @@ def context(
         result["interface_version"] = interface
         result["tools"] = (
             stable_tools(skills=skills)
-            if interface == "tools_v4"
+            if interface in STABLE_TOOL_INTERFACES
             else tools_for(observation, skills=skills)
         )
         result.pop("tool")
@@ -144,7 +145,7 @@ def context(
                 .read_text()
                 .strip()
             )
-            if interface == "tools_v4":
+            if interface in STABLE_TOOL_INTERFACES:
                 result["allowed_tools"] = [
                     t["name"]
                     for t in result["tools"]
@@ -171,12 +172,12 @@ def decision_context(
         byte_limit=byte_limit,
         interface=interface,
         skills=skills,
-        skill_descriptions=not exchanges or interface == "tools_v4",
+        skill_descriptions=not exchanges or interface in STABLE_TOOL_INTERFACES,
     )
     if skills:
         ctx["skill_catalog_delivery"] = (
             "names_and_descriptions"
-            if not exchanges or interface == "tools_v4"
+            if not exchanges or interface in STABLE_TOOL_INTERFACES
             else (
                 "names_in_tool_schema" if interface in NAMED_INTERFACES else "names_in_rules_kernel"
             )

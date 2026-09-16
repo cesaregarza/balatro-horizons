@@ -3,11 +3,17 @@
 import json
 import os
 import re
+from copy import deepcopy
 
 import httpx
 
 from balatro_horizons.agents.protocol import TOOL
-from balatro_horizons.agents.tool_interface import FOCUSED_INTERFACES, NAMED_INTERFACES, decode_tool
+from balatro_horizons.agents.tool_interface import (
+    CONTINUATION_INTERFACES,
+    FOCUSED_INTERFACES,
+    NAMED_INTERFACES,
+    decode_tool,
+)
 
 
 class ProviderFailure(RuntimeError):
@@ -18,7 +24,10 @@ class ProviderFailure(RuntimeError):
 
 
 class ProtocolFailure(ValueError):
-    pass
+    def __init__(self, code, **details):
+        self.code = code
+        self.details = details
+        super().__init__(code)
 
 
 def encode(value, ctx):
@@ -50,9 +59,64 @@ def canonical_messages(ctx, exchanges):
 
 
 def tool_messages(ctx, exchanges, provider):
-    """Reconstruct public tool exchanges, without provider-owned hidden memory."""
+    """Serialize tool exchanges, preserving native turns when the protocol requires it."""
     messages = canonical_messages(ctx, [])
     for index, exchange in enumerate(exchanges):
+        turn = exchange.get("provider_turn")
+        if isinstance(turn, dict) and turn.get("provider") == provider:
+            items = turn.get("items")
+            if isinstance(items, list):
+                output = encode(exchange["result"], ctx)
+                is_error = isinstance(exchange["result"], dict) and bool(
+                    exchange["result"].get("error")
+                )
+                if provider == "openai":
+                    messages.extend(deepcopy(items))
+                    calls = [item for item in items if item.get("type") == "function_call"]
+                    if calls:
+                        messages.extend(
+                            {
+                                "type": "function_call_output",
+                                "call_id": call["call_id"],
+                                "output": output,
+                            }
+                            for call in calls
+                        )
+                    else:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": encode({"tool_error": exchange["result"]}, ctx),
+                            }
+                        )
+                else:
+                    messages.append({"role": "assistant", "content": deepcopy(items)})
+                    calls = [item for item in items if item.get("type") == "tool_use"]
+                    if calls:
+                        results = []
+                        for call in calls:
+                            result = {
+                                "type": "tool_result",
+                                "tool_use_id": call["id"],
+                                "content": output,
+                            }
+                            if is_error:
+                                result["is_error"] = True
+                            results.append(result)
+                        messages.append({"role": "user", "content": results})
+                    else:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": encode({"tool_error": exchange["result"]}, ctx),
+                                    }
+                                ],
+                            }
+                        )
+                continue
         call = exchange.get("tool_call")
         if not call:
             messages.append(
@@ -108,7 +172,7 @@ def context_payload(ctx, exchanges, provider, interface):
     instructions = ctx["prompt"] + "\n\n" + ctx["rules_kernel"]
     definitions = ctx["tools"] if interface in NAMED_INTERFACES else [TOOL]
     if provider == "openai":
-        if interface == "tools_v4":
+        if interface in ("tools_v4", "tools_v5"):
             # A stable developer block follows the fixed tool catalog. The explicit
             # write ends here: observations and retrieved pages are not cached.
             return {
@@ -126,11 +190,17 @@ def context_payload(ctx, exchanges, provider, interface):
                 ]
                 + messages,
                 "tools": [{"type": "function", **t, "strict": True} for t in definitions],
-                "tool_choice": {
-                    "type": "allowed_tools",
-                    "mode": "auto",
-                    "tools": [{"type": "function", "name": name} for name in ctx["allowed_tools"]],
-                },
+                "tool_choice": (
+                    {
+                        "type": "allowed_tools",
+                        "mode": "auto",
+                        "tools": [
+                            {"type": "function", "name": name} for name in ctx["allowed_tools"]
+                        ],
+                    }
+                    if interface == "tools_v4"
+                    else "auto"
+                ),
             }
         return {
             "instructions": instructions,
@@ -144,7 +214,12 @@ def context_payload(ctx, exchanges, provider, interface):
         "system": instructions,
         "messages": messages,
         "tools": [
-            {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
+            {
+                "name": t["name"],
+                "description": t["description"],
+                "input_schema": t["parameters"],
+                **({"strict": True} if interface == "tools_v5" else {}),
+            }
             for t in definitions
         ],
     }
@@ -162,6 +237,7 @@ class DirectProvider:
         self.interface = model.settings.get("harness_interface", "operate_v1")
         self.available_tools = {"operate"}
         self.last_tool_call = None
+        self.last_provider_turn = None
         # Diagnostic comparison state is deliberately instance-local. RunService creates
         # a fresh provider for each run, so response IDs cannot cross episode lifecycles.
         self._last_completed_openai_response_id = None
@@ -188,10 +264,11 @@ class DirectProvider:
         payload = context_payload(ctx, exchanges, self.model.provider, self.interface)
         self.available_tools = (
             set(ctx["allowed_tools"])
-            if self.interface == "tools_v4"
+            if self.interface in ("tools_v4", "tools_v5")
             else {tool["name"] for tool in definitions}
         )
         self.last_tool_call = None
+        self.last_provider_turn = None
         if self.model.provider == "openai":
             body = {
                 "model": self.model.model,
@@ -213,7 +290,7 @@ class DirectProvider:
             if reasoning:
                 body["reasoning"] = reasoning
             prompt_cache_options = {}
-            if self.interface == "tools_v4":
+            if self.interface in ("tools_v4", "tools_v5"):
                 if not self._supports_prompt_cache_diagnostics():
                     raise ProviderFailure("EXPLICIT_CACHE_REQUIRES_GPT_5_6_OR_LATER")
                 if self.model.cache_write_input_usd_per_million is None:
@@ -236,6 +313,10 @@ class DirectProvider:
                 )
             if prompt_cache_options:
                 body["prompt_cache_options"] = prompt_cache_options
+            if self.interface in CONTINUATION_INTERFACES:
+                # store=false is deliberate. Encrypted reasoning makes returned
+                # reasoning items round-trippable during this one decision.
+                body["include"] = ["reasoning.encrypted_content"]
         else:
             body = {
                 "model": self.model.model,
@@ -316,31 +397,129 @@ class DirectProvider:
             output = response.get("output")
             if not isinstance(output, list) or any(not isinstance(v, dict) for v in output):
                 raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
+            if self.interface not in CONTINUATION_INTERFACES:
+                calls = [v for v in output if v.get("type") == "function_call"]
+                if (
+                    len(calls) != 1
+                    or calls[0].get("name") not in self.available_tools
+                    or response.get("status", "completed") != "completed"
+                    or calls[0].get("status", "completed") != "completed"
+                ):
+                    raise ProtocolFailure("EXPECTED_ONE_COMPLETE_OPERATION")
+                try:
+                    args = json.loads(calls[0]["arguments"])
+                except (ValueError, KeyError, TypeError):
+                    raise ProtocolFailure("INVALID_OPERATION_JSON") from None
+                return self._decode(calls[0]["name"], args)
+            self._capture_turn(output, "function_call", "call_id")
+            status = response.get("status", "completed")
+            if status == "incomplete":
+                self.last_provider_turn = None
+                details = response.get("incomplete_details")
+                reason = details.get("reason") if isinstance(details, dict) else None
+                raise ProtocolFailure(
+                    "PROVIDER_RESPONSE_INCOMPLETE",
+                    provider_status="incomplete",
+                    **({"provider_reason": reason} if isinstance(reason, str) else {}),
+                )
+            if status in ("failed", "cancelled"):
+                self.last_provider_turn = None
+                raise ProtocolFailure("PROVIDER_RESPONSE_FAILED", provider_status=status)
+            if status in ("in_progress", "queued"):
+                self.last_provider_turn = None
+                raise ProtocolFailure("PROVIDER_RESPONSE_UNRESOLVED", provider_status=status)
+            if status != "completed":
+                self.last_provider_turn = None
+                raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
             calls = [v for v in output if v.get("type") == "function_call"]
-            if (
-                len(calls) != 1
-                or calls[0].get("name") not in self.available_tools
-                or response.get("status", "completed") != "completed"
-                or calls[0].get("status", "completed") != "completed"
+            if not calls:
+                raise ProtocolFailure("NO_OPERATION")
+            if len(calls) != 1:
+                raise ProtocolFailure("MULTIPLE_OPERATIONS", operation_count=len(calls))
+            call = calls[0]
+            call_status = call.get("status", "completed")
+            if call_status == "incomplete":
+                self.last_provider_turn = None
+                raise ProtocolFailure("PROVIDER_RESPONSE_INCOMPLETE", provider_status="incomplete")
+            if call_status != "completed":
+                self.last_provider_turn = None
+                raise ProtocolFailure(
+                    "PROVIDER_RESPONSE_UNRESOLVED", provider_status=str(call_status)
+                )
+            if self.interface in CONTINUATION_INTERFACES and (
+                not isinstance(call.get("call_id"), str) or not call["call_id"]
             ):
-                raise ProtocolFailure("EXPECTED_ONE_COMPLETE_OPERATION")
+                self.last_provider_turn = None
+                raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
+            if call.get("name") not in self.available_tools:
+                raise ProtocolFailure("UNAVAILABLE_TOOL", attempted_tool=str(call.get("name")))
             try:
-                args = json.loads(calls[0]["arguments"])
+                args = json.loads(call["arguments"])
             except (ValueError, KeyError, TypeError):
                 raise ProtocolFailure("INVALID_OPERATION_JSON") from None
-            return self._decode(calls[0]["name"], args)
+            return self._decode(call["name"], args)
         if not isinstance(response.get("content"), list) or any(
             not isinstance(v, dict) for v in response["content"]
         ):
             raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
-        calls = [v for v in response.get("content", []) if v.get("type") == "tool_use"]
-        if (
-            len(calls) != 1
-            or calls[0].get("name") not in self.available_tools
-            or response.get("stop_reason") == "max_tokens"
+        content = response["content"]
+        if self.interface not in CONTINUATION_INTERFACES:
+            calls = [v for v in content if v.get("type") == "tool_use"]
+            if (
+                len(calls) != 1
+                or calls[0].get("name") not in self.available_tools
+                or response.get("stop_reason") == "max_tokens"
+            ):
+                raise ProtocolFailure("EXPECTED_ONE_COMPLETE_OPERATION")
+            return self._decode(calls[0]["name"], calls[0].get("input"))
+        self._capture_turn(content, "tool_use", "id")
+        stop_reason = response.get("stop_reason")
+        if stop_reason == "max_tokens":
+            self.last_provider_turn = None
+            raise ProtocolFailure("PROVIDER_RESPONSE_INCOMPLETE", provider_stop_reason=stop_reason)
+        if stop_reason == "model_context_window_exceeded":
+            self.last_provider_turn = None
+            raise ProtocolFailure("PROVIDER_CONTEXT_LIMIT", provider_stop_reason=stop_reason)
+        if stop_reason == "refusal":
+            raise ProtocolFailure("PROVIDER_REFUSAL", provider_stop_reason=stop_reason)
+        if stop_reason == "pause_turn":
+            self.last_provider_turn = None
+            raise ProtocolFailure("PROVIDER_RESPONSE_PAUSED", provider_stop_reason=stop_reason)
+        calls = [v for v in content if v.get("type") == "tool_use"]
+        if not calls:
+            raise ProtocolFailure(
+                "NO_OPERATION",
+                **({"provider_stop_reason": stop_reason} if isinstance(stop_reason, str) else {}),
+            )
+        if stop_reason not in (None, "tool_use"):
+            raise ProtocolFailure(
+                "UNEXPECTED_PROVIDER_STOP",
+                provider_stop_reason=str(stop_reason),
+            )
+        if len(calls) != 1:
+            raise ProtocolFailure("MULTIPLE_OPERATIONS", operation_count=len(calls))
+        call = calls[0]
+        if self.interface in CONTINUATION_INTERFACES and (
+            not isinstance(call.get("id"), str) or not call["id"]
         ):
-            raise ProtocolFailure("EXPECTED_ONE_COMPLETE_OPERATION")
-        return self._decode(calls[0]["name"], calls[0].get("input"))
+            self.last_provider_turn = None
+            raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
+        if call.get("name") not in self.available_tools:
+            raise ProtocolFailure("UNAVAILABLE_TOOL", attempted_tool=str(call.get("name")))
+        return self._decode(call["name"], call.get("input"))
+
+    def _capture_turn(self, items, call_type, id_field):
+        """Retain opaque provider blocks exactly for this decision only."""
+        if self.interface not in CONTINUATION_INTERFACES:
+            return
+        calls = [item for item in items if item.get("type") == call_type]
+        if any(not isinstance(call.get(id_field), str) or not call[id_field] for call in calls):
+            return
+        self.last_provider_turn = {
+            "version": "provider_turn_v1",
+            "provider": self.model.provider,
+            "items": deepcopy(items),
+        }
 
     def _decode(self, name, arguments):
         self.last_tool_call = {"name": name, "arguments": arguments}

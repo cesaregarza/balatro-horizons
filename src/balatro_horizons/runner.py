@@ -16,6 +16,11 @@ from balatro_horizons.agents.budget import (
 from balatro_horizons.agents.protocol import KERNEL, Operation, decision_context, helper
 from balatro_horizons.agents.providers import ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import prepare_rules, read_guide, restore_knowledge
+from balatro_horizons.agents.tool_interface import (
+    CONTINUATION_INTERFACES,
+    FOCUSED_INTERFACES,
+    NAMED_INTERFACES,
+)
 from balatro_horizons.contracts import Observation, RecentPublicEvent, RemainingBudget
 from balatro_horizons.engine.native import NativeFailure, NativeRejected
 from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
@@ -114,7 +119,7 @@ class Runner:
                 self.limits.max_provider_calls - self.calls
             )
             ctx["observation"]["remaining_budget"]["helper_calls_this_decision"] = helper_count
-            if getattr(self.policy, "interface", "operate_v1") in ("tools_v3", "tools_v4"):
+            if getattr(self.policy, "interface", "operate_v1") in FOCUSED_INTERFACES:
                 ctx["observation"]["remaining_budget"]["helper_calls_remaining"] = max(
                     0, self.limits.max_helper_calls_per_decision - helper_count
                 )
@@ -171,15 +176,17 @@ class Runner:
                 return operation.envelope, None
             except (ValidationError, InvalidAction, ProtocolFailure) as error:
                 invalid += 1
+                continuation_protocol = (
+                    getattr(self.policy, "interface", "operate_v1") in CONTINUATION_INTERFACES
+                )
                 code = (
-                    error.code if isinstance(error, InvalidAction) else "INVALID_OPERATION_SCHEMA"
+                    error.code
+                    if isinstance(error, InvalidAction)
+                    or (isinstance(error, ProtocolFailure) and continuation_protocol)
+                    else "INVALID_OPERATION_SCHEMA"
                 )
                 feedback = {"error": code}
-                if getattr(self.policy, "interface", "operate_v1") in (
-                    "tools_v2",
-                    "tools_v3",
-                    "tools_v4",
-                ):
+                if getattr(self.policy, "interface", "operate_v1") in NAMED_INTERFACES:
                     feedback = self._tool_feedback(error, code, observation)
                 self.log(
                     "action_rejected",
@@ -194,7 +201,7 @@ class Runner:
     def _fit_guide_result(self, observation, exchanges, raw, result):
         # A shared conservative byte bound keeps paging independent of provider transport.
         key = result["key"] + "#offset=" + str(result["offset"])
-        if getattr(self.policy, "interface", "operate_v1") in ("tools_v3", "tools_v4"):
+        if getattr(self.policy, "interface", "operate_v1") in FOCUSED_INTERFACES:
             from balatro_horizons.agents.focused import PAGE_BYTES
 
             return read_guide(self.rules, key, PAGE_BYTES)
@@ -223,8 +230,12 @@ class Runner:
 
     def _exchange(self, raw, result):
         exchange = {"operation": raw if raw is not None else {"kind": "invalid"}, "result": result}
-        if getattr(self.policy, "interface", "operate_v1") in ("tools_v2", "tools_v3", "tools_v4"):
+        if getattr(self.policy, "interface", "operate_v1") in NAMED_INTERFACES:
             exchange["tool_call"] = getattr(self.policy, "last_tool_call", None)
+        if getattr(self.policy, "interface", "operate_v1") in CONTINUATION_INTERFACES:
+            turn = getattr(self.policy, "last_provider_turn", None)
+            if turn is not None:
+                exchange["provider_turn"] = turn
         return exchange
 
     def _tool_feedback(self, error, code, observation):
@@ -250,6 +261,22 @@ class Runner:
         elif code == "INVALID_OPERATION_SCHEMA":
             feedback["message"] = (
                 "Use one named tool with its flat arguments; do not nest an action envelope. Notes belong beside the action parameters."
+            )
+        elif isinstance(error, ProtocolFailure):
+            feedback.update(error.details)
+            messages = {
+                "NO_OPERATION": "No operation was returned. Call exactly one available named tool.",
+                "MULTIPLE_OPERATIONS": "Multiple operations were returned. Call exactly one named tool.",
+                "UNAVAILABLE_TOOL": "That tool is unavailable in the current phase. Choose from the available gameplay tools or a helper tool.",
+                "INVALID_OPERATION_JSON": "Tool arguments were not valid JSON. Call one named tool with a JSON object matching its schema.",
+                "TOOL_ARGUMENTS_MUST_BE_OBJECT": "Tool arguments must be one JSON object matching the selected tool schema.",
+                "PROVIDER_RESPONSE_INCOMPLETE": "The provider response ended before one complete operation. Return one concise tool call.",
+                "PROVIDER_CONTEXT_LIMIT": "The provider reached its context limit before completing an operation.",
+                "PROVIDER_REFUSAL": "The provider declined to return an operation.",
+            }
+            feedback["message"] = messages.get(
+                code,
+                "The provider response did not contain one valid operation; call one available named tool.",
             )
         return feedback
 

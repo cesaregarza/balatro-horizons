@@ -63,6 +63,9 @@ test("Sol and Astra expose their supported reasoning choices", () => {
   expect(
     configureModel(astra, "max", "tools_v4").settings.reasoning_effort,
   ).toBe("max");
+  expect(
+    configureModel(astra, "max", "tools_v5").settings.harness_interface,
+  ).toBe("tools_v5");
 });
 
 test("model defaults deduplicate aliases without rewriting historical settings", () => {
@@ -85,6 +88,7 @@ test("model defaults deduplicate aliases without rewriting historical settings",
   expect(selected.cached_input_usd_per_million).toBe(0.2);
   expect(() => configureModel(luna, "minimal", "tools_v3")).toThrow();
   expect(() => configureModel(luna, "medium", "tools_v4")).toThrow();
+  expect(() => configureModel(luna, "medium", "tools_v5")).toThrow();
   const anthropic: ModelConfig = {
     ...luna,
     provider: "anthropic",
@@ -94,6 +98,10 @@ test("model defaults deduplicate aliases without rewriting historical settings",
   expect(configureModel(anthropic, "", "tools_v3").settings).toEqual({
     thinking_budget: 2048,
     harness_interface: "tools_v3",
+  });
+  expect(configureModel(anthropic, "", "tools_v5").settings).toEqual({
+    thinking_budget: 2048,
+    harness_interface: "tools_v5",
   });
 });
 
@@ -248,6 +256,11 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
       page
         .getByLabel("Harness", { exact: true })
         .locator('option[value="tools_v4"]'),
+    ).toHaveAttribute("disabled", "");
+    await expect(
+      page
+        .getByLabel("Harness", { exact: true })
+        .locator('option[value="tools_v5"]'),
     ).toHaveAttribute("disabled", "");
     await page.setViewportSize({ width: 390, height: 844 });
     await page

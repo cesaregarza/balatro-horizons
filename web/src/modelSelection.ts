@@ -10,6 +10,7 @@ export type ModelConfig = {
 };
 
 export const harnesses = [
+  ["tools_v5", "Focused tools + provider continuation"],
   ["tools_v4", "Focused tools + prompt cache"],
   ["tools_v3", "Focused tools"],
   ["tools_v2", "Full-context tools"],
@@ -84,7 +85,10 @@ export function configureModel(
 ): ModelConfig {
   if (
     !harnesses.some(([id]) => id === harness) ||
-    (harness === "tools_v4" && !supportsCachedHarness(model))
+    (harness === "tools_v4" && !supportsCachedHarness(model)) ||
+    (harness === "tools_v5" &&
+      model.provider === "openai" &&
+      !supportsCachedHarness(model))
   )
     throw new Error(
       "Configure cache pricing before selecting the cached harness.",

@@ -3,7 +3,12 @@
 import json
 from copy import deepcopy
 
-from balatro_horizons.agents.tool_interface import INSPECT_SECTIONS, compact_observation, tool
+from balatro_horizons.agents.tool_interface import (
+    CONTINUATION_INTERFACES,
+    INSPECT_SECTIONS,
+    compact_observation,
+    tool,
+)
 
 VERSION = "tools_v3"
 PAGE_BYTES = 2048
@@ -261,10 +266,11 @@ def working_context(ctx, exchanges, byte_limit):
     delivered = deepcopy(exchanges)
     indices = list(range(len(delivered)))
     cleared = []
+    preserve_turns = ctx.get("interface_version") in CONTINUATION_INTERFACES
 
-    def clear_first():
-        exchange = delivered.pop(0)
-        index = indices.pop(0)
+    def clear_at(position):
+        exchange = delivered[position]
+        index = indices[position]
         operation = exchange["operation"]
         reference = {
             k: operation[k]
@@ -272,24 +278,53 @@ def working_context(ctx, exchanges, byte_limit):
             if k in operation
         }
         cleared.append({"exchange_index": index, "reload": reference})
+        if preserve_turns and exchange.get("provider_turn"):
+            exchange["result"] = {
+                "context_cleared": True,
+                "game_advanced": False,
+                "reload": reference,
+            }
+        else:
+            delivered.pop(position)
+            indices.pop(position)
 
-    while len(delivered) > RETAINED_RESULTS:
-        clear_first()
-    metadata = {
-        "policy": "bounded_recent_results",
-        "cleared": cleared,
-        "loaded_exchange_indices": indices,
-    }
-    ctx["observation"]["retrieval_context"] = metadata
+    def loaded_positions():
+        return [
+            i
+            for i, exchange in enumerate(delivered)
+            if not (
+                isinstance(exchange.get("result"), dict)
+                and exchange["result"].get("context_cleared") is True
+            )
+        ]
+
+    while len(loaded_positions()) > RETAINED_RESULTS:
+        clear_at(loaded_positions()[0])
+
+    def update_metadata():
+        metadata = {
+            "policy": "bounded_recent_results_provider_turns_retained"
+            if preserve_turns
+            else "bounded_recent_results",
+            "cleared": deepcopy(cleared),
+            "loaded_exchange_indices": [indices[i] for i in loaded_positions()],
+        }
+        ctx["observation"]["retrieval_context"] = metadata
+        ctx["context_delivery"] = deepcopy(metadata)
+        return metadata
+
+    update_metadata()
     while context_bound(ctx, delivered) > byte_limit:
-        if delivered:
-            clear_first()
+        loaded = loaded_positions()
+        if loaded:
+            clear_at(loaded[0])
+            update_metadata()
         elif ctx["observation"]["recent_public_events"]:
             ctx["omitted_event_ids"].append(
                 ctx["observation"]["recent_public_events"].pop(0)["event_id"]
             )
         else:
             raise ValueError("REQUIRED_CONTEXT_EXCEEDS_LIMIT")
-    ctx["context_delivery"] = deepcopy(metadata)
+    update_metadata()
     ctx["context_bytes_upper_bound"] = context_bound(ctx, delivered)
     return ctx, delivered

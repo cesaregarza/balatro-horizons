@@ -56,7 +56,11 @@ export function ModelControls({
               <option
                 key={id}
                 value={id}
-                disabled={id === "tools_v4" && !supportsCachedHarness(model)}
+                disabled={
+                  (id === "tools_v4" ||
+                    (id === "tools_v5" && model.provider === "openai")) &&
+                  !supportsCachedHarness(model)
+                }
               >
                 {label}
               </option>
@@ -65,9 +69,10 @@ export function ModelControls({
         </label>
       </div>
       <p className="muted">
-        Focused tools load details on demand. Prompt caching reuses shared
-        instructions. All modes use tools to submit moves.
-        {!supportsCachedHarness(model) &&
+        Focused tools load details on demand. Provider continuation preserves
+        reasoning across helper calls within one decision. All modes use tools
+        to submit moves.
+        {model.provider === "openai" && !supportsCachedHarness(model) &&
           " The cached harness requires a supported OpenAI model with cache pricing configured."}
       </p>
     </>

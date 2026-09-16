@@ -75,7 +75,7 @@ def discovery(skills, interface, *, descriptions=True):
     if not skills:
         return ""
     if not descriptions:
-        if interface in ("tools_v2", "tools_v3", "tools_v4"):
+        if interface in ("tools_v2", "tools_v3", "tools_v4", "tools_v5"):
             return "\n\nRead Balatro skills with read_skill(name); linked chapters use read_rules(key)."
         names = ", ".join(item["name"] for item in skills)
         return (
@@ -83,10 +83,10 @@ def discovery(skills, interface, *, descriptions=True):
         )
     command = (
         "read_skill(name)"
-        if interface in ("tools_v2", "tools_v3", "tools_v4")
+        if interface in ("tools_v2", "tools_v3", "tools_v4", "tools_v5")
         else "a rules operation with key guide/<name>"
     )
-    if interface in ("tools_v3", "tools_v4"):
+    if interface in ("tools_v3", "tools_v4", "tools_v5"):
         rows = "\n".join(
             f"- {item['name']}: {item['description'][:160]}"
             + ("…" if len(item["description"]) > 160 else "")
