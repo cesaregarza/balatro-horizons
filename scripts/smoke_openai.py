@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Preflight or run one native Luna smoke with a durable $5 campaign ledger."""
+"""Preflight or run a native OpenAI smoke with explicit caps and a durable campaign ledger."""
 
 import argparse
 import fcntl
 import json
+import math
 import os
 import re
 import secrets
 from collections import Counter
+from pathlib import Path
 
 from balatro_horizons.agents.budget import Spending, can_afford, reservation_usd, validate_caps
 from balatro_horizons.cli import doctor
@@ -77,6 +79,13 @@ def episode_status(store, episode_id=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default=ROOT / "configs/luna-smoke.yaml")
+    parser.add_argument("--agent", default="luna", help="Exact configured model key")
+    parser.add_argument("--campaign", default="openai-luna-smoke", help="Private ledger name")
+    parser.add_argument("--authorized-episode-cap", type=float, default=1)
+    parser.add_argument("--authorized-total-cap", type=float, default=5)
+    parser.add_argument(
+        "--env-file", type=Path, help="Read OPENAI_API_KEY only; never execute file contents"
+    )
     parser.add_argument(
         "--revision", help="Record a named configuration revision; keeps the same shared $5 ledger"
     )
@@ -95,6 +104,13 @@ def main():
         help="Exercise one action through a synthetic game; never native benchmark evidence",
     )
     args = parser.parse_args()
+    if not re.fullmatch(r"[a-z0-9-]{1,64}", args.campaign):
+        parser.error("campaign must contain 1-64 lowercase letters, digits or hyphens")
+    if any(
+        not math.isfinite(v) or v <= 0
+        for v in (args.authorized_episode_cap, args.authorized_total_cap)
+    ):
+        parser.error("authorized caps must be positive finite USD amounts")
     if args.revision and not re.fullmatch(r"[a-z0-9-]{1,40}", args.revision):
         parser.error("revision must contain 1-40 lowercase letters, digits or hyphens")
     if args.status:
@@ -103,20 +119,25 @@ def main():
     if args.episode_id:
         parser.error("--episode-id requires --status")
     config = load_config(args.config)
-    if set(config.models) != {"luna"} or config.models["luna"].model != "gpt-5.6-luna":
-        raise ValueError("LUNA_SMOKE_CONFIGURATION_REQUIRED")
+    if set(config.models) != {args.agent}:
+        raise ValueError("ONE_EXPLICIT_SMOKE_MODEL_REQUIRED")
     limits = config.budgets
     if (
         not limits.max_episode_cost_usd
-        or limits.max_episode_cost_usd > 1
+        or limits.max_episode_cost_usd > args.authorized_episode_cap
         or not limits.max_batch_cost_usd
-        or limits.max_batch_cost_usd > 5
+        or limits.max_batch_cost_usd > args.authorized_total_cap
     ):
         raise ValueError("SMOKE_EXCEEDS_AUTHORIZED_CAPS")
     config.budgets.paid_calls_enabled = bool(args.allow_paid)
-    model = config.models["luna"]
+    model = config.models[args.agent]
     if model.provider != "openai":
         raise ValueError("OPENAI_PROVIDER_REQUIRED")
+    if args.env_file:
+        for line in args.env_file.read_text().splitlines():
+            name, separator, value = line.strip().partition("=")
+            if separator and name == "OPENAI_API_KEY":
+                os.environ[name] = value.strip().strip("\"'")
     native = (
         {"blockers": [], "native_certification": "not_used_synthetic_transport_test"}
         if args.transport_only
@@ -125,7 +146,7 @@ def main():
     blockers = list(native["blockers"])
     if not os.environ.get("OPENAI_API_KEY"):
         blockers.append("MISSING_PROVIDER_CREDENTIAL")
-    campaign = ROOT / "private/openai-luna-smoke"
+    campaign = ROOT / "private" / args.campaign
     ledger = campaign / "spending.json"
     validate_caps(limits.max_episode_cost_usd, limits.max_batch_cost_usd)
     reserve = reservation_usd(model, limits)
@@ -176,13 +197,16 @@ def main():
             run_config.budgets.max_game_actions = 1
         summary = service.execute(
             run_config,
-            "luna",
+            args.agent,
             seed,
             offline=args.transport_only,
             spending=Spending(ledger, limits.max_batch_cost_usd),
             extra={
                 "evaluation_eligible": False,
-                "validation_purpose": "openai_luna_smoke",
+                "validation_purpose": "openai_luna_smoke"
+                if args.campaign == "openai-luna-smoke"
+                else "openai_provider_smoke",
+                "smoke_campaign": args.campaign,
                 "campaign_revision": args.revision or "original",
                 "harness_interface": model.settings.get("harness_interface", "operate_v1"),
             },
@@ -209,7 +233,7 @@ def main():
             "evaluation_eligible": False,
         }
         atomic_json(
-            ROOT / "reports/verification" / f"luna-smoke-{summary['episode_id']}.json",
+            ROOT / "reports/verification" / f"provider-smoke-{summary['episode_id']}.json",
             result,
             immutable=True,
         )

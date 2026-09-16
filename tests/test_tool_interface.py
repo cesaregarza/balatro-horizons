@@ -111,6 +111,8 @@ def test_large_repeated_inspection_delivers_each_value_once_and_fits_budget():
     cfg.budgets.max_input_tokens_per_call = (
         len(json.dumps(old_body, ensure_ascii=False).encode()) + 4095
     )
+    # Providers freeze their settings at construction; this is a new allowance.
+    policy = DirectProvider(cfg.models["luna"], cfg.budgets)
     with pytest.raises(ProviderFailure, match="REQUIRED_CONTEXT_EXCEEDS_LIMIT"):
         policy.request(old, exchanges)
     ctx, delivered = decision_context(

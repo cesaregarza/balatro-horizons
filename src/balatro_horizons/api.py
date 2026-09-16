@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from balatro_horizons.agents.frozen import restore_protocol
 from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.config import ROOT, Config, load_config
 from balatro_horizons.contracts import AnnotationInput
@@ -349,11 +350,12 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
                 store, view["episode_id"], view["decision"]
             )
             restore_knowledge(store, checkpoint)
+            restore_protocol(store, checkpoint)
             return {"enabled": True, "reason": None}
         except (ValueError, OSError):
             return {
                 "enabled": False,
-                "reason": "This decision needs a current passing replay certificate and its frozen knowledge snapshot.",
+                "reason": "This decision needs a current passing replay certificate and frozen knowledge and agent-protocol snapshots.",
             }
 
     @app.post("/api/verify", dependencies=[Depends(operator)])

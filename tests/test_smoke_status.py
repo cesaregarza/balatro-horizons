@@ -67,6 +67,20 @@ def test_status_without_a_smoke_fails_clearly(store):
         smoke.episode_status(store, "../private")
 
 
+def test_generic_smoke_enforces_explicit_caps_before_native_or_paid_execution(monkeypatch):
+    from test_openai_luna import luna
+
+    config = luna()
+    config.models = {"terra": config.models["luna"]}
+    config.models["terra"].model = "gpt-5.6-terra"
+    config.budgets.max_episode_cost_usd = 5
+    config.budgets.max_batch_cost_usd = 10
+    monkeypatch.setattr(smoke, "load_config", lambda _: config)
+    monkeypatch.setattr(sys, "argv", ["smoke_openai.py", "--agent", "terra", "--dry-run"])
+    with pytest.raises(ValueError, match="SMOKE_EXCEEDS_AUTHORIZED_CAPS"):
+        smoke.main()
+
+
 @pytest.mark.parametrize(
     "episode_cap,campaign_cap,expected",
     [

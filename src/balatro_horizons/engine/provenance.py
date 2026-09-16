@@ -24,7 +24,10 @@ def implementation_fingerprint():
     ]
     for directory in ("engine", "observations", "actions", "agents", "storage"):
         paths.extend(sorted((base / directory).rglob("*.py")))
-    paths += sorted((ROOT / "configs/prompts").glob("*"))
+    # Prompt bytes are frozen into each episode's agent-protocol snapshot. They
+    # cannot change engine execution or an existing continuation. Executable
+    # agent code remains conservatively included because it shares validation,
+    # budgeting and journaling dependencies with native execution.
     return digest(
         {
             str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()

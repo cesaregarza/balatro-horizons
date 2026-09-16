@@ -101,7 +101,13 @@ KERNEL = "The objective is the ordinary Ante 8 native run win. Hand scores resol
 
 
 def context(
-    observation, *, byte_limit=32768, interface="operate_v1", skills=(), skill_descriptions=True
+    observation,
+    *,
+    byte_limit=32768,
+    interface="operate_v1",
+    skills=(),
+    skill_descriptions=True,
+    frozen=None,
 ):
     observation = observation.model_dump(mode="json")
     original_observation = deepcopy(observation)
@@ -117,6 +123,12 @@ def context(
         "tool": TOOL,
         "omitted_event_ids": [],
     }
+    if frozen is not None:
+        if frozen["interface"] != interface:
+            raise ValueError("AGENT_PROTOCOL_INTERFACE_CHANGED")
+        result["prompt"] = frozen["prompt_utf8"].strip()
+        result["rules_kernel"] = frozen["rules_kernels"][str(skill_descriptions)]
+        result["tool"] = deepcopy(frozen["tool"])
     if interface in NAMED_INTERFACES:
         result["interface_version"] = interface
         result["tools"] = (
@@ -127,7 +139,8 @@ def context(
         result.pop("tool")
         result["observation"], result["omitted_event_ids"] = compact_observation(observation)
         observation = result["observation"]
-        result["prompt"] = (ROOT / "configs/prompts/tools-v2.txt").read_text().strip()
+        if frozen is None:
+            result["prompt"] = (ROOT / "configs/prompts/tools-v2.txt").read_text().strip()
         if interface in FOCUSED_INTERFACES:
             from balatro_horizons.agents.focused import (
                 focused_observation,
@@ -140,12 +153,15 @@ def context(
                 original_observation
             )
             result["tools"] = focused_tools(result["tools"])
-            result["prompt"] = (
-                (ROOT / "configs/prompts" / (interface.replace("_", "-") + ".txt"))
-                .read_text()
-                .strip()
-            )
+            if frozen is None:
+                result["prompt"] = (
+                    (ROOT / "configs/prompts" / (interface.replace("_", "-") + ".txt"))
+                    .read_text()
+                    .strip()
+                )
             if interface in STABLE_TOOL_INTERFACES:
+                if frozen is not None:
+                    result["tools"] = deepcopy(frozen["tool_catalog"])
                 result["allowed_tools"] = [
                     t["name"]
                     for t in result["tools"]
@@ -164,7 +180,7 @@ def context(
 
 
 def decision_context(
-    observation, exchanges, *, byte_limit=32768, interface="operate_v1", skills=()
+    observation, exchanges, *, byte_limit=32768, interface="operate_v1", skills=(), frozen=None
 ):
     """Place retrieved current-state sections once, preserving every value read."""
     ctx = context(
@@ -173,6 +189,7 @@ def decision_context(
         interface=interface,
         skills=skills,
         skill_descriptions=not exchanges or interface in STABLE_TOOL_INTERFACES,
+        frozen=frozen,
     )
     if skills:
         ctx["skill_catalog_delivery"] = (

@@ -8,6 +8,7 @@ import threading
 
 from balatro_horizons.agents.baselines import Baseline
 from balatro_horizons.agents.budget import Spending, validate_paid_configuration
+from balatro_horizons.agents.frozen import restore_protocol, validate_continuation
 from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import ROOT
 from balatro_horizons.engine.fake import FakeGame
@@ -138,6 +139,11 @@ class RunService:
         spending=None,
         human_steps=0,
     ):
+        config = config.model_copy(deep=True)
+        if resume:
+            validate_continuation(
+                restore_protocol(self.store, resume), config, agent, human=agent == "human"
+            )
         policy = self.policy(config, agent)
         if operations:
             policy = InterventionPolicy(operations, policy)
@@ -208,6 +214,7 @@ class RunService:
                 self.active_id = None
 
     def start(self, config, agent, seed, *, offline=False, calibration=False):
+        config = config.model_copy(deep=True)
         with self._guard:
             if self.thread and self.thread.is_alive():
                 raise ValueError("WORKER_BUSY")
@@ -257,6 +264,8 @@ class RunService:
                 raise ValueError("INVALID_HUMAN_SEQUENCE")
             manifest = self.store.manifest(parent)
             chosen = "human" if mode == "human_takeover" else agent or manifest["agent"]
+            if chosen not in ("human", manifest["agent"]):
+                raise ValueError("PROTOCOL_CHANGE_INTERVENTION_NOT_SUPPORTED")
             self.validate_policy(config, chosen)  # Validate before immutable child records.
             eid, checkpoint, prefix = prepare_branch(self.store, config, parent, decision, mode)
             self.stop.clear()

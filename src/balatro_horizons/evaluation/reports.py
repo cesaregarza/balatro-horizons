@@ -66,6 +66,7 @@ def episode_export(store, eid):
             "assistance",
             "batch_id",
             "slot_id",
+            "agent_protocol",
         )
         if k in manifest
     }
@@ -106,6 +107,14 @@ def episode_export(store, eid):
         for row in ReviewService(store).annotations(eid)
     ]
     result = {
+        "agent_protocol": next(
+            (
+                e["payload"].get("agent_protocol")
+                for e in store.events(eid)
+                if e["type"] == "episode_start"
+            ),
+            None,
+        ),
         "annotations": annotations,
         "export_policy": "public-schema-v1",
         "manifest": public_manifest,

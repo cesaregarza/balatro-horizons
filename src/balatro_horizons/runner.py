@@ -3,6 +3,7 @@
 import json
 import threading
 import uuid
+from copy import deepcopy
 
 from pydantic import ValidationError
 
@@ -13,6 +14,7 @@ from balatro_horizons.agents.budget import (
     reservation_usd,
     validate_paid_configuration,
 )
+from balatro_horizons.agents.frozen import freeze_protocol, restore_protocol
 from balatro_horizons.agents.protocol import KERNEL, Operation, decision_context, helper
 from balatro_horizons.agents.providers import ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import prepare_rules, read_guide, restore_knowledge
@@ -35,9 +37,15 @@ class OperatorAbort(RuntimeError):
 
 class Runner:
     def __init__(self, store, config, game, policy, *, stop=None, spending=None, rules=None):
-        self.store, self.config, self.game, self.policy = store, config, game, policy
+        self.store, self.config, self.game, self.policy = (
+            store,
+            config.model_copy(deep=True),
+            game,
+            policy,
+        )
         self.stop = stop or threading.Event()
-        self.limits = config.budgets
+        self.limits = self.config.budgets
+        self.interface = getattr(policy, "interface", "operate_v1")
         self.spending = spending
         self.rules = rules or {"core": KERNEL}
         self.committed = self.calls = self.attempted = 0
@@ -47,6 +55,7 @@ class Runner:
         self.issuer = HandleIssuer()
         self.eid = None
         self.observation = None
+        self.protocol = None
 
     def log(self, kind, payload, **kwargs):
         return self.store.append(self.eid, kind, payload, **kwargs)
@@ -103,6 +112,8 @@ class Runner:
         raise ProviderFailure("PROVIDER_RETRIES_EXHAUSTED")
 
     def _decision(self, observation):
+        if self.protocol and self.protocol["implementation_hash"] != implementation_fingerprint():
+            raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")
         exchanges = []
         helper_count = invalid = 0
         while True:
@@ -112,14 +123,15 @@ class Runner:
                 observation,
                 exchanges,
                 byte_limit=self.limits.max_input_tokens_per_call,
-                interface=getattr(self.policy, "interface", "operate_v1"),
+                interface=self.interface,
                 skills=self.rules.get("skills", []),
+                frozen=self.protocol,
             )
             ctx["observation"]["remaining_budget"]["provider_calls"] = (
                 self.limits.max_provider_calls - self.calls
             )
             ctx["observation"]["remaining_budget"]["helper_calls_this_decision"] = helper_count
-            if getattr(self.policy, "interface", "operate_v1") in FOCUSED_INTERFACES:
+            if self.interface in FOCUSED_INTERFACES:
                 ctx["observation"]["remaining_budget"]["helper_calls_remaining"] = max(
                     0, self.limits.max_helper_calls_per_decision - helper_count
                 )
@@ -156,7 +168,7 @@ class Runner:
                             self.history_prefix + self.store.events(self.eid),
                             self.rules,
                             observation=observation,
-                            interface=getattr(self.policy, "interface", "operate_v1"),
+                            interface=self.interface,
                         )
                     except (ValueError, ArithmeticError, SyntaxError):
                         result = {"error": "INVALID_HELPER_REQUEST"}
@@ -176,9 +188,7 @@ class Runner:
                 return operation.envelope, None
             except (ValidationError, InvalidAction, ProtocolFailure) as error:
                 invalid += 1
-                continuation_protocol = (
-                    getattr(self.policy, "interface", "operate_v1") in CONTINUATION_INTERFACES
-                )
+                continuation_protocol = self.interface in CONTINUATION_INTERFACES
                 code = (
                     error.code
                     if isinstance(error, InvalidAction)
@@ -186,7 +196,7 @@ class Runner:
                     else "INVALID_OPERATION_SCHEMA"
                 )
                 feedback = {"error": code}
-                if getattr(self.policy, "interface", "operate_v1") in NAMED_INTERFACES:
+                if self.interface in NAMED_INTERFACES:
                     feedback = self._tool_feedback(error, code, observation)
                 self.log(
                     "action_rejected",
@@ -201,7 +211,7 @@ class Runner:
     def _fit_guide_result(self, observation, exchanges, raw, result):
         # A shared conservative byte bound keeps paging independent of provider transport.
         key = result["key"] + "#offset=" + str(result["offset"])
-        if getattr(self.policy, "interface", "operate_v1") in FOCUSED_INTERFACES:
+        if self.interface in FOCUSED_INTERFACES:
             from balatro_horizons.agents.focused import PAGE_BYTES
 
             return read_guide(self.rules, key, PAGE_BYTES)
@@ -212,8 +222,9 @@ class Runner:
                 observation,
                 proposed,
                 byte_limit=self.limits.max_input_tokens_per_call,
-                interface=getattr(self.policy, "interface", "operate_v1"),
+                interface=self.interface,
                 skills=self.rules.get("skills", []),
+                frozen=self.protocol,
             )
             encoded = json.dumps({"context": ctx, "exchanges": delivered}, ensure_ascii=False)
             if (
@@ -230,9 +241,9 @@ class Runner:
 
     def _exchange(self, raw, result):
         exchange = {"operation": raw if raw is not None else {"kind": "invalid"}, "result": result}
-        if getattr(self.policy, "interface", "operate_v1") in NAMED_INTERFACES:
+        if self.interface in NAMED_INTERFACES:
             exchange["tool_call"] = getattr(self.policy, "last_tool_call", None)
-        if getattr(self.policy, "interface", "operate_v1") in CONTINUATION_INTERFACES:
+        if self.interface in CONTINUATION_INTERFACES:
             turn = getattr(self.policy, "last_provider_turn", None)
             if turn is not None:
                 exchange["provider_turn"] = turn
@@ -288,6 +299,24 @@ class Runner:
             if resume
             else prepare_rules(self.rules, self.config.skills)
         )
+        self.protocol = (
+            restore_protocol(self.store, resume)
+            if resume
+            else freeze_protocol(self.config, self.policy, self.rules)
+        )
+        self.interface = self.protocol["interface"]
+        if resume:
+            from balatro_horizons.agents.frozen import episode_limits
+
+            if self.protocol["episode_limits"] != episode_limits(self.config):
+                raise ValueError("AGENT_PROTOCOL_CONFIGURATION_CHANGED")
+            model = getattr(self.policy, "model", None)
+            if getattr(self.policy, "name", "") != "human" and self.protocol["model"] != (
+                model.model_dump() if model is not None else None
+            ):
+                raise ValueError("AGENT_PROTOCOL_MODEL_CHANGED")
+        if self.protocol["knowledge_hash"] != digest(self.rules):
+            raise ValueError("AGENT_PROTOCOL_KNOWLEDGE_CHANGED")
         self.eid = eid or self.store.create(
             manifest
             or {
@@ -299,6 +328,8 @@ class Runner:
             private or {},
         )
         self.store.private_json(self.eid, "knowledge.json", self.rules)
+        self.store.private_json(self.eid, "agent-protocol.json", self.protocol)
+        self.protocol_reference = {"episode_id": self.eid, "hash": digest(self.protocol)}
         self.knowledge_reference = {"episode_id": self.eid, "hash": digest(self.rules)}
         self.history_prefix = history_prefix or []
         self.spending = self.spending or Spending(
@@ -329,6 +360,7 @@ class Runner:
                 "knowledge": self.rules.get("guide", {"preset": "none", "protocol": "rules_only"}),
                 "implementation_hash": implementation_fingerprint(),
                 "environment_hash": digest(getattr(self.game, "lock", {"kind": "synthetic"})),
+                "agent_protocol": deepcopy(self.protocol_reference),
             },
         )
         outcome, reason = "INFRASTRUCTURE_FAILURE", "UNEXPECTED_RUNNER_FAILURE"
@@ -372,6 +404,7 @@ class Runner:
                     checkpoint = {
                         "game": self.game.checkpoint(),
                         "knowledge": self.knowledge_reference,
+                        "agent_protocol": deepcopy(self.protocol_reference),
                         "issuer": self.issuer.snapshot(),
                         "observation": self.observation.model_dump(mode="json"),
                         "memory": self.memory,
@@ -475,6 +508,7 @@ class Runner:
                     "attempted_actions": self.attempted,
                     "committed_actions": self.committed,
                     "provider_calls": self.calls,
+                    "agent_protocol": deepcopy(self.protocol_reference),
                     "cost_usd": self.cost,
                     **({"cost_context": cost_context} if cost_context is not None else {}),
                     "last_verified_observation_id": self.observation.observation_id

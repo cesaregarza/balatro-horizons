@@ -170,7 +170,7 @@ def context_payload(ctx, exchanges, provider, interface):
         else canonical_messages(ctx, exchanges)
     )
     instructions = ctx["prompt"] + "\n\n" + ctx["rules_kernel"]
-    definitions = ctx["tools"] if interface in NAMED_INTERFACES else [TOOL]
+    definitions = ctx["tools"] if interface in NAMED_INTERFACES else [ctx.get("tool", TOOL)]
     if provider == "openai":
         if interface in ("tools_v4", "tools_v5"):
             # A stable developer block follows the fixed tool catalog. The explicit
@@ -229,7 +229,7 @@ class DirectProvider:
     paid = True
 
     def __init__(self, model, limits, client=None):
-        self.model, self.limits = model, limits
+        self.model, self.limits = model.model_copy(deep=True), limits.model_copy(deep=True)
         self.client = client or httpx.Client(timeout=90, trust_env=False)
         self.key_name = "OPENAI_API_KEY" if model.provider == "openai" else "ANTHROPIC_API_KEY"
         self.last_request = None
@@ -260,7 +260,7 @@ class DirectProvider:
 
     def request(self, ctx, exchanges):
         settings = self.model.settings
-        definitions = ctx["tools"] if self.interface in NAMED_INTERFACES else [TOOL]
+        definitions = ctx["tools"] if self.interface in NAMED_INTERFACES else [ctx.get("tool", TOOL)]
         payload = context_payload(ctx, exchanges, self.model.provider, self.interface)
         self.available_tools = (
             set(ctx["allowed_tools"])

@@ -1,5 +1,6 @@
 """Immutable interventions; only the original public prefix is inherited."""
 
+from balatro_horizons.agents.frozen import restore_protocol, validate_continuation
 from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.engine.certification import require_checkpoint_certificate
 
@@ -15,6 +16,8 @@ def prepare_branch(store, config, eid, decision, mode):
     checkpoint, cert = require_checkpoint_certificate(store, eid, decision)
     restore_knowledge(store, checkpoint)
     parent = store.manifest(eid)
+    protocol = restore_protocol(store, checkpoint)
+    validate_continuation(protocol, config, parent["agent"], human=mode == "human_takeover")
     events = store.events(eid)
     boundary = next(
         e for e in events if e["type"] == "observation" and e["observation_id"] == decision
@@ -32,6 +35,7 @@ def prepare_branch(store, config, eid, decision, mode):
         "assistance": mode,
         "fixture": parent.get("fixture"),
         "certificate_id": cert["certificate_id"],
+        "agent_protocol": checkpoint["agent_protocol"],
     }
     private = {**store.manifest(eid, True), "branch_mode": mode}
     branch_id = store.create(manifest, private)

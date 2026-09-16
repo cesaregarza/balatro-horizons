@@ -122,6 +122,10 @@ their behavior. See [protocol details and limits](docs/provider-continuation-v1.
 
 ## Validation
 
+New episodes freeze their complete agent protocol before the first decision.
+Prompts edited afterward do not affect the run or its ordinary branches. See
+[snapshot contents, compatibility, and fingerprint boundaries](docs/frozen-agent-protocol.md).
+
 After installing the locked Python and web dependencies, run
 `scripts/check_offline.py --web` from this checkout (or pass `--root /path/to/checkout`).
 This runs Python tests, lint, diff checks, the frontend build, and browser tests,
