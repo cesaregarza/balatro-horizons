@@ -155,25 +155,6 @@ The private calibration panel contains fixed regression seeds selected for short
 
 After `verify_release.py` passes, run `uv --directory /root/dev/balatro-horizons run python scripts/finalize_evidence.py` to validate the collected evidence, activate matching native capabilities, and write the sanitized diagnostic report. `verify_release.py --resume-certification` reuses completed collection for the same pinned runtime and repeats certification plus the branch test.
 
-## Phone access through Tailscale
-
-The workbench can sit behind a private Tailscale Serve HTTPS proxy while Python remains on loopback. Start it with the exact configured origin, for example:
-
-```bash
-uv --directory /root/dev/balatro-horizons run bh review --port 8765 --public-origin https://HOST.TAILNET.ts.net:8443
-tailscale serve --bg --https=8443 http://127.0.0.1:8765
-```
-
-Use the hostname reported by `tailscale status`, and first check `tailscale serve status` so an existing route is not replaced. The current share uses a user service named `balatro-horizons.service`; its actual URL is recorded locally in `private/tailnet-share.json`. Its service definition now persists across stop/start, but credentials and Windows launch context may need restoration after reboot; see the release handoff above. Keep this PC and its WSL session running, and connect the phone to the same tailnet. The route is private Serve, with no public Funnel enabled. Stop only this route with `tailscale serve --https=8443 off`; stop its backend with `systemctl --user stop balatro-horizons.service`.
-
-If service-launched games omit mods while direct launches work, run
-`uv --directory /root/dev/balatro-horizons run scripts/configure_workbench_session.py --apply`
-from the current Windows-connected WSL shell while the worker is idle. It restores
-only the service's Windows launch context. See [startup diagnostics](docs/native-audit.md#startup-diagnostics)
-for the no-cost browser-worker check and recovery details.
-
-The application accepts only the explicitly configured HTTPS origin and retains local access. Other hosts, mismatched ports, and cross-origin requests remain rejected. The networking update passed 62 Python tests and a phone-sized browser check against the actual HTTPS native review and comparison (`reports/verification/native-browser-mobile.json`). Native replay certificates remain unchanged. If this WSL host does not resolve MagicDNS, the verification helper supports `BH_WORKBENCH_IP` for a local Chromium DNS override while retaining full TLS certificate checks; it does not change tailnet DNS or ACLs.
-
 ## Focused model context
 
 The run form selects **Model** and **Reasoning effort** and uses **Current harness
