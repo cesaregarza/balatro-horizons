@@ -186,6 +186,12 @@ backend environment. See [model selection](docs/model-selection.md),
 [focused context](docs/harness-focused-context.md), and
 [cache validation](docs/cache-fix-2026-09-15.md). Presets keep paid calls disabled.
 
+The current harness also receives the short
+[ALWAYS-LOADED.md](configs/prompts/ALWAYS-LOADED.md) mechanics reference on every
+call. Its contents are embedded in the frozen prompt and shared by both provider
+adapters. See [persistent instructions](docs/persistent-instructions.md) for editing,
+the prompt sync command, and the existing byte/token limit issue.
+
 New observations use [public information contract 1.1](docs/public-information-v1.1.md):
 visible playing-card offers retain rank/suit, blind effects and skip rewards are
 separate, owned vouchers and pending tags have native descriptions, and the model
