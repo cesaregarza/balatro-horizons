@@ -1,5 +1,9 @@
 # Provider continuation protocol v1
 
+For subsequent deployment and live verification, see the
+[September 16 release handoff](release-2026-09-16.md). The implementation-stage
+status below is retained as historical evidence.
+
 This is handoff work package B2 on branch `fix/provider-continuations`, based on
 public-information commit `5361c4d`. It adds the versioned `tools_v5` harness.
 The running workbench and dedicated Windows runtime were not updated. No paid

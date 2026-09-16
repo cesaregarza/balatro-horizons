@@ -1,5 +1,9 @@
 # Public information contract 1.1
 
+For subsequent deployment and native verification, see the
+[September 16 release handoff](release-2026-09-16.md). The implementation-stage
+status below is retained as historical evidence.
+
 This is handoff work package B1, implemented separately on `fix/public-information`
 on top of budget-fix commit `2ab1730`. The running workbench and dedicated Windows
 runtime were not updated. It changes public observations and their presentation;

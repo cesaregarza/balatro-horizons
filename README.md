@@ -122,6 +122,9 @@ their behavior. See [protocol details and limits](docs/provider-continuation-v1.
 
 ## Validation
 
+The [September 16 release handoff](docs/release-2026-09-16.md) records the deployed
+changes, native certificates, provider smoke, and remaining verification limits.
+
 New episodes freeze their complete agent protocol before the first decision.
 Prompts edited afterward do not affect the run or its ordinary branches. See
 [snapshot contents, compatibility, and fingerprint boundaries](docs/frozen-agent-protocol.md).
@@ -161,7 +164,7 @@ uv --directory /root/dev/balatro-horizons run bh review --port 8765 --public-ori
 tailscale serve --bg --https=8443 http://127.0.0.1:8765
 ```
 
-Use the hostname reported by `tailscale status`, and first check `tailscale serve status` so an existing route is not replaced. The current share uses a transient user service named `balatro-horizons.service`; its actual URL is recorded locally in `private/tailnet-share.json`. Keep this PC and its WSL session running, and connect the phone to the same tailnet. The route is private Serve, with no public Funnel enabled. Stop only this route with `tailscale serve --https=8443 off`; stop its backend with `systemctl --user stop balatro-horizons.service`. A new WSL/user-service session requires restarting the backend.
+Use the hostname reported by `tailscale status`, and first check `tailscale serve status` so an existing route is not replaced. The current share uses a user service named `balatro-horizons.service`; its actual URL is recorded locally in `private/tailnet-share.json`. Its service definition now persists across stop/start, but credentials and Windows launch context may need restoration after reboot; see the release handoff above. Keep this PC and its WSL session running, and connect the phone to the same tailnet. The route is private Serve, with no public Funnel enabled. Stop only this route with `tailscale serve --https=8443 off`; stop its backend with `systemctl --user stop balatro-horizons.service`.
 
 If service-launched games omit mods while direct launches work, run
 `uv --directory /root/dev/balatro-horizons run scripts/configure_workbench_session.py --apply`

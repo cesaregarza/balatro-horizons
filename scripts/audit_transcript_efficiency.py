@@ -47,6 +47,77 @@ def request_parts(body):
     return instructions, messages
 
 
+def continuation_diagnostics(events):
+    """Check recorded OpenAI helper round trips without emitting opaque items."""
+    requests = [e for e in events if e["type"] == "provider_request"]
+    responses = {e["request_id"]: e for e in events if e["type"] == "provider_response"}
+    result = {
+        "provider": "openai",
+        "helper_round_trips_checked": 0,
+        "exact_turn_round_trips": 0,
+        "encrypted_reasoning_items_preserved": 0,
+        "matched_tool_results": 0,
+        "pending_helper_followups": 0,
+        "decision_starts_checked": 0,
+        "failures": [],
+    }
+    seen = set()
+    for request in requests:
+        body = request["payload"]["body"]
+        if "reasoning.encrypted_content" not in body.get("include", []):
+            continue
+        decision = request["observation_id"]
+        if decision in seen:
+            continue
+        seen.add(decision)
+        result["decision_starts_checked"] += 1
+        if any(item.get("type") in ("reasoning", "function_call", "function_call_output")
+               or item.get("role") == "assistant" for item in body.get("input", [])):
+            result["failures"].append({"sequence": request["sequence"], "code": "DECISION_RESET_FAILED"})
+    for helper in (e for e in events if e["type"] == "helper_result"):
+        decision, sequence = helper["observation_id"], helper["sequence"]
+        prior_request = next((e for e in reversed(requests)
+                              if e["observation_id"] == decision and e["sequence"] < sequence), None)
+        prior = responses.get(prior_request["request_id"]) if prior_request else None
+        following = next((e for e in requests
+                          if e["observation_id"] == decision and e["sequence"] > sequence), None)
+        if not following:
+            result["pending_helper_followups"] += 1
+            continue
+        body = following["payload"]["body"]
+        if "reasoning.encrypted_content" not in body.get("include", []):
+            continue
+        result["helper_round_trips_checked"] += 1
+        items = prior["payload"]["body"].get("output", []) if prior else []
+        delivered = body.get("input", [])
+        exact = bool(items) and any(delivered[i:i + len(items)] == items
+                                    for i in range(len(delivered)))
+        if exact:
+            result["exact_turn_round_trips"] += 1
+            result["encrypted_reasoning_items_preserved"] += sum(
+                item.get("type") == "reasoning" and bool(item.get("encrypted_content"))
+                for item in items
+            )
+        else:
+            result["failures"].append({"sequence": sequence, "code": "PROVIDER_TURN_CHANGED_OR_MISSING"})
+        calls = [item for item in items if item.get("type") == "function_call"]
+        for call in calls:
+            output = next((item.get("output") for item in delivered
+                           if item.get("type") == "function_call_output"
+                           and item.get("call_id") == call.get("call_id")), None)
+            try:
+                matches = json.loads(output) == helper["payload"]["result"]
+            except (ValueError, TypeError):
+                matches = False
+            if matches:
+                result["matched_tool_results"] += 1
+            else:
+                result["failures"].append({"sequence": sequence, "code": "TOOL_RESULT_CHANGED_OR_MISSING"})
+        if not calls:
+            result["failures"].append({"sequence": sequence, "code": "MISSING_HELPER_CALL"})
+    return result
+
+
 def audit(store, eid, expose=False):
     events = store.events(eid)
     if expose:
@@ -104,6 +175,10 @@ def main():
     store = Store.__new__(Store)
     store.root = root
     result = {"schema_version": 2, "component_measure": "compact UTF-8 JSON bytes; nested components overlap; not billed tokens", "evaluation_eligible": False, "episodes": [audit(store, eid, args.record_exposure) for eid in args.episode_id]}
+    for episode in result["episodes"]:
+        episode["provider_continuation_diagnostics"] = continuation_diagnostics(
+            store.events(episode["episode_id"])
+        )
     with output.open("x") as stream:
         json.dump(result, stream, indent=2, ensure_ascii=False)
         stream.write("\n")
