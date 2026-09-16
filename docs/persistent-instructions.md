@@ -2,9 +2,9 @@
 
 The current `tools_v5` harness always receives the short
 [`ALWAYS-LOADED.md`](../configs/prompts/ALWAYS-LOADED.md) mechanics reference.
-Its source is limited to 1,024 UTF-8 bytes. It supplies factual reminders and
-instructions to consult uncertain rules and retain useful notes; it does not
-prescribe a savings target or rank purchases.
+Its source is limited to 1,024 UTF-8 bytes. It supplies factual reminders about
+interest, unused hands, borrowing, scoring, persistent resources, and skipping;
+it does not prescribe a savings target or rank purchases.
 
 Edit that Markdown file, then publish it into the current prompt:
 
