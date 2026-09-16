@@ -58,6 +58,34 @@ def test_probe_closes_transport_on_failed_identity(tmp_path):
     bridge._close_rpc.assert_called_once()
 
 
+@pytest.mark.parametrize("errors,calls,success", [(1, 2, True), (3, 3, False)])
+def test_launch_retries_only_pre_submission_eio(monkeypatch, errors, calls, success):
+    from balatro_horizons.config import Environment
+    from balatro_horizons.engine import native
+
+    spawn = Mock(side_effect=[OSError(5, "EIO")] * errors + [Mock()])
+    monkeypatch.setattr(native.subprocess, "Popen", spawn)
+    monkeypatch.setattr(native.time, "sleep", Mock())
+    bridge = native.WindowsBridge(Environment())
+    if success:
+        assert bridge.command("launch") == {"launch_requested": True}
+    else:
+        with pytest.raises(NativeFailure, match="WINDOWS_BRIDGE_OS_ERROR_5"):
+            bridge.command("launch")
+    assert spawn.call_count == calls
+
+
+def test_launch_does_not_retry_other_errors(monkeypatch):
+    from balatro_horizons.config import Environment
+    from balatro_horizons.engine import native
+
+    spawn = Mock(side_effect=OSError(13, "denied"))
+    monkeypatch.setattr(native.subprocess, "Popen", spawn)
+    with pytest.raises(NativeFailure, match="WINDOWS_BRIDGE_OS_ERROR_13"):
+        native.WindowsBridge(Environment()).command("launch")
+    spawn.assert_called_once()
+
+
 def test_workbench_probe_uses_observation_identity_and_stops_without_model(monkeypatch):
     from balatro_horizons import operator_client
     from balatro_horizons.storage import journal

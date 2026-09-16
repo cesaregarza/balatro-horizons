@@ -63,13 +63,22 @@ class WindowsBridge:
             if mode == "launch":
                 # A Windows GUI descendant can keep WSL's captured pipes open after
                 # PowerShell returns. Launch detached; verify readiness through RPC.
-                subprocess.Popen(
-                    command,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
+                for attempt in range(3):
+                    try:
+                        subprocess.Popen(
+                            command,
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            start_new_session=True,
+                        )
+                        break
+                    except OSError as error:
+                        # As with RPC process creation, no request was submitted
+                        # when WSL fails to open the executable with EIO.
+                        if error.errno != 5 or attempt == 2:
+                            raise
+                        time.sleep(0.2 * (attempt + 1))
                 return {"launch_requested": True}
             result = subprocess.run(
                 command,

@@ -19,19 +19,23 @@ from balatro_horizons.service import RunService
 from balatro_horizons.storage.journal import Store, atomic_json, digest, locked
 
 
-def episode_status(store, episode_id=None):
+def episode_status(store, episode_id=None, *, campaign=None):
     """Report one episode's progress and record precisely that viewing exposure."""
     if episode_id is None:
         row = next(
             (
                 r
                 for r in store.list_episodes()
-                if r["manifest"].get("validation_purpose") == "openai_luna_smoke"
+                if (
+                    r["manifest"].get("smoke_campaign") == campaign
+                    if campaign
+                    else r["manifest"].get("validation_purpose") == "openai_luna_smoke"
+                )
             ),
             None,
         )
         if row is None:
-            raise ValueError("NO_LUNA_SMOKE_EPISODE")
+            raise ValueError("NO_PROVIDER_SMOKE_EPISODE" if campaign else "NO_LUNA_SMOKE_EPISODE")
         episode_id = row["episode_id"]
     manifest = store.manifest(episode_id)
     with locked(store.episode_path(episode_id) / ".writer.lock"):
@@ -87,7 +91,8 @@ def main():
         "--env-file", type=Path, help="Read OPENAI_API_KEY only; never execute file contents"
     )
     parser.add_argument(
-        "--revision", help="Record a named configuration revision; keeps the same shared $5 ledger"
+        "--revision",
+        help="Record a configuration revision while retaining the same campaign ledger",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -114,7 +119,16 @@ def main():
     if args.revision and not re.fullmatch(r"[a-z0-9-]{1,40}", args.revision):
         parser.error("revision must contain 1-40 lowercase letters, digits or hyphens")
     if args.status:
-        print(json.dumps(episode_status(Store(ROOT / "data"), args.episode_id), indent=2))
+        print(
+            json.dumps(
+                episode_status(
+                    Store(ROOT / "data"),
+                    args.episode_id,
+                    campaign=args.campaign if args.campaign != "openai-luna-smoke" else None,
+                ),
+                indent=2,
+            )
+        )
         return 0
     if args.episode_id:
         parser.error("--episode-id requires --status")

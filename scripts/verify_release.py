@@ -24,6 +24,35 @@ def command(script, *args):
     subprocess.run([sys.executable, str(ROOT / "scripts" / script), *args], cwd=ROOT, check=True)
 
 
+def completed_action_fixture(store, eid, environment_hash):
+    """Recover a completed collection from authoritative journals, never terminal output."""
+    manifest, summary = store.manifest(eid), store.summary(eid)
+    if (
+        manifest.get("fixture") != "native_action_coverage"
+        or not summary
+        or summary.get("reason") != "NATIVE_FIXTURE_COMPLETE"
+    ):
+        raise ValueError("ACTION_COLLECTION_NOT_COMPLETE")
+    checkpoints = {}
+    for path in store.episode_path(eid, True).glob("checkpoint-*.json"):
+        checkpoint = json.loads(path.read_text())
+        if digest(checkpoint["game"]["environment"]) != environment_hash:
+            raise ValueError("ACTION_COLLECTION_ENVIRONMENT_CHANGED")
+        checkpoints[checkpoint["observation"]["phase"]] = checkpoint["observation"][
+            "observation_id"
+        ]
+    return {
+        "episode_id": eid,
+        "outcome": summary["outcome"],
+        "checkpoints": checkpoints,
+        "actions": [
+            e["payload"]["action"]["type"]
+            for e in store.events(eid)
+            if e["type"] == "action_commit"
+        ],
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -31,7 +60,13 @@ def main():
         action="store_true",
         help="Reuse completed native collection for the same pinned runtime, then repeat certification and branching.",
     )
+    parser.add_argument(
+        "--resume-actions",
+        help="Reuse a completed action-fixture episode after a later collection startup failure",
+    )
     args = parser.parse_args()
+    if args.resume_actions and args.resume_certification:
+        parser.error("select one resume boundary")
     store = Store(ROOT / "data")
     source = implementation_fingerprint()
     config = load_config(ROOT / "configs/pilot.yaml")
@@ -50,10 +85,30 @@ def main():
             if audit["environment_hash"] != current_environment:
                 raise ValueError("Cannot reuse collection from another native environment")
     else:
-        command("audit_runtime.py", "--preset", "smoke")
-        command("audit_runtime.py", "--preset", "pilot")
-        invalid_tests()
-        fixture = exercise_shop(config)
+        if args.resume_actions:
+            current_environment = digest(
+                json.loads((ROOT / "private/environment.lock.json").read_text())
+            )
+            for stake in ("WHITE", "GOLD"):
+                audit = json.loads(
+                    (ROOT / f"reports/verification/runtime-audit-{stake}.json").read_text()
+                )
+                if audit["environment_hash"] != current_environment or not audit["profile_stable"]:
+                    raise ValueError("PRIOR_PROFILE_COLLECTION_INVALID")
+            invalid = json.loads((ROOT / "reports/verification/native-invalid.json").read_text())
+            if not invalid["unchanged"]:
+                raise ValueError("PRIOR_INVALID_ACTION_COLLECTION_INVALID")
+            initial = json.loads(
+                (store.episode_path(invalid["episode_id"], True) / "checkpoint-0.json").read_text()
+            )
+            if digest(initial["game"]["environment"]) != current_environment:
+                raise ValueError("PRIOR_INVALID_ACTION_ENVIRONMENT_CHANGED")
+            fixture = completed_action_fixture(store, args.resume_actions, current_environment)
+        else:
+            command("audit_runtime.py", "--preset", "smoke")
+            command("audit_runtime.py", "--preset", "pilot")
+            invalid_tests()
+            fixture = exercise_shop(config)
         win = exercise_win(config)
         atomic_json(
             ROOT / "reports/verification/native-fixtures-final.json",
