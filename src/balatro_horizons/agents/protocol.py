@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, TypeAdapter
 
+from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.skills import discovery, read_guide
 from balatro_horizons.agents.tool_interface import (
     ACTION_MODELS,
@@ -23,7 +24,7 @@ from balatro_horizons.agents.tool_interface import (
 from balatro_horizons.config import (
     CONTEXT_FRAMING_BYTES,
     DEFAULT_HISTORY_PAGE_EVENTS,
-    DEFAULT_INPUT_TOKEN_LIMIT,
+    DEFAULT_REQUEST_BYTE_LIMIT,
     MAX_ABORT_REASON_CHARACTERS,
     MAX_ARITHMETIC_CHARACTERS,
     MAX_ARITHMETIC_NODES,
@@ -112,7 +113,7 @@ KERNEL = "The objective is the ordinary Ante 8 native run win. Hand scores resol
 def context(
     observation,
     *,
-    byte_limit=DEFAULT_INPUT_TOKEN_LIMIT,
+    byte_limit=DEFAULT_REQUEST_BYTE_LIMIT,
     interface="operate_v1",
     skills=(),
     skill_descriptions=True,
@@ -179,11 +180,13 @@ def context(
                 ]
                 result["observation"]["presentation"]["version"] = interface
             return working_context(result, [], byte_limit)[0]
-    # UTF-8 bytes plus conservative framing allowance is an upper bound on text tokens.
+    # Local transport bound; provider token accounting is a separate preflight.
     while len(json.dumps(result, ensure_ascii=False).encode()) + CONTEXT_FRAMING_BYTES > byte_limit:
         events = observation["recent_public_events"]
         if not events:
-            raise ValueError("REQUIRED_CONTEXT_EXCEEDS_LIMIT")
+            raise HarnessFailure("LOCAL_CONTEXT_LIMIT", stage="initial_request",
+                                 request_bytes=len(json.dumps(result, ensure_ascii=False).encode())
+                                 + CONTEXT_FRAMING_BYTES, byte_limit=byte_limit)
         result["omitted_event_ids"].append(events.pop(0)["event_id"])
     return result
 
@@ -192,7 +195,7 @@ def decision_context(
     observation,
     exchanges,
     *,
-    byte_limit=DEFAULT_INPUT_TOKEN_LIMIT,
+    byte_limit=DEFAULT_REQUEST_BYTE_LIMIT,
     interface="operate_v1",
     skills=(),
     frozen=None,

@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.agents.budget import Spending
+from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.protocol import Operation
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
 from balatro_horizons.config import load_config
@@ -140,6 +141,18 @@ def main():
             if previous_id:
                 body["prompt_cache_options"]["comparison_response_id"] = previous_id
             request_id = uuid.uuid4().hex
+            try:
+                measurement = policy.check_input(body)
+            except HarnessFailure as error:
+                result = {"request_id": request_id, "error": error.code,
+                          "diagnostic": error.public(), "cost_usd": 0,
+                          "generation_attempted": False}
+                append(campaign / "journal.jsonl", {"type": "error", **result})
+                results.append(result)
+                break
+            append(campaign / "journal.jsonl", {
+                "type": "provider_input_check", "request_id": request_id, **measurement,
+            })
             spending.reserve(request_id, "cache-probe", reserve, limits.max_episode_cost_usd)
             append(
                 campaign / "journal.jsonl",

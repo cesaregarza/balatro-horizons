@@ -95,9 +95,14 @@ def test_AT19_mixed_status_coverage_and_all_attempt_cost():
 
 
 def test_AT20_bootstrap_uses_seed_clusters():
+    from balatro_horizons.evaluation.batches import cluster_diagnostic
     assert cluster_interval({"a": [1, 1, 1], "b": [0, 0, 0]}) == [0.0, 1.0]
     assert cluster_interval({"a": [1, 1]}) is None
     assert cluster_interval({"a": [1, 0], "b": [1, 0]}) == [0.5, 0.5]
+    assert cluster_diagnostic({"a": [0], "b": [0]})["status"] == "degenerate"
+    assert cluster_diagnostic({"a": [1], "b": [1]})["status"] == "degenerate"
+    assert cluster_diagnostic({"a": [1], "b": [0]})["status"] == "varying_seed_means"
+    assert cluster_diagnostic({"a": [1]})["status"] == "insufficient_seed_clusters"
 
 
 def test_AT21_export_injected_private_values_rejected():

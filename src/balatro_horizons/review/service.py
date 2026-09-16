@@ -118,6 +118,8 @@ class ReviewService:
                     "provider_request",
                     "provider_response",
                     "provider_error",
+                    "provider_input_check",
+                    "harness_failure",
                     "action_intent",
                     "action_commit",
                     "action_rejected",

@@ -41,7 +41,7 @@ def candidates(store, eid, config, model_name):
                 previous["exchanges"],
                 interface=model.settings["harness_interface"],
                 skills=skills,
-                byte_limit=config.budgets.max_input_tokens_per_call,
+                byte_limit=config.budgets.max_request_bytes,
             )
             ctx["observation"]["remaining_budget"] = previous["context"]["observation"][
                 "remaining_budget"

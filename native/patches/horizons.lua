@@ -2,6 +2,8 @@
 -- No endpoint in this file is exposed directly to playing providers.
 local json = require('json')
 local public = assert(SMODS.load_file('horizons_public.lua'))()
+local settlement = assert(SMODS.load_file('horizons_settlement.lua'))()
+settlement.install()
 local token = assert(os.getenv('BH_TOKEN'), 'Missing private bridge token')
 local runtime = assert(os.getenv('BH_RUNTIME'), 'Missing isolated runtime directory')
 local manifest_file=assert(io.open(runtime .. '/environment.lock.json','r'))
@@ -90,6 +92,7 @@ local function inspect()
     rng=G.GAME.pseudorandom, tags={},deck_composition={}}
   for _, tag in ipairs(G.GAME.tags or {}) do table.insert(state.bh.tags,tag.key) end
   public.extend(state)
+  state.bh.settlement = settlement.visible()
   for _, card in ipairs(G.playing_cards or {}) do
     local key = public.deck_key(card)
     state.bh.deck_composition[key]=(state.bh.deck_composition[key] or 0)+1

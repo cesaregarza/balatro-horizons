@@ -108,6 +108,9 @@ def test_preflight_does_not_send_or_touch_source_and_paid_probe_reserves_once(
         }
 
     monkeypatch.setattr(DirectProvider, "send", send)
+    monkeypatch.setattr(DirectProvider, "check_input", lambda self, body: {
+        "method": "synthetic_test_count", "input_tokens": 5000,
+    })
     monkeypatch.setenv("OPENAI_API_KEY", "test-only")
     monkeypatch.setattr(sys, "argv", args + ["--allow-paid"])
     assert probe.main() == 0

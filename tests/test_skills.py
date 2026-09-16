@@ -1,3 +1,4 @@
+
 """Skill access uses public frozen text, the ordinary helper loop, and no network."""
 
 import json
@@ -5,6 +6,7 @@ from copy import deepcopy
 
 import httpx
 import pytest
+from provider_transport import with_input_count
 from test_boundary import project
 from test_tool_interface import config_for
 
@@ -144,7 +146,7 @@ def test_model_reads_skill_and_reference_then_completes_synthetic_run(
     policy = DirectProvider(
         config.models["luna"],
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(receive)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
     runner = Runner(store, config, game, policy)
     result = runner.run()

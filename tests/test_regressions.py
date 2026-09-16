@@ -2,6 +2,7 @@ import json
 
 import httpx
 import pytest
+from provider_transport import with_input_count
 from pydantic import ValidationError
 from test_boundary import project
 from test_providers_evaluation import model
@@ -29,7 +30,7 @@ def test_direct_http_transport_and_unknown_usage(provider, monkeypatch):
         return httpx.Response(503, json={"message": "private upstream details"})
 
     policy = DirectProvider(
-        model(provider), Limits(), client=httpx.Client(transport=httpx.MockTransport(receive))
+        model(provider), Limits(), client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive)))
     )
     body = policy.request(context(project(FakeGame().observe_private())), [])
     with pytest.raises(ProviderFailure, match="PROVIDER_HTTP_503") as error:

@@ -1,3 +1,4 @@
+
 """Campaign funding is external to the resource-bounded agent protocol.
 
 All games are synthetic; real provider request/parse logic uses mocked HTTP.
@@ -12,6 +13,7 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
+from provider_transport import with_input_count
 from test_openai_luna import luna, response
 
 from balatro_horizons import service as service_module
@@ -51,7 +53,7 @@ def harness(store, monkeypatch):
         return httpx.Response(200, json=response(operation))
 
     def policy(model, limits):
-        client = httpx.Client(transport=httpx.MockTransport(receive))
+        client = httpx.Client(transport=httpx.MockTransport(with_input_count(receive)))
         clients.append(client)
         return DirectProvider(model, limits, client=client)
 

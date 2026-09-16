@@ -4,6 +4,7 @@ import hashlib
 import json
 from copy import deepcopy
 
+from balatro_horizons.agents.instructions import load_prompt
 from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, ROOT
 from balatro_horizons.engine.provenance import implementation_fingerprint
 from balatro_horizons.storage.journal import digest
@@ -14,15 +15,14 @@ def episode_limits(config):
     return config.budgets.model_dump(exclude={"paid_calls_enabled", "max_batch_cost_usd"})
 
 
-def freeze_protocol(config, policy, rules):
+def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     from balatro_horizons.agents.focused import PAGE_BYTES, RETAINED_RESULTS, focused_tools
     from balatro_horizons.agents.protocol import KERNEL, TOOL
     from balatro_horizons.agents.skills import discovery
     from balatro_horizons.agents.tool_interface import FOCUSED_INTERFACES, stable_tools
 
     interface = getattr(policy, "interface", "operate_v1")
-    filename = "core.txt" if interface == "operate_v1" else interface.replace("_", "-") + ".txt"
-    raw = (ROOT / "configs/prompts" / filename).read_bytes()
+    raw = load_prompt(ROOT, interface) if prompt_bytes is None else prompt_bytes
     skills = rules.get("skills", [])
     kernel = (
         "Resolve scores in native order. Read the available skills and linked rules when useful."
@@ -59,7 +59,7 @@ def freeze_protocol(config, policy, rules):
             "retained_results": RETAINED_RESULTS if interface in FOCUSED_INTERFACES else None,
             "page_bytes": PAGE_BYTES if interface in FOCUSED_INTERFACES else None,
             "provider_continuation": "within_decision_only" if interface == "tools_v5" else "none",
-            "context_bound": "utf8_bytes_plus_framing_v1",
+            "context_bound": "request_bytes_and_provider_tokens_v2",
         },
         "public_export_policy": "public-schema-v1-opaque-continuations-omitted",
         "implementation_hash": implementation_fingerprint(),

@@ -14,6 +14,7 @@ from balatro_horizons.agents.skills import load_guide, prepare_rules, read_guide
 from balatro_horizons.config import ROOT, Config, Limits, ModelConfig
 from balatro_horizons.contracts import Observation
 from balatro_horizons.engine.provenance import implementation_fingerprint
+from balatro_horizons.evaluation.economy import economy_metrics
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
@@ -76,6 +77,7 @@ def audit(
         components["history"].append(size(obs.get("recent_public_events", [])))
         components["memory"].append(size(obs.get("memory", "")))
     result = {
+        "economy": economy_metrics(events),
         "episode_id": eid,
         "skill_catalog_in_reconstruction": bool(skills),
         "candidate_interface": candidate_interface,
@@ -136,7 +138,7 @@ def audit(
                         context(
                             observation,
                             interface=candidate_interface,
-                            byte_limit=limits.max_input_tokens_per_call,
+                            byte_limit=limits.max_request_bytes,
                             skills=skills,
                         ),
                         [],
@@ -172,7 +174,7 @@ def audit(
                         observation,
                         event["payload"]["exchanges"],
                         interface=candidate_interface,
-                        byte_limit=limits.max_input_tokens_per_call,
+                        byte_limit=limits.max_request_bytes,
                         skills=skills,
                     )
                     body = policy.request(ctx, exchanges)
@@ -225,7 +227,7 @@ def audit(
                             observation,
                             exchanges + [runner._exchange(raw, page)],
                             interface=candidate_interface,
-                            byte_limit=limits.max_input_tokens_per_call,
+                            byte_limit=limits.max_request_bytes,
                             skills=library["skills"],
                         )
                         body = policy.request(ctx, delivered)

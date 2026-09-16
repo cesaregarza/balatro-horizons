@@ -28,6 +28,7 @@ INSPECT_SECTIONS = (
     "persistent_effects",
     "owned_vouchers",
     "pending_tags",
+    "settlement",
     "public_deck_knowledge",
     "resources",
     "progress",

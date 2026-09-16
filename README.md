@@ -244,10 +244,12 @@ Protocol identities, game rules, and provider-specific constraints remain in
 their owning modules. Changing defaults does not update frozen prompt prose;
 review affected prompt text when changing a protocol allowance or retention rule.
 
-The existing **32,768-token allowance is also used as a serialized-byte ceiling**
-by legacy context accounting. The refactor preserves values and behavior; it does
-not fix that unit coupling or raise spending limits. See
-[persistent instructions](docs/persistent-instructions.md#existing-context-limit-defect).
+The **32,768-token allowance** is separate from `max_request_bytes` (262,144 by
+default). Complete provider input is counted before generation, while spending
+reservations retain the full configured token ceilings and maximum input price.
+See [persistent instructions](docs/persistent-instructions.md#separate-transport-token-and-spending-controls)
+and the [reliability change record](docs/harness-reliability.md) for the controls,
+safe failure diagnostics, and pending native/provider deployment gates.
 
 The [defaults-refactor verification](docs/defaults-refactor.md) records offline
 checks and the native activation boundary for this change.
@@ -268,7 +270,7 @@ The current harness also receives the short
 [ALWAYS-LOADED.md](configs/prompts/ALWAYS-LOADED.md) mechanics reference on every
 call. Its contents are embedded in the frozen prompt and shared by both provider
 adapters. See [persistent instructions](docs/persistent-instructions.md) for editing,
-the prompt sync command, and the existing byte/token limit issue.
+the prompt sync command, admission freshness checks, and byte/token limits.
 
 New observations use [public information contract 1.1](docs/public-information-v1.1.md):
 visible playing-card offers retain rank/suit, blind effects and skip rewards are

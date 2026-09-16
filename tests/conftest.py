@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from balatro_horizons.agents.baselines import Baseline
@@ -5,6 +6,14 @@ from balatro_horizons.config import Config
 from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.runner import Runner
 from balatro_horizons.storage.journal import Store
+
+
+@pytest.fixture(autouse=True)
+def block_real_http(monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Offline tests must use a mock HTTP transport")
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", forbidden)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", forbidden)
 
 
 @pytest.fixture

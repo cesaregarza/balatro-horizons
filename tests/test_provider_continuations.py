@@ -3,6 +3,7 @@ from copy import deepcopy
 
 import httpx
 import pytest
+from provider_transport import with_input_count
 from test_boundary import project
 from test_tool_interface import config_for
 
@@ -308,13 +309,24 @@ def test_provider_continuation_resets_after_committed_game_action(store, monkeyp
     policy = DirectProvider(
         config.models["luna"],
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(receive)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
     runner = Runner(store, config, FakeGame(), policy)
     result = runner.run()
     assert result["reason"] == "AGENT_ABORT"
     assert len(requests) == 3
     assert "decision-one-reasoning" in json.dumps(requests[1])
+    import runpy
+
+    from balatro_horizons.config import ROOT
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    replay = runpy.run_path(str(ROOT / "scripts/replay_helper_context.py"))["replay"]
+    journal_before = store.events(result["episode_id"])
+    checked = replay(store, result["episode_id"], 0)
+    assert checked["status"] == "fits_transport" and checked["provider_items_preserved"]
+    assert checked["provider_calls"] == 0 and not checked["token_count_verified"]
+    assert "decision-one-reasoning" not in json.dumps(checked)
+    assert store.events(result["episode_id"]) == journal_before
 
 
 def test_context_clears_results_but_retains_provider_protocol_shells():

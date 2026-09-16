@@ -97,6 +97,20 @@ class DeckKnowledge(StrictModel):
     provenance: Literal["public_history", "native_deck_view", "unknown"] = "unknown"
 
 
+class SettlementRow(StrictModel):
+    kind: Literal["blind", "hands", "discards", "interest", "other"]
+    label: str
+    dollars: str
+    count: str | None = None
+
+
+class Settlement(StrictModel):
+    source: Literal["native_cashout_rows"]
+    rows: list[SettlementRow]
+    total: str
+    omitted_rows: int = Field(default=0, ge=0)
+
+
 class PublicState(StrictModel):
     progress: Progress
     resources: Resources
@@ -110,6 +124,7 @@ class PublicState(StrictModel):
     persistent_effects: list[str] = Field(default_factory=list)
     owned_vouchers: list[PublicEffect] | None = None
     pending_tags: list[PublicEffect] | None = None
+    settlement: Settlement | None = None
 
 
 class PublicObjectReference(StrictModel):
