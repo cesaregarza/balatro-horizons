@@ -7,12 +7,15 @@ import {
   actionTitle,
   filters,
   humanize,
+  jokerChanges,
   matchesFilter,
   number,
 } from "./decisionPresentation";
 import "./decisions.css";
 import { modelLabel } from "./modelSelection";
 import { downloadDecisions, type DecisionExportFormat } from "./decisionExport";
+import { modifierDescription } from "./cardPresentation";
+import { ModifierLegend } from "./ModifierLegend";
 
 export function DecisionExplorer({
   token,
@@ -220,6 +223,7 @@ export function DecisionExplorer({
           Export JSON
         </button>
       </div>
+      <ModifierLegend />
       <p className="muted">
         Download all loaded decision summaries, including choices, notes and
         recorded changes. JSONL has one decision per line. Filters do not limit
@@ -437,7 +441,9 @@ export function DecisionExplorer({
                         #{row.decision + 1}
                       </span>
                       <span className="decision-row-body">
-                        <strong>{actionTitle(row)}</strong>
+                        <strong title={modifierDescription(row.effects)}>
+                          {actionTitle(row)}
+                        </strong>
                         <span
                           className={
                             !row.action_number ? "rejected" : "decision-result"
@@ -452,7 +458,7 @@ export function DecisionExplorer({
                         )}
                         {!!row.jokers_added?.length && (
                           <span className="build-change">
-                            + {row.jokers_added.join(", ")}
+                            + {jokerChanges(row, "added").join(", ")}
                           </span>
                         )}
                       </span>
@@ -494,7 +500,11 @@ export function DecisionExplorer({
                     DECISION {active.decision + 1} · ANTE {active.ante ?? "?"} ·{" "}
                     {humanize(active.phase)}
                   </p>
-                  <h2 ref={detailHeading} tabIndex={-1}>
+                  <h2
+                    ref={detailHeading}
+                    tabIndex={-1}
+                    title={modifierDescription(active.effects)}
+                  >
                     {actionTitle(active)}
                   </h2>
                   <p
@@ -531,11 +541,13 @@ export function DecisionExplorer({
                   </div>
                   {!!active.jokers_added?.length && (
                     <p className="build-change">
-                      Added: {active.jokers_added.join(" · ")}
+                      Added: {jokerChanges(active, "added").join(" · ")}
                     </p>
                   )}
                   {!!active.jokers_removed?.length && (
-                    <p>Removed: {active.jokers_removed.join(" · ")}</p>
+                    <p>
+                      Removed: {jokerChanges(active, "removed").join(" · ")}
+                    </p>
                   )}
                   {active.money_after != null && (
                     <p className="muted">

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { Observation, Action, Card } from "./api";
+import { cardLabel, modifierDescription } from "./cardPresentation";
+import { ModifierLegend } from "./ModifierLegend";
 const suits: Record<string, string> = {
   Hearts: "♥",
   Diamonds: "♦",
@@ -32,7 +34,11 @@ function CardTile({
       <span>
         {card.face_down ? "Hidden" : suits[card.suit || ""] || card.label}
       </span>
-      <small>{card.face_down ? "Unknown identity" : card.label}</small>
+      <small>
+        {card.face_down
+          ? "Unknown identity"
+          : cardLabel(card.label, card.effects)}
+      </small>
     </button>
   );
 }
@@ -126,7 +132,9 @@ export function Board({
           <div className="owned">
             {o.state[area].map((c, i) => (
               <article key={c.id}>
-                <strong>{c.label}</strong>
+                <strong title={modifierDescription(c.effects, c.face_down)}>
+                  {cardLabel(c.label, c.effects, c.face_down)}
+                </strong>
                 <p>{c.effects.join(" · ")}</p>
                 {Object.keys(c.counters).length > 0 && (
                   <small>
@@ -159,7 +167,11 @@ export function Board({
                     )}
                     {canReorder(area) && i > 0 && (
                       <button
-                        aria-label={"Move " + c.label + " left"}
+                        aria-label={
+                          "Move " +
+                          cardLabel(c.label, c.effects, c.face_down) +
+                          " left"
+                        }
                         onClick={() => {
                           const ids = o.state[area].map((c) => c.id);
                           [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
@@ -177,6 +189,7 @@ export function Board({
           </div>
         </section>
       ))}
+      <ModifierLegend />
       {onAction && canReorder("hand") && o.state.hand.length > 1 && (
         <button
           onClick={() =>
@@ -197,7 +210,9 @@ export function Board({
             {o.state.offers.map((offer) => (
               <article key={offer.id}>
                 <small>{offer.kind}</small>
-                <h4>{offer.label}</h4>
+                <h4 title={modifierDescription(offer.effects, offer.face_down)}>
+                  {cardLabel(offer.label, offer.effects, offer.face_down)}
+                </h4>
                 <p>{offer.effects.join(" · ")}</p>
                 <b>${offer.price}</b>
                 {onAction && (
