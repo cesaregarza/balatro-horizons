@@ -124,6 +124,15 @@ Balatro launches. See [certification scope](native-certification-scope.md).
 Old checkpoint certificates retain their exact full harness identity and are
 not migrated. Paid behavior checks remain a separate gate.
 
+The subsequent compatibility update passed **438 Python tests** (nine native
+gates skipped), Ruff, and diff checks. V7 was then deployed with explicit reuse
+of the unchanged native components certified under `db23036`; the original
+native-tested source identity was preserved. All ten saved-evidence gate tests
+passed in the live checkout, and localhost served the exact verified v7 assets.
+This deployment made zero Balatro launches and zero paid calls, preserved
+operator settings, and did not migrate checkpoint certificates. The saved runtime
+lock was unchanged; Windows files were not re-inspected during this deployment.
+
 Design references: [Codex instructions](https://developers.openai.com/codex/guides/agents-md),
 [OpenCode V2 compaction](https://opencode.ai/v2/docs/compaction), and
 [Hermes persistent memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory).

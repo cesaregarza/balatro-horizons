@@ -111,12 +111,14 @@ the combined offline gate. `scripts/sync_prompt_instructions.py` checks v6 by
 default; `--write` updates it explicitly, and `--interface tools_v5` selects the
 legacy template without rewriting any frozen episode protocol.
 
-Runner and agent changes alter the native implementation fingerprint even though
-the Lua adapter is unchanged. For each deployment, verify the dedicated runtime
-with one announced consolidated suite, then deploy backend and frontend together
-while the worker is idle. Preserve operator budgets, model settings, and the
-existing helper allowance. Do not start a paid smoke run without explicit
-authorization and caps.
+V6 originally used the full implementation fingerprint for native capability
+acceptance, so its deployment below repeated the native suite. V7 separates
+native compatibility from full harness identity: harness-only updates may
+explicitly reuse existing evidence after offline checks and a comparison with
+the certified native source. Follow [certification scope](native-certification-scope.md)
+for subsequent deployments. Deploy backend and frontend together while the worker
+is idle; preserve operator budgets, model settings, and the existing helper
+allowance. Do not start a paid smoke run without explicit authorization and caps.
 
 The deployment helper supports `--prepare --allow-unrelated-changes` to retain
 local edits outside the candidate's file set. It rejects overlapping edits and
