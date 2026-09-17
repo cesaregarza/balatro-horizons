@@ -12,9 +12,10 @@ exports retain their original public values.
 
 `configs/prompts/ALWAYS-LOADED.md` now states that ordinary card chips and
 "when scored" effects come from the scoring cards: A-A-A-K-Q scored as Three of a
-Kind scores the Aces, while K/Q are kickers. The existing public-effect override
-caveat applies. The file is 1,009 UTF-8 bytes, within its unchanged 1,024-byte
-limit, and `tools-v5.txt` embeds the same text. Existing episodes keep their frozen
+Kind scores the Aces; the added King and Queen contribute neither card chips nor
+"when scored" effects. The existing public-effect override caveat applies. The
+file remains within its unchanged 1,024-byte limit, and `tools-v5.txt` embeds the
+same text. Existing episodes keep their frozen
 prompt; the new instruction is used by newly created tools_v5 episodes.
 
 ## Staged cost summary
@@ -23,8 +24,9 @@ prompt; the new instruction is used by newly created tools_v5 episodes.
 observation. It supplies game-money balance and credit limit, current shop/boss
 reroll quotes in the relevant phase, visible purchase or pack-choice prices and
 sale proceeds for visible, sellable owned cards. Purchase modes and action
-constraints still apply. A null quote remains unknown; it is never converted to
-zero. Hidden sale identities and prices are not added to this summary.
+constraints still apply. A purchase or reroll is free only when its displayed cost
+is zero. A null quote remains unknown; it is never converted to zero. Hidden sale
+identities and prices are not added to this summary.
 
 The next reroll quote comes from `shop_reroll_cost`, not a Joker description or
 an assumption that a previously free reroll remains free. The pinned engine sets

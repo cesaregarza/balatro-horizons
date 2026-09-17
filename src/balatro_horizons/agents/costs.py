@@ -13,7 +13,8 @@ def current_costs(observation):
         "credit_limit": resources["credit_limit"],
         "note": (
             "Current displayed prices, including active effects, for the next action only. "
-            "A reroll is free only when its cash_cost is 0; recheck after each action. "
+            "A purchase or reroll is free only when its cash_cost is 0; "
+            "recheck after each action. "
             "null means unknown, not free. Action constraints still apply."
         ),
     }
