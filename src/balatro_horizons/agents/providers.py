@@ -38,13 +38,14 @@ def encode(value, ctx):
 
 
 def canonical_messages(ctx, exchanges):
+    content = {"observation": ctx["observation"], "omitted_event_ids": ctx["omitted_event_ids"]}
+    if "current_costs" in ctx:
+        # Dynamic prices follow the observation, outside the stable developer/tool prefix.
+        content["current_costs"] = ctx["current_costs"]
     messages = [
         {
             "role": "user",
-            "content": encode(
-                {"observation": ctx["observation"], "omitted_event_ids": ctx["omitted_event_ids"]},
-                ctx,
-            ),
+            "content": encode(content, ctx),
         }
     ]
     for exchange in exchanges:

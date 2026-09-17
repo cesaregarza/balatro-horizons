@@ -133,6 +133,10 @@ def context(
         "tool": TOOL,
         "omitted_event_ids": [],
     }
+    if interface == "tools_v5":
+        from balatro_horizons.agents.costs import current_costs
+
+        result["current_costs"] = current_costs(original_observation)
     if frozen is not None:
         if frozen["interface"] != interface:
             raise ValueError("AGENT_PROTOCOL_INTERFACE_CHANGED")
