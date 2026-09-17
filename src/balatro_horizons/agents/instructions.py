@@ -27,7 +27,7 @@ def render(prompt: str, instructions: str) -> str:
 def load_prompt(root, interface):
     filename = "core.txt" if interface == "operate_v1" else interface.replace("_", "-") + ".txt"
     raw = (root / "configs/prompts" / filename).read_bytes()
-    if interface == "tools_v5":
+    if interface in ("tools_v5", "tools_v6"):
         try:
             source = (root / "configs/prompts/ALWAYS-LOADED.md").read_text(encoding="utf-8")
             rendered = render(raw.decode("utf-8"), source).encode("utf-8")

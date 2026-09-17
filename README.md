@@ -138,7 +138,12 @@ The [skill-enabled harness](docs/harness-skills.md) gives new runs a compact cat
 
 The [OpenAI/Luna harness guide](docs/openai-harness.md) includes the pinned smoke preset and a one-run command with a persistent campaign spending ledger.
 
-The [named-tools revision](docs/harness-tools-v2.md) documents the earlier interface. New app runs use **Current harness (v5)**, including direct gameplay tools, on-demand inspection, provider continuation, and actionable rejection feedback. Historical configurations retain their recorded interfaces.
+The [named-tools revision](docs/harness-tools-v2.md) documents the earlier interface.
+The source selector now uses **Current harness (v6)**: direct gameplay tools,
+on-demand inspection, provider continuation, and an editable run notebook.
+[Notebook and action-result retrieval](docs/run-notebook-v1.md) describes the new
+tools, persistence boundary, and validation. Deployment remains gated on matching
+native certification; historical configurations retain their recorded interfaces.
 
 The [Balatro Horizons Guide](docs/balatro-guide/README.md) is the canonical rules
 and strategy reference for the harness. Its modular chapters compile into

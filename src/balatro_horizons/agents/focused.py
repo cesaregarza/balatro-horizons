@@ -280,9 +280,14 @@ def working_context(ctx, exchanges, byte_limit):
         operation = exchange["operation"]
         reference = {
             k: operation[k]
-            for k in ("kind", "key", "name", "section", "offset", "byte_offset", "limit")
+            for k in ("kind", "key", "name", "section", "offset", "byte_offset", "limit",
+                      "decision_id", "episode_id")
             if k in operation
         }
+        if operation.get("kind") in ("set_run_note", "delete_run_note"):
+            # A note acknowledgment is disposable. Its mutation must never be replayed
+            # as a reload hint; the latest state remains in the dynamic notebook.
+            reference = {"source": "run_notebook", "mutation_already_recorded": True}
         cleared.append({"exchange_index": index, "reload": reference})
         if preserve_turns and exchange.get("provider_turn"):
             exchange["result"] = {

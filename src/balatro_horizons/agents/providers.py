@@ -13,6 +13,8 @@ from balatro_horizons.agents.tool_interface import (
     CONTINUATION_INTERFACES,
     FOCUSED_INTERFACES,
     NAMED_INTERFACES,
+    NOTEBOOK_INTERFACE,
+    STABLE_TOOL_INTERFACES,
     decode_tool,
 )
 from balatro_horizons.config import PROVIDER_TIMEOUT_SECONDS
@@ -42,6 +44,9 @@ def canonical_messages(ctx, exchanges):
     if "current_costs" in ctx:
         # Dynamic prices follow the observation, outside the stable developer/tool prefix.
         content["current_costs"] = ctx["current_costs"]
+    if ctx.get("interface_version") == NOTEBOOK_INTERFACE:
+        content.update(run_notebook=ctx["run_notebook"], permitted_tools=ctx["allowed_tools"],
+                       helper_status=ctx["helper_status"])
     messages = [
         {
             "role": "user",
@@ -175,7 +180,7 @@ def context_payload(ctx, exchanges, provider, interface):
     instructions = ctx["prompt"] + "\n\n" + ctx["rules_kernel"]
     definitions = ctx["tools"] if interface in NAMED_INTERFACES else [ctx.get("tool", TOOL)]
     if provider == "openai":
-        if interface in ("tools_v4", "tools_v5"):
+        if interface in STABLE_TOOL_INTERFACES:
             # A stable developer block follows the fixed tool catalog. The explicit
             # write ends here: observations and retrieved pages are not cached.
             return {
@@ -221,7 +226,7 @@ def context_payload(ctx, exchanges, provider, interface):
                 "name": t["name"],
                 "description": t["description"],
                 "input_schema": t["parameters"],
-                **({"strict": True} if interface == "tools_v5" else {}),
+                **({"strict": True} if interface in CONTINUATION_INTERFACES else {}),
             }
             for t in definitions
         ],
@@ -270,7 +275,7 @@ class DirectProvider:
         payload = context_payload(ctx, exchanges, self.model.provider, self.interface)
         self.available_tools = (
             set(ctx["allowed_tools"])
-            if self.interface in ("tools_v4", "tools_v5")
+            if self.interface in STABLE_TOOL_INTERFACES
             else {tool["name"] for tool in definitions}
         )
         self.last_tool_call = None
@@ -296,7 +301,7 @@ class DirectProvider:
             if reasoning:
                 body["reasoning"] = reasoning
             prompt_cache_options = {}
-            if self.interface in ("tools_v4", "tools_v5"):
+            if self.interface in STABLE_TOOL_INTERFACES:
                 if not self._supports_prompt_cache_diagnostics():
                     raise ProviderFailure("EXPLICIT_CACHE_REQUIRES_GPT_5_6_OR_LATER")
                 if self.model.cache_write_input_usd_per_million is None:

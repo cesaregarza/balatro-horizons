@@ -124,6 +124,7 @@ class ReviewService:
                     "action_commit",
                     "action_rejected",
                     "helper_result",
+                    "run_note",
                 )
             ]
             max_seen = max([max_seen] + [e["sequence"] for e in result["action_events"]])

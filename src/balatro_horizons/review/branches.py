@@ -1,8 +1,30 @@
 """Immutable interventions; only the original public prefix is inherited."""
 
 from balatro_horizons.agents.frozen import restore_protocol, validate_continuation
+from balatro_horizons.agents.notebook import restore_notebook
 from balatro_horizons.agents.skills import restore_knowledge
+from balatro_horizons.agents.tool_interface import NOTEBOOK_INTERFACE
 from balatro_horizons.engine.certification import require_checkpoint_certificate
+
+
+def inherited_events(store, eid, seen=None):
+    """Reconstruct only the immutable ancestry authorized by each child manifest."""
+    seen = set() if seen is None else seen
+    if eid in seen:
+        raise ValueError("BRANCH_ANCESTRY_CYCLE")
+    seen.add(eid)
+    manifest = store.manifest(eid)
+    parent = manifest.get("parent_episode_id")
+    if parent is None:
+        return []
+    events = store.events(parent)
+    boundary = next((event for event in events
+                     if event["event_id"] == manifest.get("parent_event_id")), None)
+    if (boundary is None or boundary["type"] != "observation"
+            or boundary["hash"] != manifest.get("parent_prefix_hash")
+            or boundary["observation_id"] != manifest.get("parent_decision")):
+        raise ValueError("BRANCH_PREFIX_MISMATCH")
+    return inherited_events(store, parent, seen) + events[:boundary["sequence"]]
 
 
 def prepare_branch(store, config, eid, decision, mode):
@@ -23,6 +45,10 @@ def prepare_branch(store, config, eid, decision, mode):
         e for e in events if e["type"] == "observation" and e["observation_id"] == decision
     )
     prefix = [e for e in events if e["sequence"] < boundary["sequence"]]
+    if protocol["interface"] == NOTEBOOK_INTERFACE:
+        prefix = inherited_events(store, eid) + prefix
+        restore_notebook(checkpoint.get("run_notebook"), prefix,
+                         config.budgets.memory_max_characters)
     manifest = {
         "evidence_kind": parent["evidence_kind"],
         "agent": parent["agent"],

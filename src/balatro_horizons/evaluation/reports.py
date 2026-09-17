@@ -85,6 +85,7 @@ def episode_export(store, eid):
             "provider_request",
             "provider_response",
             "helper_result",
+            "run_note",
             "action_rejected",
             "provider_input_check",
             "harness_failure",
