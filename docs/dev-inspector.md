@@ -15,6 +15,20 @@ delivered context, public before/after state, or all decision events. The delive
 context includes the actual costs, notebook and working memory sent for that call.
 Malformed argument strings remain inspectable and are not repaired.
 
+The readable view presents each request with public card names and modifiers,
+its recorded upfront price or sale quote, and the model's note separately from
+the observed result. It shows helper returns, saved notebook edits, rejection
+feedback, and API token/cost accounting without requiring JSON inspection.
+Prices come only from the context delivered for that request; unknown quotes
+stay unknown. Resource changes compare the decision's public before/after states
+and are not attributed to individual helper calls. This is deterministic
+presentation, not a second model evaluating the decisions.
+
+Open **What the model was given** for readable costs, notebook and recent working
+memory. Long text and nested results have expansion controls; unknown tool fields
+remain accessible. **Technical details** retains full recorded JSON and IDs.
+Text is never executed as HTML, and no new model calls are made to summarize it.
+
 Provider-native call IDs link tool results returned in a subsequent request.
 Harness journal events without those IDs are explicitly associated by request
 order within the decision, not presented as proof that every returned operation
@@ -47,3 +61,11 @@ checks passed. The focused cases cover both provider formats, ID-linked helper
 results, retries, malformed arguments, pending calls, temporal and privacy
 boundaries, live updates, selection races, phone layout and escaped hostile text.
 The unchanged harness/native identities match the installed capability record.
+
+Readable-view validation in the isolated checkout: TypeScript and the
+production build passed, along with nine focused inspector/presentation and
+decision-explorer checks. These cover displayed prices versus model claims,
+notebook mutations, observed resource changes, unknown/zero quotes, visible
+identities and modifiers, malformed/multiple calls, live polling, stale-response
+isolation, mobile layout and hostile text. No backend, harness or native files
+changed; no game launches or paid provider calls were needed.

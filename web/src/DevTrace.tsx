@@ -1,67 +1,12 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { humanize } from "./decisionPresentation";
+import { CallDetails, JsonPanel } from "./DevTraceDetails";
+import {
+  objectNames,
+  resourceChanges,
+  type Trace,
+} from "./devTracePresentation";
 import "./devTrace.css";
-
-type Data = Record<string, any>;
-type Event = {
-  event_id: string;
-  sequence: number;
-  timestamp: string;
-  type: string;
-  payload: Data;
-};
-type Call = {
-  request_id: string;
-  request_event: Event;
-  context_event_id: string | null;
-  response_event: Event | null;
-  error_event: Event | null;
-  status: string;
-  tools: {
-    call_id: string | null;
-    name: string | null;
-    arguments: unknown;
-    raw_arguments: unknown;
-    arguments_parse_error: boolean;
-    delivered_results: {
-      request_id: string;
-      content: unknown;
-      content_parse_error: boolean;
-    }[];
-  }[];
-  journal_events: Event[];
-};
-type Trace = {
-  decision: number;
-  complete: boolean;
-  calls: Call[];
-  events: Event[];
-  observation: unknown;
-  transition: unknown;
-  omissions: string[];
-  linkage: string;
-};
-
-function dollars(value: unknown) {
-  return value != null && Number.isFinite(Number(value))
-    ? `$${Number(value).toFixed(4)}`
-    : "unknown";
-}
-
-// Large request bodies are rendered only when expanded. React escapes all text.
-function JsonPanel({ label, value }: { label: string; value: unknown }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <details
-      className="dev-json"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary>{label}</summary>
-      {open && <pre>{JSON.stringify(value, null, 2) ?? "Not recorded"}</pre>}
-    </details>
-  );
-}
 
 export function DevTrace({
   token,
@@ -141,102 +86,42 @@ export function DevTrace({
           )}
           <ol className="dev-calls">
             {trace.calls.map((call, index) => (
-              <li key={call.request_id} className="dev-call">
-                <h4>
-                  Call {index + 1} ·{" "}
-                  {call.tools
-                    .map((tool) => tool.name || "unnamed tool")
-                    .join(", ") || "No tool call returned"}
-                </h4>
-                <p className="dev-status">
-                  {humanize(call.status)} · transport attempt{" "}
-                  {call.request_event.payload.attempt ?? "unknown"}
-                </p>
-                <p className="dev-meta">
-                  {call.request_event.timestamp} · Request {call.request_id}
-                </p>
-                {call.response_event && (
-                  <p className="dev-meta">
-                    Response {call.response_event.timestamp} · recorded cost{" "}
-                    {dollars(call.response_event.payload.cost_usd)}
-                  </p>
+              <CallDetails
+                key={call.request_id}
+                call={call}
+                index={index}
+                names={objectNames(trace.observation)}
+                contextEvent={trace.events.find(
+                  (event) => event.event_id === call.context_event_id,
                 )}
-                {!call.response_event && (
-                  <p className="dev-meta">
-                    Reserved {dollars(call.request_event.payload.reserved_usd)}{" "}
-                    · final usage not recorded
-                  </p>
-                )}
-                {call.error_event && (
-                  <JsonPanel
-                    label="Transport error"
-                    value={call.error_event.payload}
-                  />
-                )}
-                {call.tools.map((tool, ordinal) => (
-                  <div key={`${tool.call_id}-${ordinal}`} className="dev-tool">
-                    <strong>{tool.name || "Unnamed tool"}</strong>
-                    <p className="dev-meta">
-                      Tool call ID: {tool.call_id ?? "not recorded"}
-                    </p>
-                    {tool.arguments_parse_error && (
-                      <p className="error">
-                        Arguments are not valid JSON; original text is
-                        preserved.
-                      </p>
-                    )}
-                    <JsonPanel label="Tool arguments" value={tool.arguments} />
-                    {tool.arguments_parse_error && (
-                      <JsonPanel
-                        label="Original argument string"
-                        value={tool.raw_arguments}
-                      />
-                    )}
-                    {tool.delivered_results.map((result, i) => (
-                      <JsonPanel
-                        key={i}
-                        label="Result sent back to model (matched call ID)"
-                        value={result}
-                      />
-                    ))}
-                  </div>
-                ))}
-                <div className="dev-results">
-                  {call.journal_events.map((event) => (
-                    <JsonPanel
-                      key={event.event_id}
-                      label={`Journal: ${humanize(event.type)} · event ${event.sequence}`}
-                      value={event}
-                    />
-                  ))}
-                </div>
-                <JsonPanel
-                  label="Full recorded provider request"
-                  value={call.request_event}
-                />
-                {call.response_event && (
-                  <JsonPanel
-                    label="Full recorded provider response"
-                    value={call.response_event}
-                  />
-                )}
-                <JsonPanel
-                  label="Delivered context and helper exchanges"
-                  value={
-                    trace.events.find(
-                      (event) => event.event_id === call.context_event_id,
-                    )?.payload
-                  }
-                />
-                {call.response_event?.payload.body?.usage && (
-                  <JsonPanel
-                    label="Token usage and cache accounting"
-                    value={call.response_event.payload.body.usage}
-                  />
-                )}
-              </li>
+              />
             ))}
           </ol>
+          <div className="dev-settled">
+            <h4>Observed result of this decision</h4>
+            {trace.transition ? (
+              <>
+                <p>A settled public state was recorded after this decision.</p>
+                {resourceChanges(trace.observation, trace.transition).map(
+                  (change) => (
+                    <p key={change.label}>
+                      <strong>{change.label}:</strong> {change.before} →{" "}
+                      {change.after}
+                    </p>
+                  ),
+                )}
+                <p className="dev-meta">
+                  Changes describe the whole decision, not each helper call. The
+                  board shows the complete public state.
+                </p>
+              </>
+            ) : (
+              <p>
+                No settled state recorded after this decision
+                {trace.complete ? "." : " yet."}
+              </p>
+            )}
+          </div>
           <JsonPanel
             label="All recorded events for this decision"
             value={trace.events}
