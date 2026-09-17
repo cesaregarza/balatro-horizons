@@ -106,3 +106,10 @@ rewritten or treated as proof for the new source. The previously deployed
 dashboard performance and visual modifier changes are preserved. Offline tests
 launch no Balatro processes and make no paid calls; they do not establish native
 fidelity, a live cache-hit rate or an effect on model decisions.
+
+For deployment preparation, `scripts/install_candidate.py --prepare --root
+/root/dev/balatro-horizons --candidate /root/dev/balatro-horizons-costs --manifest
+/root/dev/balatro-horizons/private/costs-install-files.json` writes a new checksum
+manifest from clean checkouts without installing. The existing install/rollback
+commands consume that manifest after idle checks and service shutdown. On this
+host the service is `systemctl --user ... balatro-horizons.service`.

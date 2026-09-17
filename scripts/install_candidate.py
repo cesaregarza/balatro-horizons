@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -31,6 +32,39 @@ def child(root, name):
     if not result.is_relative_to(root):
         raise ValueError('PATH_OUTSIDE_ROOT')
     return result
+
+
+def prepare(root, candidate, manifest):
+    """Freeze changed tracked-file checksums from two clean Linux checkouts."""
+    root, candidate, manifest = (native(p) for p in (root, candidate, manifest))
+    def git(path, *args):
+        return subprocess.check_output(['git', '-C', str(path), *args]).decode().strip()
+
+    for path in (root, candidate):
+        if Path(git(path, 'rev-parse', '--show-toplevel')).resolve() != path:
+            raise ValueError('NOT_A_WORKTREE_ROOT')
+        if git(path, 'status', '--porcelain'):
+            raise ValueError('WORKTREE_NOT_CLEAN')
+    revision = git(candidate, 'rev-parse', 'HEAD')
+    # Installation handles added/modified regular files, not removals or renames.
+    removed = git(root, 'diff', '--no-renames', '--name-only', '--diff-filter=D',
+                  'HEAD', revision)
+    if removed:
+        raise ValueError('REMOVALS_NOT_SUPPORTED')
+    names = git(root, 'diff', '--no-renames', '--name-only', '-z', 'HEAD', revision)
+    rows = []
+    for name in sorted(filter(None, names.split('\0'))):
+        source, target = child(candidate, name), child(root, name)
+        if not source.is_file() or (candidate / name).is_symlink() or (root / name).is_symlink():
+            raise ValueError('REGULAR_FILES_REQUIRED')
+        rows.append({'path': name, 'before_sha256': digest(target),
+                     'after_sha256': digest(source)})
+    if not rows:
+        raise ValueError('NO_CANDIDATE_CHANGES')
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    with manifest.open('x') as stream:
+        stream.write(json.dumps(rows, indent=2) + '\n')
+    return {'candidate_commit': revision, 'files': len(rows), 'manifest': str(manifest)}
 
 
 def install(root, candidate, manifest, backup):
@@ -90,10 +124,20 @@ def main():
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--candidate', type=Path)
     parser.add_argument('--manifest', type=Path)
-    parser.add_argument('--backup', type=Path, required=True)
+    parser.add_argument('--backup', type=Path)
     parser.add_argument('--rollback', action='store_true')
+    parser.add_argument('--prepare', action='store_true',
+                        help='Write a new checksum manifest from clean tracked checkouts; no install')
     args=parser.parse_args()
-    root, backup=native(args.root), native(args.backup)
+    root = native(args.root)
+    if args.prepare:
+        if args.rollback or not args.candidate or not args.manifest:
+            parser.error('--prepare requires --candidate and --manifest, without --rollback')
+        print(json.dumps(prepare(root, args.candidate, args.manifest), sort_keys=True))
+        return
+    if not args.backup:
+        parser.error('--backup is required for installation or rollback')
+    backup = native(args.backup)
     if args.rollback:
         rollback(root, backup)
     else:
