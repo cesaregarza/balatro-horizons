@@ -148,7 +148,7 @@ gameplay cases shared a process. There were no failed checks or suite retries.
 | Assisted branch (`865422fbed754193a6376569ceb91a84`) | Completed; original journal unchanged |
 | Settlement evidence | Passed; no extra launches |
 | Activated capability, doctor, native evidence gate tests | Passed; zero blockers; 10 tests passed |
-| Deployed browser review | Passed prospective withholding, reveal, native hand rendering and branch comparison; zero browser errors |
+| Deployed browser review | Desktop localhost and phone-sized private HTTPS checks passed: withholding, reveal, native hand rendering, branch comparison; zero browser errors |
 
 The native suite checks the runtime/shared execution path; notebook and provider
 transport behavior are covered by the separate synthetic and mocked-provider
@@ -167,3 +167,6 @@ certified boundaries; it does not certify every possible checkpoint in a phase.
 The backend and v6 frontend are live together. The existing 24-helper allowance,
 $5 episode ceiling, $10 total ceiling, and model settings were preserved. This
 deployment made zero paid provider requests and left the worker idle.
+The HTTPS check used the existing tailnet route with a DNS-resolution override
+and TLS validation enabled; it was a phone-sized browser check, not a physical
+phone test.
