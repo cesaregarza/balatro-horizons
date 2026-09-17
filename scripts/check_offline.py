@@ -48,12 +48,28 @@ def main(argv: list[str] | None = None) -> int:
         help="repository checkout (default: this script's checkout)",
     )
     parser.add_argument("--web", action="store_true", help="also build and test the browser UI")
+    parser.add_argument("--report", type=Path,
+                        help="Write a new source-bound success report after all checks pass")
     args = parser.parse_args(argv)
     root = args.root.resolve()
     if not (root / "src/balatro_horizons").is_dir() or not (root / ".venv/bin/python").is_file():
         parser.error("--root must contain the project and an installed .venv")
     try:
+        if args.report:
+            from balatro_horizons.engine.provenance import fingerprint_sources, source_files
+            from balatro_horizons.storage.journal import atomic_json, now
+
+            before = fingerprint_sources(source_files(root))
         run_checks(root, web=args.web)
+        if args.report:
+            if fingerprint_sources(source_files(root)) != before:
+                print("Source changed during offline checks; report was not written.")
+                return 1
+            atomic_json(args.report.resolve(), {
+                "suite": "check_offline", "status": "passed", "created_at": now(),
+                "implementation_hash": before, "web": args.web,
+                "commands": commands(root, web=args.web),
+            }, immutable=True)
     except subprocess.CalledProcessError as exc:
         return exc.returncode if exc.returncode > 0 else 1
     except OSError as exc:

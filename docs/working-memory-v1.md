@@ -117,9 +117,12 @@ launches and zero paid provider calls. The full API/browser suites required host
 local-socket access after the sandboxed API tests stalled; no assertion failed.
 
 The source selector targets v7. Deploy the backend and frontend together only
-when the worker is idle and the native source certificate matches this revision.
-The deployed v6 installation is unchanged by edits in the isolated worktree.
-Native certification and paid behavior checks remain separate gates.
+when the worker is idle. This change does not alter the native interface or
+runtime: a fresh offline report and an explicit comparison with the certified
+source can accept the new harness using the existing native evidence, with zero
+Balatro launches. See [certification scope](native-certification-scope.md).
+Old checkpoint certificates retain their exact full harness identity and are
+not migrated. Paid behavior checks remain a separate gate.
 
 Design references: [Codex instructions](https://developers.openai.com/codex/guides/agents-md),
 [OpenCode V2 compaction](https://opencode.ai/v2/docs/compaction), and

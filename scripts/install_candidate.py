@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Install a checksum-reviewed Linux candidate into an idle workbench; preserve rollback files.
 
-The caller must stop the web service first and perform native certification before restarting.
+The caller must stop the web service first and match the native capability before restarting,
+through native verification or explicit compatible-harness evidence reuse.
 This helper does not launch games, publish certificates, alter settings, or call paid providers.
 """
 import argparse
@@ -110,7 +111,7 @@ def install(root, candidate, manifest, backup, *, snapshot_only=False):
         if digest(target) != row['after_sha256']:
             raise ValueError('INSTALL_CHECKSUM_MISMATCH')
     shutil.copytree(candidate/'web/dist', root/'web/dist', dirs_exist_ok=True)
-    print(json.dumps({'installed_files':len(rows),'backup':str(backup),'certification_required':True}))
+    print(json.dumps({'installed_files':len(rows),'backup':str(backup),'capability_acceptance_required':True}))
 
 
 def snapshot_runtime(backup):

@@ -1,9 +1,98 @@
 """Source and private continuation fingerprints used to invalidate stale evidence."""
 
+import ast
 import hashlib
 
 from balatro_horizons.config import ROOT
 from balatro_horizons.storage.journal import digest
+
+IMPLEMENTATION_FILES = (
+    "config.py", "contracts.py", "runner.py", "service.py", "review/branches.py",
+    "evaluation/scheduling.py",
+)
+IMPLEMENTATION_DIRECTORIES = ("engine", "observations", "actions", "agents", "storage")
+
+
+def source_files(root=ROOT):
+    base = root / "src/balatro_horizons"
+    return {str(path.relative_to(root)): path.read_bytes()
+            for path in base.rglob("*.py") if path.is_file()}
+
+
+def fingerprint_sources(sources):
+    """Reproduce the full identity from source bytes without executing historical code."""
+    prefix = "src/balatro_horizons/"
+    return digest({
+        name: hashlib.sha256(content).hexdigest()
+        for name, content in sources.items()
+        if name.startswith(prefix) and (
+            name[len(prefix):] in IMPLEMENTATION_FILES
+            or name[len(prefix):].split("/")[0] in IMPLEMENTATION_DIRECTORIES
+        )
+    })
+
+
+def native_components(sources=None):
+    """Native mechanics/visibility/transport identity, separate from harness behavior.
+
+    Gate/provenance code is validated offline, not by replaying the game. Runner,
+    model and branch policy still require a separately accepted full source hash.
+    Actual game/mod/bridge files are independently verified against the runtime lock.
+    """
+    sources = source_files(ROOT) if sources is None else sources
+    prefix = "src/balatro_horizons/"
+    excluded = {"engine/certification.py", "engine/provenance.py", "engine/fake.py"}
+    result = {}
+    for name, content in sources.items():
+        relative = name.removeprefix(prefix)
+        if name.startswith(prefix) and relative not in excluded and (
+            relative == "contracts.py"
+            or relative.split("/")[0] in ("engine", "observations", "actions", "storage")
+        ):
+            result[name] = hashlib.sha256(content).hexdigest()
+    # Config combines unrelated model budgets with the native Environment schema.
+    # Hash the complete native classes/imports/ROOT expression, ignoring source layout.
+    tree = ast.parse(sources[prefix + "config.py"])
+    bindings = {}
+    for node in tree.body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            bindings[node.name] = node
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                for part in ast.walk(target):
+                    if isinstance(part, ast.Name):
+                        bindings[part.id] = node
+    required = {"Options", "Environment", "ROOT"}
+    if not required <= bindings.keys():
+        raise ValueError("NATIVE_CONFIG_BOUNDARY_CHANGED")
+    pending, selected = list(required), set()
+    while pending:
+        node = bindings[pending.pop()]
+        if node in selected:
+            continue
+        selected.add(node)
+        pending.extend(part.id for part in ast.walk(node)
+                       if isinstance(part, ast.Name) and isinstance(part.ctx, ast.Load)
+                       and part.id in bindings and bindings[part.id] not in selected)
+    selected = [node for node in tree.body
+                if node in selected or isinstance(node, (ast.Import, ast.ImportFrom))]
+    result[prefix + "config.py:native"] = hashlib.sha256(
+        ast.dump(ast.Module(body=selected, type_ignores=[]), include_attributes=False).encode()
+    ).hexdigest()
+    return result
+
+
+def native_implementation_fingerprint():
+    return digest(native_components())
+
+
+def accepted_source_matches(record):
+    """Reuse never grants blanket approval to unreviewed future harness changes."""
+    if "native_implementation_hash" in record:
+        return (record.get("native_implementation_hash") == native_implementation_fingerprint()
+                and record.get("accepted_implementation_hash") == implementation_fingerprint())
+    return record.get("implementation_hash") == implementation_fingerprint()
 
 
 def implementation_fingerprint():
@@ -11,18 +100,8 @@ def implementation_fingerprint():
     # Native fidelity depends on the engine, projection, action policy, runner,
     # storage, and branch restoration. Presentation and report-only edits do not
     # invalidate native continuation evidence; their own tests cover those layers.
-    paths = [
-        base / name
-        for name in (
-            "config.py",
-            "contracts.py",
-            "runner.py",
-            "service.py",
-            "review/branches.py",
-            "evaluation/scheduling.py",
-        )
-    ]
-    for directory in ("engine", "observations", "actions", "agents", "storage"):
+    paths = [base / name for name in IMPLEMENTATION_FILES]
+    for directory in IMPLEMENTATION_DIRECTORIES:
         paths.extend(sorted((base / directory).rglob("*.py")))
     # Prompt bytes are frozen into each episode's agent-protocol snapshot. They
     # cannot change engine execution or an existing continuation. Executable

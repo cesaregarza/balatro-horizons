@@ -6,7 +6,11 @@ import uuid
 from balatro_horizons.config import ROOT
 from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.engine.native import NativeFailure, NativeGame
-from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
+from balatro_horizons.engine.provenance import (
+    accepted_source_matches,
+    continuation_fingerprint,
+    implementation_fingerprint,
+)
 from balatro_horizons.engine.replay import (
     ReplayDivergence,
     check_private,
@@ -24,7 +28,7 @@ def require_environment_certificate(lock, environment):
     cert = json.loads(path.read_text())
     if (
         cert.get("environment_hash") != digest(lock)
-        or cert.get("implementation_hash") != implementation_fingerprint()
+        or not accepted_source_matches(cert)
         or [environment.deck, environment.stake] not in cert.get("configurations", [])
         or cert.get("status") != "passed"
     ):
