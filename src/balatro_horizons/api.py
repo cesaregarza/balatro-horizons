@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from balatro_horizons.agents.frozen import restore_protocol
@@ -20,6 +21,7 @@ from balatro_horizons.contracts import AnnotationInput
 from balatro_horizons.engine.certification import require_checkpoint_certificate, verify_checkpoint
 from balatro_horizons.evaluation.batches import plan_batch, seed_panel
 from balatro_horizons.evaluation.reports import export_batch, report_batch
+from balatro_horizons.review.operator_status import OperatorStatus
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService
 from balatro_horizons.storage.journal import Store, atomic_json, identifier
@@ -105,6 +107,7 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
         allowed_hosts.append(public_host)
     store = Store(data_dir or ROOT / "data")
     review = ReviewService(store)
+    operator_status = OperatorStatus(store, review)
     runs = RunService(store, review)
     cfg = config or load_config()
     settings = store.root / "operator-settings.json"
@@ -221,47 +224,7 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
 
     @app.get("/api/operator/status", dependencies=[Depends(operator)])
     def status():
-        rows = store.list_episodes()
-        result = []
-        for row in rows:
-            eid = row["episode_id"]
-            review.expose(
-                eid,
-                "operator_status",
-                outcome_seen=bool(row["summary"]),
-                model_identity_seen=True,
-                max_event_seen=len(store.events(eid)) - 1,
-            )
-            progress = None
-            if row["summary"] is None:
-                events = store.events(eid)
-                last = next(
-                    (e["payload"] for e in reversed(events) if e["type"] == "observation"), None
-                )
-                settled = {
-                    e["request_id"]: e["payload"]["cost_usd"]
-                    for e in events
-                    if e["type"] == "provider_response"
-                }
-                progress = {
-                    "committed_actions": sum(e["type"] == "action_commit" for e in events),
-                    "provider_calls": sum(e["type"] == "provider_request" for e in events),
-                    "cost_usd": sum(
-                        settled.get(e["request_id"], e["payload"]["reserved_usd"])
-                        for e in events
-                        if e["type"] == "provider_request"
-                    ),
-                    "phase": last["phase"] if last else "STARTING",
-                    "ante": last["state"]["progress"]["ante"] if last else None,
-                }
-            result.append(
-                {
-                    "episode_id": eid,
-                    "agent": row["manifest"]["agent"],
-                    "summary": row["summary"],
-                    "progress": progress,
-                }
-            )
+        result = operator_status.episodes()
         return {
             "running": bool(runs.thread and runs.thread.is_alive()),
             "active_episode": runs.active_id,
@@ -273,7 +236,7 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
     async def stream(request: Request):
         async def events():
             while not await request.is_disconnected():
-                yield "data: " + json.dumps(status()) + "\n\n"
+                yield "data: " + json.dumps(await run_in_threadpool(status)) + "\n\n"
                 await asyncio.sleep(2)
 
         return StreamingResponse(events(), media_type="text/event-stream")

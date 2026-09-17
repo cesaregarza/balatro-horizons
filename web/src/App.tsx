@@ -5,6 +5,7 @@ import { DecisionExplorer } from "./DecisionExplorer";
 import { Board } from "./Board";
 import { Trajectory, type TimelinePoint } from "./Trajectory";
 import { ModelControls } from "./ModelControls";
+import { usePolling } from "./usePolling";
 import {
   configureModel,
   CURRENT_HARNESS,
@@ -139,26 +140,20 @@ export default function App() {
       })
       .catch((e) => setError(String(e)));
   }, []);
-  useEffect(() => {
-    if (!watch) return;
-    const poll = () =>
-      api("/operator/status")
-        .then(setStatus)
-        .catch((e) => setError(String(e)));
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => clearInterval(id);
-  }, [watch]);
-  useEffect(() => {
-    if (tab !== "human") return;
-    const poll = () =>
-      api("/operator/human")
-        .then(setHuman)
-        .catch((e) => setError(String(e)));
-    poll();
-    const id = setInterval(poll, 1000);
-    return () => clearInterval(id);
-  }, [tab]);
+  usePolling(
+    watch,
+    2000,
+    () => api("/operator/status"),
+    setStatus,
+    (e) => setError(String(e)),
+  );
+  usePolling(
+    tab === "human",
+    1000,
+    () => api("/operator/human"),
+    setHuman,
+    (e) => setError(String(e)),
+  );
   async function openReview(eid: string) {
     await run(async () => {
       const data = await api("/reviews", "POST", {
