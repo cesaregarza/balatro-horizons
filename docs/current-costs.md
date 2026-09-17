@@ -18,7 +18,7 @@ file remains within its unchanged 1,024-byte limit, and `tools-v5.txt` embeds th
 same text. Existing episodes keep their frozen
 prompt; the new instruction is used by newly created tools_v5 episodes.
 
-## Staged cost summary
+## Current cost summary
 
 `agents/costs.py` derives `current_costs` version `public_costs_v2` from the same
 canonical public observation as the board. It includes that observation's ID,
@@ -99,17 +99,54 @@ and the whitespace check passed. The built JavaScript and CSS asset hashes match
 the deployed dashboard, since the frontend change only makes the offer-price
 type nullable to match the public contract.
 
-The cost-summary implementation remains staged until the worker is idle and a
-fresh matching native capability certificate can be produced. Its Python source
-changes the conservative harness fingerprint; the existing certificate is not
-rewritten or treated as proof for the new source. The previously deployed
-dashboard performance and visual modifier changes are preserved. Offline tests
-launch no Balatro processes and make no paid calls; they do not establish native
-fidelity, a live cache-hit rate or an effect on model decisions.
+## Native deployment — 2026-09-16
 
-For deployment preparation, `scripts/install_candidate.py --prepare --root
-/root/dev/balatro-horizons --candidate /root/dev/balatro-horizons-costs --manifest
-/root/dev/balatro-horizons/private/costs-install-files.json` writes a new checksum
-manifest from clean checkouts without installing. The existing install/rollback
-commands consume that manifest after idle checks and service shutdown. On this
-host the service is `systemctl --user ... balatro-horizons.service`.
+The cost-summary implementation was installed while the worker was idle and the
+user service was stopped. A fresh matching capability certificate was activated
+only after one full native release suite passed: **22 planned native launches,
+no retries and zero paid calls**. Windows instrumentation and the environment
+lock were unchanged; no mod reinstall was needed.
+
+The suite passed fresh-profile checks for Red/White and Red/Gold, all 14 action
+families, rejection and ambiguous-timeout handling, terminal detection, ordering,
+three repetitions of each seed-prefix proof, three direct-save restorations at
+the tested Gold decision, a separate branch with an unchanged parent, and
+settlement visibility checks. This is calibration and assisted diagnostic
+evidence, not a model-performance result. The certificate remains bounded to the
+tested phases and decisions; headless execution and acceleration remain disabled.
+
+`scripts/verify_cost_evidence.py` additionally checked 29 public observations from
+the completed native action fixture, producing 58 serialized provider contexts
+and checking 11 purchase/pack/reroll/sale receipts. The evaluator fixture omits
+`last_action`, so these native receipts were reconstructed; persisted receipts
+were checked in the offline runner/review tests. This checker launches no game
+and uses no provider transport or private state. It does not measure actual
+transaction charges, live cache hits or improved model decisions.
+
+`finalize_evidence.py` passed, both `bh doctor` configurations reported no blockers,
+and 23 focused native-evidence/adapter checks passed after activation. Five focused
+deployment-helper and cost-evidence tests also passed. The workbench was restarted;
+localhost and the existing Tailscale route returned HTTP 200 with an idle worker.
+Operator spending settings were byte-identical to their pre-deployment snapshot.
+
+Evidence remains in the local, ignored `reports/verification/` directory:
+`native-release.json`, `native-evidence.json`, `native-settlement.json`, and
+`native-current-costs.json`. The action fixture is
+`899a2b7c316c402fbf1d75a5d451c277`; the Gold parent is
+`76e151b48ae6443ba18c5138c9c092a5`, and its branch is
+`69e1bafaab154e2fa58f955d3a337222`.
+
+The active implementation fingerprint is
+`1ed4f99e03c8b6e0cd6830b6b2b974706ef53912cb2ad764c34a853a6ed9be76`;
+the environment fingerprint is
+`03ffd235312449ae6c2a74d9d33093d3fd0f6b4691ab13c34371fe9f93166dd3`.
+The prior source and certificate selections are backed up under
+`private/deployments/current-costs-d908283/`. Existing episode journals retain
+their frozen prompts and public observations.
+
+For future deployment preparation, invoke `scripts/install_candidate.py` with the
+repository's `.venv/bin/python`. Its `--prepare --root <live> --candidate
+<candidate> --manifest <new-file>` options write a checksum manifest from clean
+Linux checkouts without installing. The install/rollback commands consume that
+manifest after idle checks and service shutdown. On this host the service is
+`systemctl --user ... balatro-horizons.service`.
