@@ -8,7 +8,10 @@ import uuid
 from balatro_horizons.config import ROOT, load_config
 from balatro_horizons.engine.certification import require_checkpoint_certificate
 from balatro_horizons.engine.native import WindowsBridge
-from balatro_horizons.engine.provenance import implementation_fingerprint
+from balatro_horizons.engine.provenance import (
+    implementation_fingerprint,
+    native_implementation_fingerprint,
+)
 from balatro_horizons.evaluation.reports import episode_export, scan
 from balatro_horizons.storage.journal import Store, atomic_json, digest, now
 
@@ -113,12 +116,15 @@ def main():
     require(not store.manifest(child)["evaluation_eligible"], "ASSISTED_BRANCH_SCORED")
     require(store.summary(child)["outcome"] in ("WIN", "GAME_LOSS"), "BRANCH_NOT_COMPLETE")
     certificate = {
-        "schema_version": 1,
+        "schema_version": 2,
         "certificate_id": uuid.uuid4().hex,
         "status": "passed",
         "created_at": now(),
         "environment_hash": digest(lock),
         "implementation_hash": source,
+        "accepted_implementation_hash": source,
+        "native_implementation_hash": native_implementation_fingerprint(),
+        "validation_kind": "native_suite",
         "configurations": [["RED", "WHITE"], ["RED", "GOLD"]],
         "profile_hashes": profiles,
         "phases": sorted(phases),
@@ -127,7 +133,9 @@ def main():
         "paid_provider_validation": False,
         "evidence": "reports/verification/native-release.json",
     }
-    evidence = {"environment_hash": digest(lock), "implementation_hash": source}
+    evidence = {"environment_hash": digest(lock), "implementation_hash": source,
+                "accepted_implementation_hash": source,
+                "native_implementation_hash": native_implementation_fingerprint()}
     artifacts = [
         "reports/verification/native-release.json",
         "reports/verification/native-fixtures-final.json",

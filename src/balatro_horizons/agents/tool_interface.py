@@ -14,10 +14,13 @@ from balatro_horizons.config import (
 from balatro_horizons.contracts import Action
 
 VERSION = "tools_v2"
-NAMED_INTERFACES = ("tools_v2", "tools_v3", "tools_v4", "tools_v5")
-FOCUSED_INTERFACES = ("tools_v3", "tools_v4", "tools_v5")
-STABLE_TOOL_INTERFACES = ("tools_v4", "tools_v5")
-CONTINUATION_INTERFACES = ("tools_v5",)
+NAMED_INTERFACES = ("tools_v2", "tools_v3", "tools_v4", "tools_v5", "tools_v6", "tools_v7")
+FOCUSED_INTERFACES = ("tools_v3", "tools_v4", "tools_v5", "tools_v6", "tools_v7")
+STABLE_TOOL_INTERFACES = ("tools_v4", "tools_v5", "tools_v6", "tools_v7")
+CONTINUATION_INTERFACES = ("tools_v5", "tools_v6", "tools_v7")
+NOTEBOOK_INTERFACE = "tools_v6"
+WORKING_MEMORY_INTERFACE = "tools_v7"
+NOTEBOOK_INTERFACES = (NOTEBOOK_INTERFACE, WORKING_MEMORY_INTERFACE)
 INSPECT_SECTIONS = (
     "hand",
     "jokers",
@@ -218,6 +221,10 @@ def decode_tool(name, arguments, *, interface="tools_v2"):
     if not isinstance(arguments, dict):
         raise ValueError("TOOL_ARGUMENTS_MUST_BE_OBJECT")
     args = deepcopy(arguments)
+    if interface in NOTEBOOK_INTERFACES and "memory_update" in args:
+        raise ValueError("LEGACY_MEMORY_UPDATE_NOT_ALLOWED")
+    if interface != WORKING_MEMORY_INTERFACE and "note_update" in args:
+        raise ValueError("UNAVAILABLE_TOOL_ARGUMENT")
     if set(args) & {"type", "kind", "envelope"}:
         raise ValueError("UNEXPECTED_TOOL_WRAPPER")
     if name == "inspect_state" and interface in FOCUSED_INTERFACES:
@@ -225,18 +232,23 @@ def decode_tool(name, arguments, *, interface="tools_v2"):
             raise ValueError("EXPECTED_PAGED_INSPECTION")
         return {**args, "kind": "inspect_page"}
     if name in ACTION_MODELS:
+        note = {"note_update": args.pop("note_update")} if "note_update" in args else {}
         envelope = {
             k: args.pop(k)
             for k in ("observation_id", "memory_update", "decision_note")
             if k in args
         }
-        return {"kind": "action", "envelope": {**envelope, "action": {**args, "type": name}}}
+        return {"kind": "action", **note,
+                "envelope": {**envelope, "action": {**args, "type": name}}}
     kinds = {
         "inspect_state": "inspect",
         "read_rules": "rules",
         "read_skill": "skill",
         "read_history": "history",
         "read_history_detail": "history_detail",
+        "set_run_note": "set_run_note",
+        "delete_run_note": "delete_run_note",
+        "retrieve_action_result": "action_result",
         "calculate": "arithmetic",
         "abort_run": "abort",
     }

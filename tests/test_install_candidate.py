@@ -94,3 +94,40 @@ def test_runtime_snapshot_is_complete_without_secrets_or_generated_data(prepared
     with pytest.raises(ValueError, match='REGULAR_FILES_REQUIRED'):
         module.snapshot_runtime(tmp_path/'unsafe')
     assert not (tmp_path/'unsafe').exists()
+
+
+def test_prepare_can_preserve_only_unrelated_local_changes(prepared):
+    module, root, candidate, manifest, _ = prepared
+    (root/'unrelated.txt').write_text('preserve me')
+    with pytest.raises(ValueError, match='WORKTREE_NOT_CLEAN'):
+        module.prepare(root, candidate, manifest)
+    module.prepare(root, candidate, manifest, allow_unrelated_changes=True)
+    assert {row['path'] for row in json.loads(manifest.read_text())} == {'source.py', 'added.py'}
+    manifest.unlink()
+    (root/'source.py').write_text('local edit')
+    with pytest.raises(ValueError, match='CANDIDATE_OVERLAPS_LOCAL_CHANGES'):
+        module.prepare(root, candidate, manifest, allow_unrelated_changes=True)
+    assert not manifest.exists()
+    (root/'source.py').write_text('old\n')
+    (root/'added.py').write_text('untracked collision')
+    with pytest.raises(ValueError, match='CANDIDATE_OVERLAPS_LOCAL_CHANGES'):
+        module.prepare(root, candidate, manifest, allow_unrelated_changes=True)
+
+
+def test_snapshot_then_git_fast_forward_keeps_unrelated_files(prepared, tmp_path):
+    module, root, candidate, manifest, git = prepared
+    (root/'unrelated.txt').write_text('preserve me')
+    (root/'web/dist').mkdir(parents=True)
+    (root/'web/dist/index.html').write_text('previous frontend')
+    module.prepare(root, candidate, manifest, allow_unrelated_changes=True)
+    backup = tmp_path/'backup'
+    module.install(root, candidate, manifest, backup, snapshot_only=True)
+    assert (root/'source.py').read_text() == 'old\n'
+    assert not (root/'added.py').exists()
+    assert (backup/'files/source.py').read_text() == 'old\n'
+    git('-C', root, 'merge', '--ff-only', 'candidate')
+    assert (root/'source.py').read_text() == 'new\n'
+    assert (root/'unrelated.txt').read_text() == 'preserve me'
+    module.rollback(root, backup)
+    assert (root/'source.py').read_text() == 'old\n'
+    assert (root/'unrelated.txt').read_text() == 'preserve me'

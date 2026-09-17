@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Install a checksum-reviewed Linux candidate into an idle workbench; preserve rollback files.
 
-The caller must stop the web service first and perform native certification before restarting.
+The caller must stop the web service first and match the native capability before restarting,
+through native verification or explicit compatible-harness evidence reuse.
 This helper does not launch games, publish certificates, alter settings, or call paid providers.
 """
 import argparse
@@ -36,8 +37,8 @@ def child(root, name):
     return result
 
 
-def prepare(root, candidate, manifest):
-    """Freeze changed tracked-file checksums from two clean Linux checkouts."""
+def prepare(root, candidate, manifest, *, allow_unrelated_changes=False):
+    """Freeze checksums; optionally retain live edits outside the candidate paths."""
     root, candidate, manifest = (native(p) for p in (root, candidate, manifest))
     def git(path, *args):
         return subprocess.check_output(['git', '-C', str(path), *args]).decode().strip()
@@ -45,7 +46,7 @@ def prepare(root, candidate, manifest):
     for path in (root, candidate):
         if Path(git(path, 'rev-parse', '--show-toplevel')).resolve() != path:
             raise ValueError('NOT_A_WORKTREE_ROOT')
-        if git(path, 'status', '--porcelain'):
+        if git(path, 'status', '--porcelain') and not (path == root and allow_unrelated_changes):
             raise ValueError('WORKTREE_NOT_CLEAN')
     revision = git(candidate, 'rev-parse', 'HEAD')
     # Installation handles added/modified regular files, not removals or renames.
@@ -54,6 +55,11 @@ def prepare(root, candidate, manifest):
     if removed:
         raise ValueError('REMOVALS_NOT_SUPPORTED')
     names = git(root, 'diff', '--no-renames', '--name-only', '-z', 'HEAD', revision)
+    if allow_unrelated_changes:
+        dirty = git(root, 'diff', '--name-only', '-z', 'HEAD')
+        untracked = git(root, 'ls-files', '--others', '--exclude-standard', '-z')
+        if set(names.split('\0')) & (set(dirty.split('\0')) | set(untracked.split('\0'))) - {''}:
+            raise ValueError('CANDIDATE_OVERLAPS_LOCAL_CHANGES')
     rows = []
     for name in sorted(filter(None, names.split('\0'))):
         source, target = child(candidate, name), child(root, name)
@@ -69,7 +75,7 @@ def prepare(root, candidate, manifest):
     return {'candidate_commit': revision, 'files': len(rows), 'manifest': str(manifest)}
 
 
-def install(root, candidate, manifest, backup):
+def install(root, candidate, manifest, backup, *, snapshot_only=False):
     rows = json.loads(manifest.read_text())
     if not rows or len({r['path'] for r in rows}) != len(rows):
         raise ValueError('INVALID_MANIFEST')
@@ -95,6 +101,9 @@ def install(root, candidate, manifest, backup):
         shutil.copy2(child(root, rel), target)
     if (root/'web/dist').exists():
         shutil.copytree(root/'web/dist', backup/'web-dist')
+    if snapshot_only:
+        print(json.dumps({'snapshot': str(backup), 'installed_files': 0}))
+        return
     for row in rows:
         target = child(root, row['path'])
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -102,7 +111,7 @@ def install(root, candidate, manifest, backup):
         if digest(target) != row['after_sha256']:
             raise ValueError('INSTALL_CHECKSUM_MISMATCH')
     shutil.copytree(candidate/'web/dist', root/'web/dist', dirs_exist_ok=True)
-    print(json.dumps({'installed_files':len(rows),'backup':str(backup),'certification_required':True}))
+    print(json.dumps({'installed_files':len(rows),'backup':str(backup),'capability_acceptance_required':True}))
 
 
 def snapshot_runtime(backup):
@@ -164,9 +173,17 @@ def main():
     parser.add_argument('--rollback', action='store_true')
     parser.add_argument('--prepare', action='store_true',
                         help='Write a new checksum manifest from clean tracked checkouts; no install')
+    parser.add_argument('--allow-unrelated-changes', action='store_true',
+                        help='With --prepare, permit live edits only outside the candidate file set')
+    parser.add_argument('--snapshot-only', action='store_true',
+                        help='Validate the manifest and back up Linux files; do not install')
     parser.add_argument('--snapshot-runtime', action='store_true',
                         help='Back up owned Windows instrumentation to Linux --backup; no install or launch')
     args=parser.parse_args()
+    if args.allow_unrelated_changes and not args.prepare:
+        parser.error('--allow-unrelated-changes requires --prepare')
+    if args.snapshot_only and (args.prepare or args.rollback or args.snapshot_runtime):
+        parser.error('--snapshot-only cannot be combined with other modes')
     root = native(args.root)
     if args.snapshot_runtime:
         if not args.backup or args.prepare or args.rollback or args.candidate or args.manifest:
@@ -176,7 +193,8 @@ def main():
     if args.prepare:
         if args.rollback or not args.candidate or not args.manifest:
             parser.error('--prepare requires --candidate and --manifest, without --rollback')
-        print(json.dumps(prepare(root, args.candidate, args.manifest), sort_keys=True))
+        print(json.dumps(prepare(root, args.candidate, args.manifest,
+                                 allow_unrelated_changes=args.allow_unrelated_changes), sort_keys=True))
         return
     if not args.backup:
         parser.error('--backup is required for installation or rollback')
@@ -186,7 +204,8 @@ def main():
     else:
         if not args.candidate or not args.manifest:
             parser.error('--candidate and --manifest are required for installation')
-        install(root, native(args.candidate), native(args.manifest), backup)
+        install(root, native(args.candidate), native(args.manifest), backup,
+                snapshot_only=args.snapshot_only)
 
 
 if __name__=='__main__':

@@ -7,7 +7,7 @@ import pytest
 from balatro_horizons.config import ROOT, Environment
 from balatro_horizons.engine.certification import require_environment_certificate
 from balatro_horizons.engine.native import NativeFailure
-from balatro_horizons.engine.provenance import implementation_fingerprint
+from balatro_horizons.engine.provenance import accepted_source_matches
 from balatro_horizons.storage.journal import digest
 
 
@@ -36,8 +36,8 @@ def test_native_evidence_gate(acceptance):
     if not path.is_file():
         pytest.skip(f"{acceptance}: native evidence has not been collected")
     report = json.loads(path.read_text())
-    if report.get("implementation_hash") != implementation_fingerprint():
-        pytest.skip("Native evidence must be regenerated for changed source")
+    if not accepted_source_matches(report):
+        pytest.skip("Changed source requires native verification or explicit compatible-harness acceptance")
     lock = ROOT / "private/environment.lock.json"
     if not lock.is_file() or report.get("environment_hash") != digest(json.loads(lock.read_text())):
         pytest.skip("Native evidence must be regenerated for changed environment")

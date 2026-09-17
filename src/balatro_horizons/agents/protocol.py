@@ -13,10 +13,13 @@ from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.skills import discovery, read_guide
 from balatro_horizons.agents.tool_interface import (
     ACTION_MODELS,
+    CONTINUATION_INTERFACES,
     FOCUSED_INTERFACES,
     INSPECT_SECTIONS,
     NAMED_INTERFACES,
+    NOTEBOOK_INTERFACES,
     STABLE_TOOL_INTERFACES,
+    WORKING_MEMORY_INTERFACE,
     compact_observation,
     stable_tools,
     tools_for,
@@ -34,9 +37,18 @@ from balatro_horizons.config import (
 from balatro_horizons.contracts import ActionEnvelope, StrictModel
 
 
+class NoteUpdate(StrictModel):
+    key: str
+    text: str | None
+
+
 class Submit(StrictModel):
     kind: Literal["action"]
     envelope: ActionEnvelope
+
+
+class WorkingSubmit(Submit):
+    note_update: NoteUpdate | None = None
 
 
 class Rules(StrictModel):
@@ -84,9 +96,28 @@ class HistoryDetail(StrictModel):
     byte_offset: int = Field(default=0, ge=0)
 
 
+class SetRunNote(StrictModel):
+    kind: Literal["set_run_note"]
+    key: str
+    text: str
+
+
+class DeleteRunNote(StrictModel):
+    kind: Literal["delete_run_note"]
+    key: str
+
+
+class ActionResult(StrictModel):
+    kind: Literal["action_result"]
+    decision_id: int | None = Field(default=None, ge=0)
+    episode_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+    section: Literal["receipt", "before", "after"] = "receipt"
+    byte_offset: int = Field(default=0, ge=0)
+
+
 Operation = TypeAdapter(
     Annotated[
-        Submit
+        WorkingSubmit
         | Rules
         | History
         | Arithmetic
@@ -94,7 +125,10 @@ Operation = TypeAdapter(
         | Inspect
         | Skill
         | InspectPage
-        | HistoryDetail,
+        | HistoryDetail
+        | SetRunNote
+        | DeleteRunNote
+        | ActionResult,
         Field(discriminator="kind"),
     ]
 )
@@ -118,6 +152,9 @@ def context(
     skills=(),
     skill_descriptions=True,
     frozen=None,
+    notebook=None,
+    helper_remaining=None,
+    working_memory=None,
 ):
     observation = observation.model_dump(mode="json")
     original_observation = deepcopy(observation)
@@ -133,7 +170,7 @@ def context(
         "tool": TOOL,
         "omitted_event_ids": [],
     }
-    if interface == "tools_v5":
+    if interface in CONTINUATION_INTERFACES:
         from balatro_horizons.agents.costs import current_costs
 
         result["current_costs"] = current_costs(original_observation)
@@ -167,6 +204,20 @@ def context(
                 original_observation
             )
             result["tools"] = focused_tools(result["tools"])
+            if interface in NOTEBOOK_INTERFACES:
+                from balatro_horizons.agents.notebook import RunNotebook, notebook_tools
+
+                result["tools"] = notebook_tools(
+                    result["tools"], action_notes=interface == WORKING_MEMORY_INTERFACE
+                )
+                result["observation"].pop("memory", None)
+                result["run_notebook"] = deepcopy(notebook if notebook is not None else RunNotebook().view())
+                if interface == WORKING_MEMORY_INTERFACE:
+                    from balatro_horizons.agents.working_memory import WorkingMemory
+
+                    result["working_memory"] = deepcopy(
+                        working_memory if working_memory is not None else WorkingMemory().view()
+                    )
             if frozen is None:
                 result["prompt"] = (
                     (ROOT / "configs/prompts" / (interface.replace("_", "-") + ".txt"))
@@ -183,6 +234,19 @@ def context(
                     or t["name"] in original_observation["available_action_types"]
                 ]
                 result["observation"]["presentation"]["version"] = interface
+                if interface in NOTEBOOK_INTERFACES:
+                    if helper_remaining == 0:
+                        result["allowed_tools"] = [name for name in result["allowed_tools"]
+                                                   if name in ACTION_MODELS or name == "abort_run"]
+                    result["helper_status"] = {
+                        "remaining": helper_remaining,
+                        "message": "Helper allowance exhausted. Choose a permitted gameplay action or abort_run."
+                        if helper_remaining == 0 else "Helpers, including note edits, share this allowance.",
+                    }
+                    if interface == WORKING_MEMORY_INTERFACE and helper_remaining != 0:
+                        result["helper_status"]["message"] = (
+                            "Helper calls share this allowance. Action-attached note_update uses no helper call."
+                        )
             return working_context(result, [], byte_limit)[0]
     # Local transport bound; provider token accounting is a separate preflight.
     while len(json.dumps(result, ensure_ascii=False).encode()) + CONTEXT_FRAMING_BYTES > byte_limit:
@@ -203,6 +267,9 @@ def decision_context(
     interface="operate_v1",
     skills=(),
     frozen=None,
+    notebook=None,
+    helper_remaining=None,
+    working_memory=None,
 ):
     """Place retrieved current-state sections once, preserving every value read."""
     ctx = context(
@@ -212,6 +279,9 @@ def decision_context(
         skills=skills,
         skill_descriptions=not exchanges or interface in STABLE_TOOL_INTERFACES,
         frozen=frozen,
+        notebook=notebook,
+        helper_remaining=helper_remaining,
+        working_memory=working_memory,
     )
     if skills:
         ctx["skill_catalog_delivery"] = (
@@ -296,6 +366,10 @@ def arithmetic(expression):
 
 
 def helper(operation, events, rules, observation=None, *, interface="operate_v1"):
+    if operation.kind == "action_result" and interface in NOTEBOOK_INTERFACES:
+        from balatro_horizons.agents.action_results import retrieve_action_result
+
+        return retrieve_action_result(operation, events, observation)
     if interface in FOCUSED_INTERFACES:
         from balatro_horizons.agents.focused import focused_helper
 

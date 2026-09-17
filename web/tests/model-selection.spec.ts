@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import {
   configureModel,
   effortOptions,
+  harnessLabel,
   modelLabel,
   modelCatalog,
   modelKey,
@@ -59,13 +60,13 @@ test("Sol and Astra expose their supported reasoning choices", () => {
     "xhigh",
     "max",
   ]);
-  expect(() => configureModel(astra, "none", "tools_v5")).toThrow();
+  expect(() => configureModel(astra, "none", "tools_v7")).toThrow();
   expect(
-    configureModel(astra, "max", "tools_v5").settings.reasoning_effort,
+    configureModel(astra, "max", "tools_v7").settings.reasoning_effort,
   ).toBe("max");
   expect(
-    configureModel(astra, "max", "tools_v5").settings.harness_interface,
-  ).toBe("tools_v5");
+    configureModel(astra, "max", "tools_v7").settings.harness_interface,
+  ).toBe("tools_v7");
 });
 
 test("model defaults deduplicate aliases without rewriting historical settings", () => {
@@ -73,34 +74,53 @@ test("model defaults deduplicate aliases without rewriting historical settings",
     ...terra,
     settings: { harness_interface: "tools_v3", reasoning_effort: "medium" },
   };
+  const v5Alias = {
+    ...terra,
+    settings: { ...terra.settings, harness_interface: "tools_v5" },
+  };
+  const v7Alias = configureModel(terra, "medium", "tools_v7");
   const models = {
+    "terra-v7": v7Alias,
+    "terra-v5": v5Alias,
     "terra-tools": legacy,
-    "terra-cache": terra,
     "luna-tools": luna,
   };
   expect(Object.keys(modelCatalog(models))).toHaveLength(2);
-  expect(modelCatalog(models)[modelKey(terra)]).toEqual(terra);
-  const selected = configureModel(terra, "high", "tools_v5");
+  expect(modelCatalog(models)[modelKey(terra)]).toEqual(v7Alias);
+  expect(
+    modelCatalog({ "terra-v5": v5Alias, "terra-tools": legacy })[
+      modelKey(terra)
+    ],
+  ).toEqual(v5Alias);
+  expect(harnessLabel(v7Alias)).toBe("Current harness (v7)");
+  expect(harnessLabel(v5Alias)).toBe("Legacy harness (tools_v5)");
+  const selected = configureModel(terra, "high", "tools_v7");
   expect(
     modelCatalog({ ...models, [modelKey(terra)]: selected })[modelKey(terra)],
   ).toEqual(selected);
   expect(terra.settings.reasoning_effort).toBe("medium");
   expect(selected.cached_input_usd_per_million).toBe(0.2);
-  for (const retired of ["operate_v1", "tools_v2", "tools_v3", "tools_v4"])
+  for (const retired of [
+    "operate_v1",
+    "tools_v2",
+    "tools_v3",
+    "tools_v4",
+    "tools_v5",
+  ])
     expect(() => configureModel(terra, "medium", retired)).toThrow(
       "Legacy harnesses",
     );
-  expect(() => configureModel(terra, "minimal", "tools_v5")).toThrow();
-  expect(() => configureModel(luna, "medium", "tools_v5")).toThrow();
+  expect(() => configureModel(terra, "minimal", "tools_v7")).toThrow();
+  expect(() => configureModel(luna, "medium", "tools_v7")).toThrow();
   const anthropic: ModelConfig = {
     ...luna,
     provider: "anthropic",
     model: "pinned-anthropic",
     settings: { thinking_budget: 2048 },
   };
-  expect(configureModel(anthropic, "", "tools_v5").settings).toEqual({
+  expect(configureModel(anthropic, "", "tools_v7").settings).toEqual({
     thinking_budget: 2048,
-    harness_interface: "tools_v5",
+    harness_interface: "tools_v7",
   });
 });
 
@@ -146,7 +166,7 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
         page.getByLabel("Reasoning effort", { exact: true }),
       ).toHaveValue("medium");
       await expect(page.getByLabel("Harness", { exact: true })).toHaveValue(
-        "tools_v5",
+        "tools_v7",
       );
       await expect(
         page.getByLabel("Reasoning effort", { exact: true }).locator("option"),
@@ -162,11 +182,11 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
       page.getByLabel("Reasoning effort", { exact: true }),
     ).toHaveValue("medium");
     await expect(page.getByLabel("Harness", { exact: true })).toHaveValue(
-      "tools_v5",
+      "tools_v7",
     );
     await expect(
       page.getByLabel("Harness", { exact: true }).locator("option"),
-    ).toHaveText(["Current harness (v5)"]);
+    ).toHaveText(["Current harness (v7)"]);
     await page
       .getByLabel("Reasoning effort", { exact: true })
       .selectOption("high");
@@ -183,7 +203,7 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
       page.getByLabel("Reasoning effort", { exact: true }),
     ).toHaveValue("high");
     await expect(page.getByLabel("Harness", { exact: true })).toHaveValue(
-      "tools_v5",
+      "tools_v7",
     );
     // A separate operator changes limits after this browser loaded them.
     const fresh = (await (await page.request.get("/api/bootstrap")).json())
@@ -209,7 +229,7 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
     expect(saved.skills).toBe("none");
     expect(saved.models[modelKey(terra)].settings).toEqual({
       ...terra.settings,
-      harness_interface: "tools_v5",
+      harness_interface: "tools_v7",
       reasoning_effort: "max",
     });
     expect(saved.models["terra-tools"]).toMatchObject(models["terra-tools"]);
@@ -240,7 +260,7 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
     await page.getByLabel("Heuristic baseline", { exact: true }).uncheck();
     await page.getByLabel("Random legal baseline", { exact: true }).uncheck();
     await page.getByLabel("GPT-5.6 Terra · OpenAI", { exact: true }).check();
-    // A model still saved on v4 must also freeze new plans on v5.
+    // A model still saved on v4 must also freeze new plans on v7.
     await page.getByLabel("GPT-5.6 Sol · OpenAI", { exact: true }).check();
     await page
       .getByRole("button", { name: "Freeze plan · 2 replicates" })
@@ -258,7 +278,7 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
     ).config;
     expect(
       plannedSettings.models[modelKey(sol)].settings.harness_interface,
-    ).toBe("tools_v5");
+    ).toBe("tools_v7");
     expect(plannedSettings.models.sol).toEqual(sol);
 
     await page
@@ -270,11 +290,11 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
       .getByRole("button", { name: "Edit connection" })
       .click();
     await expect(page.getByLabel("Harness", { exact: true })).toHaveValue(
-      "tools_v5",
+      "tools_v7",
     );
     await expect(
       page.getByLabel("Harness", { exact: true }).locator("option"),
-    ).toHaveText(["Current harness (v5)"]);
+    ).toHaveText(["Current harness (v7)"]);
     // Legacy values in the JSON field cannot reintroduce a retired selection.
     await page
       .getByLabel("Additional model settings (JSON)")
@@ -286,7 +306,7 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
     const edited = (await (await page.request.get("/api/bootstrap")).json())
       .config;
     expect(edited.models[modelKey(astra)].settings.harness_interface).toBe(
-      "tools_v5",
+      "tools_v7",
     );
     expect(edited.models.astra).toEqual(astra);
     expect(launches).toHaveLength(1);
@@ -298,7 +318,7 @@ test("model, effort and harness persist; launching preserves fresh budgets and e
     await expect(
       page
         .getByLabel("Harness", { exact: true })
-        .locator('option[value="tools_v5"]'),
+        .locator('option[value="tools_v7"]'),
     ).toHaveAttribute("disabled", "");
     await page.setViewportSize({ width: 390, height: 844 });
     await page

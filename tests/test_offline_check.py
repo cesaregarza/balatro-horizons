@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import subprocess
 from pathlib import Path
 
@@ -48,3 +49,20 @@ def test_invalid_checkout_is_rejected(tmp_path):
     with pytest.raises(SystemExit) as exc:
         check_offline.main(["--root", str(tmp_path)])
     assert exc.value.code == 2
+
+
+def test_success_report_requires_completed_checks_and_unchanged_source(tmp_path, monkeypatch):
+    source = tmp_path/'src/balatro_horizons/runner.py'
+    source.parent.mkdir(parents=True)
+    source.write_text('original')
+    (tmp_path/'.venv/bin').mkdir(parents=True)
+    (tmp_path/'.venv/bin/python').touch()
+    report = tmp_path/'success.json'
+    monkeypatch.setattr(check_offline, 'run_checks', lambda *args, **kwargs: source.write_text('changed'))
+    assert check_offline.main(['--root', str(tmp_path), '--report', str(report)]) == 1
+    assert not report.exists()
+    monkeypatch.setattr(check_offline, 'run_checks', lambda *args, **kwargs: None)
+    assert check_offline.main(['--root', str(tmp_path), '--report', str(report)]) == 0
+    result = json.loads(report.read_text())
+    assert result['status'] == 'passed' and result['suite'] == 'check_offline'
+    assert result['implementation_hash'] and len(result['commands']) == 3

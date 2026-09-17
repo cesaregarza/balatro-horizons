@@ -15,7 +15,7 @@ from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.runner import Runner
 
 
-def model(provider):
+def model(provider, interface="tools_v5"):
     return ModelConfig(
         provider=provider,
         model="gpt-5.6-terra" if provider == "openai" else "claude-test",
@@ -24,14 +24,14 @@ def model(provider):
         cached_input_usd_per_million=0.2 if provider == "openai" else None,
         cache_write_input_usd_per_million=2.5 if provider == "openai" else None,
         pricing_date="2026-09-16",
-        settings={"harness_interface": "tools_v5"},
+        settings={"harness_interface": interface},
     )
 
 
-def initial(provider):
+def initial(provider, interface="tools_v5"):
     observation = project(FakeGame().observe_private())
-    ctx, exchanges = decision_context(observation, [], interface="tools_v5")
-    policy = DirectProvider(model(provider), Limits())
+    ctx, exchanges = decision_context(observation, [], interface=interface)
+    policy = DirectProvider(model(provider, interface), Limits())
     return observation, ctx, policy, policy.request(ctx, exchanges)
 
 
@@ -44,8 +44,9 @@ def exchange(policy, operation, result):
     }
 
 
-def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly():
-    observation, ctx, policy, first = initial("openai")
+@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
+def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly(interface):
+    observation, ctx, policy, first = initial("openai", interface)
     assert first["include"] == ["reasoning.encrypted_content"]
     assert first["store"] is False and first["tool_choice"] == "auto"
     assert "buy" in {tool["name"] for tool in first["tools"]}
@@ -67,7 +68,7 @@ def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly():
     operation = policy.parse({"status": "completed", "output": [reasoning, call]})
     result = {"content": "[]", "complete": True, "game_advanced": False}
     ctx, delivered = decision_context(
-        observation, [exchange(policy, operation, result)], interface="tools_v5"
+        observation, [exchange(policy, operation, result)], interface=interface
     )
     followup = policy.request(ctx, delivered)
     assert reasoning in followup["input"] and call in followup["input"]
@@ -80,8 +81,9 @@ def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly():
     assert json.dumps(followup).count("opaque-openai-state") == 1
 
 
-def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly():
-    observation, ctx, policy, first = initial("anthropic")
+@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
+def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly(interface):
+    observation, ctx, policy, first = initial("anthropic", interface)
     assert first["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
     assert all(tool["strict"] is True for tool in first["tools"])
     blocks = [
@@ -98,7 +100,7 @@ def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly():
     operation = policy.parse({"stop_reason": "tool_use", "content": deepcopy(blocks)})
     result = {"content": "[]", "complete": True, "game_advanced": False}
     ctx, delivered = decision_context(
-        observation, [exchange(policy, operation, result)], interface="tools_v5"
+        observation, [exchange(policy, operation, result)], interface=interface
     )
     followup = policy.request(ctx, delivered)
     assistant = next(message for message in followup["messages"] if message["role"] == "assistant")
@@ -108,8 +110,9 @@ def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly():
     assert "is_error" not in tool_result
 
 
-def test_v5_cache_transport_and_accounting_remain_conservative():
-    _, _, openai, openai_body = initial("openai")
+@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
+def test_cache_transport_and_accounting_remain_conservative(interface):
+    _, _, openai, openai_body = initial("openai", interface)
     assert openai_body["prompt_cache_options"] == {"mode": "explicit"}
     usage = {
         "usage": {
@@ -121,7 +124,7 @@ def test_v5_cache_transport_and_accounting_remain_conservative():
     assert openai.usage_cost(usage, 1) == pytest.approx(
         (1000 * 2 + 3000 * 0.2 + 1000 * 2.5 + 100 * 12) / 1_000_000
     )
-    _, _, anthropic, anthropic_body = initial("anthropic")
+    _, _, anthropic, anthropic_body = initial("anthropic", interface)
     assert "cache_control" not in json.dumps(anthropic_body)
     assert (
         anthropic.usage_cost(

@@ -1,0 +1,120 @@
+Play this Balatro run. Maximize the chance of the ordinary Ante 8 win within
+the displayed budgets. Choose your own strategy; money and intermediate scores
+are not separate objectives.
+
+The focused view contains the current board, legal actions, resources, visible
+blind effects and your saved notes. Card defaults are declared once in presentation. Counter defaults apply only
+to cards marked counter_defaults_apply; absent counters otherwise remain unknown. Empty effects and
+counters are omitted. All nondefault counters and active effects remain visible.
+Hand levels are automatic while playing a hand and available on demand elsewhere.
+Recent event text may be shortened; a truncated marker means more text is available.
+
+Load information when needed: inspect_state reads one public section, read_history
+browses past events, read_history_detail loads a complete past event, and
+read_skill/read_rules load frozen knowledge. Inspection and history detail return
+JSON text in UTF-8 byte pages; start at offset 0 and follow next_offset. Rule pages
+use next_key. A page is only a fragment until complete is true. calculate supports
+restricted arithmetic. Helpers do not advance the game; you may use them before
+acting, up to the per-decision allowance shown by remaining_budget.
+
+Only the latest three helper or error results stay loaded, fewer when needed to
+fit the context budget. retrieval_context lists cleared results and how to reload
+them. Provider protocol blocks may remain around a cleared-result receipt so the
+same decision can continue safely; the old result itself is no longer loaded.
+Clearing context never deletes the journal. Your run_notebook is automatically
+included in every request, including between helper calls. Maintain a concise
+notebook of your current plan, useful conclusions from prior actions and
+calculations, and unresolved questions. Update it when these change; remove
+obsolete entries. Avoid copying facts already in the current observation or
+unchanged notes. Preserve useful findings before their supporting context leaves
+the active window. Choose your own note keys and strategy. Save entries with
+set_run_note(key,text), or delete an entry with delete_run_note(key). Keys are
+yours to choose (1-64 characters, no control characters). The total Unicode
+character count of keys plus text is limited by run_notebook.character_limit.
+Oversized edits leave all existing notes unchanged. Edits consume a helper call
+but do not advance the game. Current observations remain authoritative; saved
+notes are your own records, not verified game facts.
+You can also attach one edit to a gameplay call with note_update: {key,text} sets
+a note; {key,text:null} deletes it; null leaves notes unchanged. This uses no
+additional helper call. Both the action and edit are validated before either
+executes. A valid edit is journaled before game execution and survives an engine
+failure; it does not claim the action succeeded. Gameplay actions do not accept
+memory_update. There is no requirement to write an unchanged note on every turn.
+
+working_memory automatically carries a bounded set of completed decisions:
+actions, recorded decision notes, observed results, and recent helper receipts.
+These are historical records. Their handles, quotes and counters are NOT current
+action targets or prices. A recorded decision note is an agent account, not a
+verified conclusion. Current observations and current_costs remain authoritative.
+Retention limits and omitted counts are explicit; older records remain in the
+journal. Use retrieve_action_result/read_history for missing public action
+evidence. Historical inspection arguments do not reload the old state: inspect_state
+always reads the CURRENT observation. Frozen rules/skills and arithmetic can be
+requested again. Opaque provider continuation does not cross game actions.
+
+notebook_maintenance warns when the next action or helper may clear older context.
+Save useful conclusions while they are still loaded, using a note helper or
+note_update on the action. At a new round or a change of plan, check whether your
+notes still reflect what you intend. Keep uncertainty explicit. The notebook and
+retained recent history are separate: history may expire; notes persist until edited.
+Do not assume earlier tool text is still loaded.
+
+last_action automatically reports your latest gameplay action's observed changes.
+retrieve_action_result retrieves a committed action and its receipt by decision_id;
+null selects the latest. Use section before/after for the recorded public conditions.
+A returned episode_id identifies inherited actions; historical handles are not
+current action targets. Follow next_offset as byte_offset for complete JSON.
+The recorded_decision_note is your original note, not a verified prediction.
+State changes are not a causal scoring breakdown; a null hand_score is unknown.
+Helpers and note writes never replace the last gameplay action.
+
+permitted_tools lists the tools permitted on this request. When no helpers remain,
+choose a permitted gameplay action or abort_run. Prohibited helper requests receive
+feedback and count toward the bounded invalid-response limit. The harness never
+substitutes a gameplay action.
+
+Call one named gameplay tool when ready, using the current observation ID and
+visible object IDs. Card order is the displayed order; reorder changes it.
+Invalid actions do not execute; use the specific feedback to correct them. There
+is no restart, hidden-state inspection, future information or automatic substitute
+move. decision_note is optional, may be null, and is not graded.
+
+The tool catalog is fixed. Only tools in permitted_tools may be used. Gameplay
+tools must also be named in the current observation's available_action_types.
+Use its observation_id, current visible
+object IDs, and action_constraints for legal selections, counts, targets, and
+reorder areas. Tools for other phases do not become legal merely because their
+schemas are present.
+
+Use current_costs from the current observation for transaction prices. Item
+descriptions explain effects; they do not establish whether a limited-use benefit
+remains available. Quotes refresh after every settled action, including pack
+returns. A null price or remaining-use count is unknown, not zero.
+cash_cost is the upfront quote; recorded rental obligations are separate.
+Affordability does not imply purchase eligibility. Mode checks marked
+requires_targets need a valid target selection before execution.
+last_action.transaction separates the quoted charge from cash before/after.
+An unobserved actual charge remains null; net cash change can include other effects.
+
+<!-- BEGIN ALWAYS-LOADED.md -->
+# Mechanics to retain across decisions
+
+These are ordinary defaults. Current public effects can modify or
+override them.
+
+- Ordinary interest pays $1 per full $5 of eligible cash at settlement,
+  capped at $5. Eligible balances below $5 earn no ordinary interest.
+  Active deck effects, vouchers, and other public effects can change this.
+- Ordinary unused hands pay $1 each at settlement.
+- Borrowing capacity permits spending below $0; it is not additional
+  cash. Money received while your balance is negative first reduces
+  that negative balance.
+- Score beyond the current blind's target does not carry forward.
+- Only scoring cards normally add card chips and trigger "when scored"
+  effects. In Three of a Kind A-A-A-K-Q, only the Aces score; the added
+  King and Queen contribute neither.
+- Money, deck changes, Jokers, and hand upgrades persist across rounds,
+  subject to their effects.
+- Skipping a blind forgoes its normal played-round settlement and shop;
+  the displayed skip tag provides its own reward.
+<!-- END ALWAYS-LOADED.md -->

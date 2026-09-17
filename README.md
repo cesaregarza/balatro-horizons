@@ -138,7 +138,16 @@ The [skill-enabled harness](docs/harness-skills.md) gives new runs a compact cat
 
 The [OpenAI/Luna harness guide](docs/openai-harness.md) includes the pinned smoke preset and a one-run command with a persistent campaign spending ledger.
 
-The [named-tools revision](docs/harness-tools-v2.md) documents the earlier interface. New app runs use **Current harness (v5)**, including direct gameplay tools, on-demand inspection, provider continuation, and actionable rejection feedback. Historical configurations retain their recorded interfaces.
+The [named-tools revision](docs/harness-tools-v2.md) documents the earlier interface.
+The source selector uses **Current harness (v7)**: direct gameplay tools,
+on-demand inspection, provider continuation, an editable run notebook, and bounded
+recent working context across actions. Models receive notebook-maintenance
+guidance and can attach a note edit to an action without another provider call.
+[Working context and notebook maintenance](docs/working-memory-v1.md) describes
+the limits, validation and branch boundaries; [v6 notebook documentation](docs/run-notebook-v1.md)
+records the preceding interface. Historical configurations retain their recorded
+interfaces. Each native installation needs certification matching its source;
+the previously verified v6 release does not certify v7.
 
 The [Balatro Horizons Guide](docs/balatro-guide/README.md) is the canonical rules
 and strategy reference for the harness. Its modular chapters compile into
@@ -152,7 +161,7 @@ uv --directory /root/dev/balatro-horizons run python scripts/package_balatro_gui
 
 Use **Models & budgets** to enter explicit model identifiers, input/output prices and pricing date, provider settings, and both episode and batch spending ceilings. Put `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in the backend process environment; credentials are never browser settings. Restart the backend after setting credentials. Enable paid calls explicitly for the configured run. The exploratory 20-seed × 2-replicate × 2-model preset does not authorize spending.
 
-The OpenAI Responses and Anthropic Messages adapters share the same public boundary and tool definitions within each interface version. The original interface uses `operate`; the new interface exposes named gameplay and inspection tools. Each response may submit one game action or permitted helper call. Context is rebuilt from the current observation and up to 4,096 characters of agent-authored memory. The original interface supplies up to 20 recent public events automatically; named tools supply two and make the full 20 available on demand. No built-in provider search or computer tools are enabled.
+The OpenAI Responses and Anthropic Messages adapters share the same public boundary and tool definitions within each interface version. The original interface uses `operate`; the new interface exposes named gameplay and inspection tools. Each response may submit one game action (optionally carrying a note edit in v7) or permitted helper call. Context includes the current observation and up to 4,096 characters of agent-authored memory. V7 also retains up to three completed decisions and their recent helper receipts, within explicit byte bounds. The original interface supplies up to 20 recent public events automatically; named tools supply two and make the full 20 available on demand. No built-in provider search or computer tools are enabled.
 
 Reservations use configured token ceilings and prices before every request, including retries. Unknown usage retains the reservation. Usage-based cost estimates use the configured prices; an overage is recorded even if it exceeds the reservation, and subsequent calls stop at the cap. Luna's live smoke exercised reservation and usage settlement; these estimates are not provider invoices. Paid execution requires operator-supplied model settings and spending authorization. No paid smoke run is implicit in installation or tests.
 

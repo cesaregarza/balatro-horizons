@@ -28,6 +28,9 @@ AUTOMATIC_PUBLIC_EVENT_COUNT = 2
 EVENT_SUMMARY_CHARACTERS = 240
 HELPER_PAGE_BYTES = 2_048
 RETAINED_HELPER_RESULTS = 3
+WORKING_MEMORY_DECISIONS = 3
+WORKING_MEMORY_BYTES = 24_576
+WORKING_MEMORY_HELPER_BYTES = 4_096
 DEFAULT_GUIDE_PAGE_BYTES = 4_096
 LEGACY_GUIDE_PAGE_SIZES = (DEFAULT_GUIDE_PAGE_BYTES, 2_048, 1_024, 512, 256, 128)
 DEFAULT_HISTORY_PAGE_EVENTS = 10
@@ -107,6 +110,8 @@ class ModelConfig(Options):
             "tools_v3",
             "tools_v4",
             "tools_v5",
+            "tools_v6",
+            "tools_v7",
         ):
             raise ValueError("unsupported harness interface")
         date.fromisoformat(self.pricing_date)

@@ -19,7 +19,13 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     from balatro_horizons.agents.focused import PAGE_BYTES, RETAINED_RESULTS, focused_tools
     from balatro_horizons.agents.protocol import KERNEL, TOOL
     from balatro_horizons.agents.skills import discovery
-    from balatro_horizons.agents.tool_interface import FOCUSED_INTERFACES, stable_tools
+    from balatro_horizons.agents.tool_interface import (
+        CONTINUATION_INTERFACES,
+        FOCUSED_INTERFACES,
+        NOTEBOOK_INTERFACES,
+        WORKING_MEMORY_INTERFACE,
+        stable_tools,
+    )
 
     interface = getattr(policy, "interface", "operate_v1")
     raw = load_prompt(ROOT, interface) if prompt_bytes is None else prompt_bytes
@@ -32,6 +38,11 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     tools = stable_tools(skills=skills)
     if interface in FOCUSED_INTERFACES:
         tools = focused_tools(tools)
+    if interface in NOTEBOOK_INTERFACES:
+        from balatro_horizons.agents.notebook import notebook_tools
+
+        tools = notebook_tools(tools, action_notes=interface == WORKING_MEMORY_INTERFACE)
+    from balatro_horizons.agents.working_memory import policy as working_memory_policy
     model = getattr(policy, "model", None)
     return {
         "version": "agent-protocol-v1",
@@ -45,7 +56,7 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         "tool": deepcopy(TOOL),
         "tool_catalog": tools,
         "tool_policy": "stable_catalog_local_phase_rejection"
-        if interface == "tools_v5"
+        if interface in CONTINUATION_INTERFACES
         else "versioned_legacy_" + interface,
         "model": model.model_dump() if model is not None else None,
         "agent": getattr(policy, "name", "model"),
@@ -54,12 +65,22 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         "knowledge_hash": digest(rules),
         "skills_preset": config.skills,
         "memory_policy": {
-            "across_actions": "explicit_memory_only",
+            "across_actions": "run-notebook-v1" if interface in NOTEBOOK_INTERFACES else "explicit_memory_only",
             "recent_public_events": RECENT_PUBLIC_EVENT_LIMIT,
             "retained_results": RETAINED_RESULTS if interface in FOCUSED_INTERFACES else None,
             "page_bytes": PAGE_BYTES if interface in FOCUSED_INTERFACES else None,
-            "provider_continuation": "within_decision_only" if interface == "tools_v5" else "none",
+            "provider_continuation": "within_decision_only" if interface in CONTINUATION_INTERFACES else "none",
             "context_bound": "request_bytes_and_provider_tokens_v2",
+            **({"notebook_characters": "sum_unicode_key_and_text_lengths",
+                "note_writes": "journaled_helpers",
+                "branch_boundary": "pre_decision",
+                "helper_exhaustion": "bounded_invalid_feedback"}
+               if interface in NOTEBOOK_INTERFACES else {}),
+            **({"across_actions": "run-notebook-v1-and-working-memory-v1",
+                "working_memory": working_memory_policy(),
+                "notebook_guidance": "maintain_on_change_with_pre_eviction_notice",
+                "note_writes": "journaled_helpers_or_validated_action_attachment"}
+               if interface == WORKING_MEMORY_INTERFACE else {}),
         },
         "public_export_policy": "public-schema-v1-opaque-continuations-omitted",
         "implementation_hash": implementation_fingerprint(),
