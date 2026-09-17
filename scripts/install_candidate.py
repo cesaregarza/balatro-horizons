@@ -12,6 +12,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+OWNED_RUNTIME = Path('/mnt/d/BalatroHorizonsRuntime')
+
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
@@ -79,7 +81,8 @@ def install(root, candidate, manifest, backup):
             raise ValueError('CANDIDATE_CHANGED: ' + row['path'])
     backup.mkdir(parents=True, exist_ok=False, mode=0o700)
     snapshots = [p for p in (root/'reports/verification').glob('*.json') if p.is_file()]
-    snapshots += [root/'private/capability-certificate.json', root/'data/operator-settings.json']
+    snapshots += [root/'private/capability-certificate.json', root/'data/operator-settings.json',
+                  root/'private/environment.lock.json', root/'private/rules.json']
     snapshots += [p for p in (root/'data/private_runs').glob('*/certificate-*.json')
                   if re.fullmatch(r'certificate-\d+\.json', p.name)]
     files = {r['path'] for r in rows if r['before_sha256'] is not None}
@@ -100,6 +103,39 @@ def install(root, candidate, manifest, backup):
             raise ValueError('INSTALL_CHECKSUM_MISMATCH')
     shutil.copytree(candidate/'web/dist', root/'web/dist', dirs_exist_ok=True)
     print(json.dumps({'installed_files':len(rows),'backup':str(backup),'certification_required':True}))
+
+
+def snapshot_runtime(backup):
+    """Back up pinned instrumentation only; never copy saves, checkpoints or tokens."""
+    backup = native(backup)
+    runtime = OWNED_RUNTIME
+    if runtime.resolve() != runtime or not (runtime/'horizons-owned.json').is_file():
+        raise ValueError('OWNED_RUNTIME_REQUIRED')
+    files = [runtime/name for name in
+             ('horizons-owned.json', 'bridge.ps1', 'version.dll', 'environment.lock.json')]
+    mods = runtime/'Mods'
+    if not mods.is_dir() or mods.is_symlink():
+        raise ValueError('MOD_DIRECTORY_REQUIRED')
+    for path in sorted(mods.rglob('*')):
+        if 'lovely' in path.relative_to(mods).parts:
+            continue  # Generated logs and licensed-source dumps are not instrumentation.
+        if path.is_symlink():
+            raise ValueError('REGULAR_FILES_REQUIRED')
+        if path.is_file():
+            files.append(path)
+    if any(path.is_symlink() or not path.is_file() for path in files):
+        raise ValueError('REGULAR_FILES_REQUIRED')
+    hashes = {str(path.relative_to(runtime)): digest(path) for path in files}
+    backup.mkdir(parents=True, exist_ok=False, mode=0o700)
+    for path in files:
+        relative = path.relative_to(runtime)
+        target = backup/'files'/relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        if digest(target) != hashes[str(relative)] or digest(path) != hashes[str(relative)]:
+            raise ValueError('RUNTIME_CHANGED_DURING_BACKUP')
+    (backup/'manifest.json').write_text(json.dumps(hashes, indent=2, sort_keys=True)+'\n')
+    return {'runtime_snapshot': str(backup), 'files': len(files), 'native_launches': 0}
 
 
 def rollback(root, backup):
@@ -128,8 +164,15 @@ def main():
     parser.add_argument('--rollback', action='store_true')
     parser.add_argument('--prepare', action='store_true',
                         help='Write a new checksum manifest from clean tracked checkouts; no install')
+    parser.add_argument('--snapshot-runtime', action='store_true',
+                        help='Back up owned Windows instrumentation to Linux --backup; no install or launch')
     args=parser.parse_args()
     root = native(args.root)
+    if args.snapshot_runtime:
+        if not args.backup or args.prepare or args.rollback or args.candidate or args.manifest:
+            parser.error('--snapshot-runtime requires only --root and --backup')
+        print(json.dumps(snapshot_runtime(args.backup), sort_keys=True))
+        return
     if args.prepare:
         if args.rollback or not args.candidate or not args.manifest:
             parser.error('--prepare requires --candidate and --manifest, without --rollback')

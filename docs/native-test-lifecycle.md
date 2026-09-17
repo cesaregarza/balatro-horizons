@@ -78,3 +78,18 @@ Future native verification should execute the selected plan once. If a case
 fails, retain its evidence, fix the relevant issue, and repeat only the necessary
 checks. Announce startup/restoration/recovery launches; do not add invisible
 retries or restart the whole application for an ordinary new game.
+
+Before a native patch deployment, the existing installer can snapshot the owned
+instrumentation to a new private Linux directory:
+
+```bash
+.venv/bin/python scripts/install_candidate.py --root /root/dev/balatro-horizons \
+  --snapshot-runtime --backup /root/dev/balatro-horizons/private/deployments/RELEASE/native
+```
+
+This requires the operator's Windows-path authorization. It copies pinned mod
+files, the bridge, injector and runtime lock, checks their bytes, and refuses an
+existing backup destination. It excludes credentials, saves, checkpoints and
+generated Lovely logs/dumps. The ordinary Linux install backup also preserves
+the backend environment lock and frozen rules. Neither backup operation launches
+a game. The backup helper's five focused tests pass with Linux-only fixtures.
