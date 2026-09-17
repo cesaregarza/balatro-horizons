@@ -1,0 +1,75 @@
+.dev-trace {
+  border-top: 2px solid #748eb2;
+  margin-top: 24px;
+  padding-top: 16px;
+  min-width: 0;
+}
+.dev-trace h3 {
+  font-size: 20px;
+}
+.dev-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dev-call {
+  padding: 16px;
+  margin: 14px 0;
+  border: 1px solid #425575;
+  border-radius: 8px;
+  background: #121e2d;
+  min-width: 0;
+}
+.dev-call h4 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.dev-status {
+  color: #f0c591;
+  text-transform: capitalize;
+}
+.dev-meta {
+  font-size: 11px;
+  color: #acbdd1;
+  overflow-wrap: anywhere;
+}
+.dev-tool {
+  margin: 12px 0;
+  padding: 10px;
+  border-left: 3px solid #729bb0;
+  min-width: 0;
+}
+.dev-json {
+  margin: 8px 0;
+  min-width: 0;
+}
+.dev-json summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.dev-json pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-height: 65vh;
+  overflow: auto;
+  max-width: 100%;
+  font-size: 12px;
+}
+.dev-results {
+  margin: 14px 0;
+}
+.dev-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dev-toggle input {
+  width: auto;
+}
+@media (max-width: 600px) {
+  .dev-call {
+    padding: 10px;
+  }
+}
