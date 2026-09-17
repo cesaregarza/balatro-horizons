@@ -111,10 +111,59 @@ the combined offline gate. `scripts/sync_prompt_instructions.py` checks v6 by
 default; `--write` updates it explicitly, and `--interface tools_v5` selects the
 legacy template without rewriting any frozen episode protocol.
 
-Implementation is isolated from the deployed checkout. Native certification,
-deployment, and paid-provider validation for v6 remain pending. Runner and agent
-changes alter the native implementation fingerprint even though the Lua adapter
-is unchanged. Before deployment, verify the dedicated runtime with one announced
-consolidated suite, then deploy backend and frontend together while the worker is
-idle. Preserve operator budgets, model settings, and the existing helper allowance.
-Do not start a paid smoke run without explicit authorization and caps.
+Runner and agent changes alter the native implementation fingerprint even though
+the Lua adapter is unchanged. For each deployment, verify the dedicated runtime
+with one announced consolidated suite, then deploy backend and frontend together
+while the worker is idle. Preserve operator budgets, model settings, and the
+existing helper allowance. Do not start a paid smoke run without explicit
+authorization and caps.
+
+The deployment helper supports `--prepare --allow-unrelated-changes` to retain
+local edits outside the candidate's file set. It rejects overlapping edits and
+untracked collisions. `--snapshot-only` checks the manifest and captures Linux
+source, settings, evidence, and frontend backups without installing files, so a
+subsequent Git fast-forward can keep the deployment on its actual committed head.
+Seven focused deployment-helper tests passed after this addition.
+
+## Local deployment record
+
+V6 was deployed on **2026-09-17** from harness commit `59971ed` and deployment-helper
+commit `da747ea`. The service was stopped while idle, matching rollback files were
+saved, and the local checkout was fast-forwarded without changing its earlier
+uncommitted helper-limit and UX work. Runtime instrumentation required no reinstall.
+
+One consolidated unpaid native suite passed, with its planned **12 process
+launches**: two startup/profile checks, six seed-prefix repetitions across two
+traces, three direct-checkpoint repetitions, and one branch restoration. Ordinary
+gameplay cases shared a process. There were no failed checks or suite retries.
+
+| Evidence | Result |
+| --- | --- |
+| Red/White and Red/Gold profile stability | Passed |
+| Action coverage, ordered objects, packs, invalid-action isolation | Passed |
+| Native terminal detection and acknowledgment faults | Passed |
+| Action-fixture seed replay (`61bd7bef5a5e45e68ca40910736ecea0`) | Three repetitions passed |
+| Gold baseline replay (`9769a11c8d47424485dafeedc3b68825`) | Three repetitions passed |
+| Direct checkpoint at Gold decision 0 | Three repetitions passed |
+| Assisted branch (`865422fbed754193a6376569ceb91a84`) | Completed; original journal unchanged |
+| Settlement evidence | Passed; no extra launches |
+| Activated capability, doctor, native evidence gate tests | Passed; zero blockers; 10 tests passed |
+| Deployed browser review | Passed prospective withholding, reveal, native hand rendering and branch comparison; zero browser errors |
+
+The native suite checks the runtime/shared execution path; notebook and provider
+transport behavior are covered by the separate synthetic and mocked-provider
+tests above. V6 has **no paid-provider validation or measured gameplay/cost
+improvement** yet. Calibration fixtures and assisted branches are not autonomous
+benchmark scores. Source and environment identities are:
+
+```text
+implementation: 0250a3940507b28312724d93ce001b48b77fae7b1930944134f70cff2f8e840f
+environment:    908ff9f9db75e4abe92d963e4a17620dda65393bfd78a6725f0e89538027a631
+```
+
+Local artifacts remain outside Git under `reports/verification/` and
+`private/deployments/notebook-da747ea/`. The native capability covers the recorded
+certified boundaries; it does not certify every possible checkpoint in a phase.
+The backend and v6 frontend are live together. The existing 24-helper allowance,
+$5 episode ceiling, $10 total ceiling, and model settings were preserved. This
+deployment made zero paid provider requests and left the worker idle.

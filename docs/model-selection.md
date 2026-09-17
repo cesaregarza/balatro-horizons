@@ -8,7 +8,10 @@ Defaults are stored under a deterministic provider/model key. Historical aliases
 
 `operate_v1` and `tools_v2` through `tools_v5` are historical interfaces and are not selectable for new runs. Backend support remains for historical configuration and continuation compatibility. The current harness requires a recognized compatible OpenAI model and configured read/write rates; a missing price blocks launch or batch creation rather than falling back to an obsolete interface. Anthropic retains its own provider settings without OpenAI cache requirements. All interfaces use tools to submit moves; there is no tools-off checkbox.
 
-The v6 selector change is in source and documentation only. The deployed app remains on v5 until the deployment gate is completed.
+The v6 selector and backend were deployed together on September 17 after the
+offline checks and one consolidated native certification suite passed. Existing
+model settings and spending limits were preserved. See the
+[v6 deployment record](run-notebook-v1.md#local-deployment-record).
 
 For GPT-5.6, the effort choices are none, low, medium, high, xhigh, and max. GPT-6 Astra offers low, medium, high, xhigh, and max (no none). Other model families retain their pinned settings instead of being assigned unverified effort options. Anthropic retains its configured thinking budget. [OpenAI's model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-terra) was checked on 2026-09-15.
 

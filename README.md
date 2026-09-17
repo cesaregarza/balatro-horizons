@@ -142,8 +142,9 @@ The [named-tools revision](docs/harness-tools-v2.md) documents the earlier inter
 The source selector now uses **Current harness (v6)**: direct gameplay tools,
 on-demand inspection, provider continuation, and an editable run notebook.
 [Notebook and action-result retrieval](docs/run-notebook-v1.md) describes the new
-tools, persistence boundary, and validation. Deployment remains gated on matching
-native certification; historical configurations retain their recorded interfaces.
+tools, persistence boundary, and validation. The local v6 deployment passed its
+native gate on September 17; each installation still needs matching certification.
+Historical configurations retain their recorded interfaces.
 
 The [Balatro Horizons Guide](docs/balatro-guide/README.md) is the canonical rules
 and strategy reference for the harness. Its modular chapters compile into
