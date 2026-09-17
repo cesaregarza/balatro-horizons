@@ -9,14 +9,14 @@ import uuid
 from balatro_horizons.actions.validation import validate_action
 from balatro_horizons.config import ROOT, load_config
 from balatro_horizons.contracts import ActionEnvelope, RemainingBudget
-from balatro_horizons.engine.native import NativeGame
+from balatro_horizons.engine.native import NativeGame, NativeSession
 from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 from balatro_horizons.storage.journal import Store, atomic_json
 
 
 class Audit:
-    def __init__(self, config, case):
+    def __init__(self, config, case, *, game_factory=None):
         self.config = config
         self.store = Store(ROOT / "data")
         panel_path = ROOT / "private/calibration-seeds.json"
@@ -32,13 +32,24 @@ class Audit:
             },
             {"seed": self.seed, "config": config.model_dump()},
         )
-        self.game = NativeGame(config.environment, self.seed, calibration=True)
+        factory = game_factory or (
+            lambda environment, seed: NativeGame(environment, seed, calibration=True)
+        )
+        self.game = factory(config.environment, self.seed)
+        self.game_factory = factory
+        self.finished = False
+        self.result = None
         self.issuer = HandleIssuer()
         self.decision = 0
         self.actions = []
         self.checkpoints = {}
-        self.observe()
-        self.capture()
+        try:
+            self.observe()
+            self.capture()
+        except BaseException:
+            self.finished = True
+            self.game.close()
+            raise
         print(json.dumps({"fixture": case, "episode_id": self.eid}), flush=True)
 
     def observe(self):
@@ -114,30 +125,36 @@ class Audit:
         self.checkpoints[self.obs.phase] = self.decision
 
     def finish(self, reason="NATIVE_FIXTURE_COMPLETE"):
-        outcome = self.game.terminal_status() or "OPERATOR_ABORT"
-        self.store.finish(
-            self.eid,
-            {
+        if self.finished:
+            return self.result
+        try:
+            outcome = self.game.terminal_status() or "OPERATOR_ABORT"
+            self.store.finish(
+                self.eid,
+                {
+                    "episode_id": self.eid,
+                    "evidence_kind": "NATIVE",
+                    "outcome": outcome,
+                    "reason": reason,
+                    "committed_actions": len(self.actions),
+                    "provider_calls": 0,
+                    "cost_usd": 0,
+                },
+            )
+            self.result = {
                 "episode_id": self.eid,
-                "evidence_kind": "NATIVE",
+                "actions": self.actions,
+                "checkpoints": self.checkpoints,
                 "outcome": outcome,
-                "reason": reason,
-                "committed_actions": len(self.actions),
-                "provider_calls": 0,
-                "cost_usd": 0,
-            },
-        )
-        self.game.close()
-        return {
-            "episode_id": self.eid,
-            "actions": self.actions,
-            "checkpoints": self.checkpoints,
-            "outcome": outcome,
-        }
+            }
+        finally:
+            self.finished = True
+            self.game.close()
+        return self.result
 
 
-def exercise_shop(config):
-    a = Audit(config, "native_action_coverage")
+def exercise_shop(config, *, game_factory=None):
+    a = Audit(config, "native_action_coverage", game_factory=game_factory)
     try:
         a.take({"type": "skip_blind", "blind_id": a.obs.state.revealed_blinds[0].id})
         if "skip_pack" in a.obs.available_action_types:
@@ -235,8 +252,8 @@ def exercise_shop(config):
         raise
 
 
-def exercise_win(config):
-    a = Audit(config, "native_win_detection")
+def exercise_win(config, *, game_factory=None):
+    a = Audit(config, "native_win_detection", game_factory=game_factory)
     try:
         a.fixture("win_setup")
         assert a.game.terminal_status() is None
@@ -250,11 +267,11 @@ def exercise_win(config):
         raise
 
 
-def exercise_reorder(config):
+def exercise_reorder(config, *, game_factory=None):
     """Regression for the six-Joker blind-selection failure, including exactly-once replay."""
     from balatro_horizons.storage.journal import digest
 
-    a = Audit(config, "native_reorder_boundaries")
+    a = Audit(config, "native_reorder_boundaries", game_factory=game_factory)
     checks = []
     try:
         a.fixture("reorder_inventory")
@@ -313,18 +330,33 @@ def exercise_reorder(config):
         raise
 
 
-def main():
+def run_cases(config, cases, *, game_factory=None):
+    results = {}
+    if "actions" in cases:
+        results["actions"] = exercise_shop(config, game_factory=game_factory)
+    if "win" in cases:
+        results["win"] = exercise_win(config, game_factory=game_factory)
+    if "reorder" in cases:
+        results["reorder"] = exercise_reorder(config, game_factory=game_factory)
+    return results
+
+
+def main(*, game_factory=None, session_factory=NativeSession):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--case", choices=["actions", "win", "reorder", "all"], default="all")
     args = p.parse_args()
     cfg = load_config(ROOT / "configs/smoke.yaml")
-    results = {}
-    if args.case in ("actions", "all"):
-        results["actions"] = exercise_shop(cfg)
-    if args.case in ("win", "all"):
-        results["win"] = exercise_win(cfg)
-    if args.case in ("reorder", "all"):
-        results["reorder"] = exercise_reorder(cfg)
+    cases = {
+        "actions": ("actions",),
+        "win": ("win",),
+        "reorder": ("reorder",),
+        "all": ("actions", "win", "reorder"),
+    }[args.case]
+    if game_factory is None:
+        with session_factory(cfg.environment, reason="startup") as session:
+            results = run_cases(cfg, cases, game_factory=session.new_game)
+    else:
+        results = run_cases(cfg, cases, game_factory=game_factory)
     path = ROOT / "reports/verification" / ("native-fixtures-" + uuid.uuid4().hex + ".json")
     atomic_json(path, results, immutable=True)
     print(json.dumps({"result_artifact": str(path), "results": results}), flush=True)

@@ -228,9 +228,15 @@ class WindowsBridge:
 class NativeGame:
     evidence_kind = "NATIVE"
 
-    def __init__(self, environment, seed, *, calibration=False, launch=True):
+    def __init__(self, environment, seed, *, calibration=False, launch=True, bridge=None):
         self.environment, self.seed = environment, seed
-        self.bridge = WindowsBridge(environment)
+        if bridge is not None and (
+            launch or not calibration or not bridge.calibration or not bridge.instance_id
+        ):
+            raise NativeFailure("INVALID_BORROWED_NATIVE_BRIDGE")
+        self.bridge = bridge if bridge is not None else WindowsBridge(environment)
+        self._owns_process = bridge is None
+        self._closed = False
         self.bridge.calibration = calibration
         self.lock = self.bridge.verify_files()
         certificate = None
@@ -238,24 +244,39 @@ class NativeGame:
             from balatro_horizons.engine.certification import require_environment_certificate
 
             certificate = require_environment_certificate(self.lock, environment)
-        if launch:
-            self.bridge.launch()
-        self.bridge.rpc("menu")
-        self.bridge.rpc(
-            "start", {"deck": environment.deck, "stake": environment.stake, "seed": seed}
-        )
-        self.raw = self.bridge.rpc("bh_inspect")
-        self.bridge.verify_identity(self.raw)
-        self.wait_ready()
+        try:
+            if launch:
+                self.bridge.launch()
+            else:
+                # Verify the owned process before submitting a menu/start reset.
+                if not self.bridge.instance_id:
+                    raise NativeFailure("NATIVE_SESSION_REQUIRED")
+                self.bridge.verify_identity(self.bridge.rpc("bh_inspect"))
+            self.bridge.rpc("menu")
+            self.bridge.rpc(
+                "start", {"deck": environment.deck, "stake": environment.stake, "seed": seed}
+            )
+            self.raw = self.bridge.rpc("bh_inspect")
+            self.bridge.verify_identity(self.raw)
+            self.wait_ready()
+        except BaseException:
+            self.close()
+            raise
         if certificate:
             from balatro_horizons.storage.journal import digest
 
             if digest(self.raw["bh"]["profile"]) != certificate.get("profile_hashes", {}).get(
                 environment.deck + "/" + environment.stake
             ):
+                self.close()
                 raise NativeFailure("FROZEN_PROFILE_MISMATCH")
 
+    def _require_open(self):
+        if self._closed:
+            raise NativeFailure("NATIVE_GAME_CLOSED")
+
     def wait_ready(self):
+        self._require_open()
         deadline = time.monotonic() + self.environment.timeout_seconds
         while time.monotonic() < deadline:
             self.raw = self.bridge.rpc("bh_inspect")
@@ -286,6 +307,7 @@ class NativeGame:
         raise NativeRejected("STALE_NATIVE_OBJECT")
 
     def apply_public_action(self, action, issuer, request_id=None):
+        self._require_open()
         request_id = request_id or uuid.uuid4().hex
         kind = action.type
         simple = {
@@ -335,6 +357,7 @@ class NativeGame:
         self.wait_ready()
 
     def checkpoint(self):
+        self._require_open()
         cid = uuid.uuid4().hex
         self.bridge.rpc("save", {"path": f"D:/BalatroHorizonsRuntime/checkpoints/{cid}.jkr"})
         data = (self.bridge.root / "checkpoints" / f"{cid}.jkr").read_bytes()
@@ -348,6 +371,7 @@ class NativeGame:
         }
 
     def restore(self, snapshot):
+        self._require_open()
         if snapshot["environment"] != self.lock:
             raise NativeFailure("CHECKPOINT_ENVIRONMENT_MISMATCH")
         if snapshot.get("restoration") == "seed_prefix":
@@ -364,4 +388,123 @@ class NativeGame:
         self.wait_ready()
 
     def close(self):
-        self.bridge.stop()
+        if self._closed:
+            return
+        self._closed = True
+        if self._owns_process and self.bridge.instance_id:
+            self.bridge.stop()
+        else:
+            self.bridge._close_rpc()
+
+
+class _SessionGame(NativeGame):
+    def __init__(self, owner, environment, seed, bridge):
+        self.owner = owner
+        super().__init__(environment, seed, calibration=True, launch=False, bridge=bridge)
+
+    def _require_open(self):
+        super()._require_open()
+        if self.owner._failed:
+            raise NativeFailure("NATIVE_SESSION_UNAVAILABLE")
+
+    def wait_ready(self):
+        try:
+            return super().wait_ready()
+        except NativeFailure:
+            self.owner._failed = True
+            raise
+
+    def apply_public_action(self, *args, **kwargs):
+        try:
+            return super().apply_public_action(*args, **kwargs)
+        except NativeFailure:
+            self.owner._failed = True
+            raise
+
+    def close(self):
+        try:
+            super().close()
+        finally:
+            if self.owner._active is self:
+                self.owner._active = None
+
+
+class NativeSession:
+    """One owned calibration process; menu/start creates each subsequent game.
+
+    Never used for paid runs or as a substitute for fresh-process restoration
+    proofs. A failed/ambiguous operation retires the session; it cannot relaunch
+    implicitly or transfer ownership to a process it did not launch.
+    """
+
+    def __init__(self, environment, *, reason="startup"):
+        if reason not in ("startup", "restoration", "crash_recovery"):
+            raise ValueError("INVALID_NATIVE_LAUNCH_REASON")
+        self.environment = environment.model_copy(deep=True)
+        self.reason = reason
+        self.bridge = WindowsBridge(self.environment)
+        self.bridge.calibration = True
+        self._active = None
+        self._started = False
+        self._closed = False
+        self._failed = False
+        self._profiles = {}
+
+    def __enter__(self):
+        if self._started or self._closed:
+            raise NativeFailure("NATIVE_SESSION_NOT_NEW")
+        self._started = True
+        try:
+            self.bridge.launch()
+        except BaseException:
+            self.close()
+            raise
+        return self
+
+    def new_game(self, environment, seed):
+        if not self._started or self._closed or self._failed:
+            raise NativeFailure("NATIVE_SESSION_UNAVAILABLE")
+        if self._active is not None:
+            raise NativeFailure("NATIVE_GAME_ALREADY_ACTIVE")
+        if environment.model_dump(exclude={"deck", "stake"}) != self.environment.model_dump(
+            exclude={"deck", "stake"}
+        ):
+            raise NativeFailure("NATIVE_SESSION_ENVIRONMENT_CHANGED")
+        # Each lease gets its own transport, so fault-injection wrappers and
+        # closed pipes cannot leak into the next game. The process nonce stays.
+        channel = WindowsBridge(environment)
+        channel.calibration = True
+        channel.instance_id = self.bridge.instance_id
+        try:
+            game = _SessionGame(self, environment, seed, channel)
+            self._active = game
+            from balatro_horizons.storage.journal import digest
+
+            key = (environment.deck, environment.stake)
+            profile = digest(game.raw["bh"]["profile"])
+            if self._profiles.setdefault(key, profile) != profile:
+                raise NativeFailure("FROZEN_PROFILE_MISMATCH")
+            return game
+        except BaseException:
+            self._failed = True
+            if self._active is not None:
+                self._active.close()
+            else:
+                channel._close_rpc()
+            raise
+
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            if self._active is not None:
+                self._active.close()
+        finally:
+            if self._started and self.bridge.instance_id:
+                self.bridge.stop()
+            else:
+                self.bridge._close_rpc()
+
+    def __exit__(self, *exc):
+        self.close()

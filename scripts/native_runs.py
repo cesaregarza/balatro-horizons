@@ -7,6 +7,7 @@ import uuid
 
 from balatro_horizons.agents.baselines import Baseline
 from balatro_horizons.config import ROOT, load_config
+from balatro_horizons.engine.native import NativeSession
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService
 from balatro_horizons.storage.journal import Store, atomic_json
@@ -35,10 +36,34 @@ class SkillReadService(RunService):
         return SkillReadBaseline()
 
 
-def main(*, read_skills=False):
+class SessionRunService(RunService):
+    def __init__(self, store, review, game_factory):
+        super().__init__(store, review)
+        self.game_factory = game_factory
+
+    def create_game(self, config, seed, *, offline=False, calibration=False):
+        if offline:
+            return super().create_game(config, seed, offline=offline, calibration=calibration)
+        if not calibration:
+            raise ValueError("CALIBRATION_SESSION_REQUIRED")
+        return self.game_factory(config.environment, seed)
+
+
+class SessionSkillReadService(SessionRunService):
+    def policy(self, config, agent):
+        assert agent == "heuristic"
+        return SkillReadBaseline()
+
+
+def collect(*, read_skills=False, game_factory=None):
     store = Store(ROOT / "data")
-    service_class = SkillReadService if read_skills else RunService
-    service = service_class(store, ReviewService(store))
+    review = ReviewService(store)
+    if game_factory:
+        service_class = SessionSkillReadService if read_skills else SessionRunService
+        service = service_class(store, review, game_factory)
+    else:
+        service_class = SkillReadService if read_skills else RunService
+        service = service_class(store, review)
     results = {}
     panel_path = ROOT / "private/calibration-seeds.json"
     panel = json.loads(panel_path.read_text()) if panel_path.exists() else {}
@@ -64,6 +89,16 @@ def main(*, read_skills=False):
         results[preset] = summary
         print(json.dumps({"preset": preset, **summary}), flush=True)
     atomic_json(ROOT / "reports/verification/native-runs.json", results)
+    return results
+
+
+def main(*, read_skills=False, game_factory=None, session_factory=NativeSession):
+    if game_factory is not None:
+        return collect(read_skills=read_skills, game_factory=game_factory)
+    # The standalone command is one owned process for both ordinary stakes.
+    smoke = load_config(ROOT / "configs/smoke.yaml")
+    with session_factory(smoke.environment, reason="startup") as session:
+        return collect(read_skills=read_skills, game_factory=session.new_game)
 
 
 if __name__ == "__main__":

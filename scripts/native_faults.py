@@ -6,17 +6,19 @@ import uuid
 
 from balatro_horizons.agents.baselines import Baseline
 from balatro_horizons.config import ROOT, load_config
-from balatro_horizons.engine.native import NativeFailure, NativeGame
+from balatro_horizons.engine.native import NativeFailure, NativeGame, NativeSession
 from balatro_horizons.engine.provenance import continuation_fingerprint
 from balatro_horizons.runner import Runner
 from balatro_horizons.storage.journal import Store, atomic_json
 
 
-def exercise(unknown):
-    config = load_config(ROOT / "configs/smoke.yaml")
+def exercise(unknown, config, *, game_factory=None):
     store = Store(ROOT / "data")
     seed = uuid.uuid4().hex[:8].upper()
-    game = NativeGame(config.environment, seed, calibration=True)
+    factory = game_factory or (
+        lambda environment, game_seed: NativeGame(environment, game_seed, calibration=True)
+    )
+    game = factory(config.environment, seed)
     original = game.bridge.rpc
     lost = []
 
@@ -36,16 +38,20 @@ def exercise(unknown):
         return original(method, params, request_id)
 
     game.bridge.rpc = rpc
-    summary = Runner(store, config, game, Baseline("heuristic")).run(
-        manifest={
-            "evidence_kind": "NATIVE",
-            "agent": "heuristic",
-            "config": config.public(),
-            "evaluation_eligible": False,
-            "fixture": "unknown_status" if unknown else "lost_ack",
-        },
-        private={"seed": seed, "config": config.model_dump()},
-    )
+    try:
+        summary = Runner(store, config, game, Baseline("heuristic")).run(
+            manifest={
+                "evidence_kind": "NATIVE",
+                "agent": "heuristic",
+                "config": config.public(),
+                "evaluation_eligible": False,
+                "fixture": "unknown_status" if unknown else "lost_ack",
+            },
+            private={"seed": seed, "config": config.model_dump()},
+        )
+    finally:
+        # Each case owns its injected transport behavior; the next new_game gets a clean bridge.
+        game.bridge.rpc = original
     assert len(lost) == 1
     if unknown:
         assert summary["outcome"] == "INFRASTRUCTURE_FAILURE" and summary["committed_actions"] == 0
@@ -60,10 +66,23 @@ def exercise(unknown):
     }
 
 
-def main():
-    results = [exercise(False), exercise(True)]
+def collect(config, *, game_factory=None):
+    # Ambiguous status is deliberately last; it ends its episode and retires the shared process.
+    results = [
+        exercise(False, config, game_factory=game_factory),
+        exercise(True, config, game_factory=game_factory),
+    ]
     atomic_json(ROOT / "reports/verification/native-faults.json", {"tests": results})
     print(json.dumps(results), flush=True)
+    return results
+
+
+def main(*, game_factory=None, session_factory=NativeSession):
+    config = load_config(ROOT / "configs/smoke.yaml")
+    if game_factory is None:
+        with session_factory(config.environment, reason="startup") as session:
+            return collect(config, game_factory=session.new_game)
+    return collect(config, game_factory=game_factory)
 
 
 if __name__ == "__main__":

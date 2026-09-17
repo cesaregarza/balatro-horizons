@@ -3,6 +3,7 @@
 local json = require('json')
 local public = assert(SMODS.load_file('horizons_public.lua'))()
 local settlement = assert(SMODS.load_file('horizons_settlement.lua'))()
+local reset = assert(SMODS.load_file('horizons_reset.lua'))()
 settlement.install()
 local token = assert(os.getenv('BH_TOKEN'), 'Missing private bridge token')
 local runtime = assert(os.getenv('BH_RUNTIME'), 'Missing isolated runtime directory')
@@ -233,6 +234,7 @@ BB_DISPATCHER.dispatch=function(request)
       return
     end
     if busy then respond_error(original_send,'BUSY'); return end
+    if request.method == 'start' and G.STATE == G.STATES.MENU then reset.before_start() end
     unlock()
     busy=true; active_id=tostring(request.id)
     ledger[active_id]={status='pending',intent=intent}; persist_ledger()

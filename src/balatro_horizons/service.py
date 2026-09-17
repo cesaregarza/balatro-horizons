@@ -123,6 +123,14 @@ class RunService:
             return self.human
         return DirectProvider(config.models[agent], config.budgets)
 
+    def create_game(self, config, seed, *, offline=False, calibration=False):
+        """Production ownership by default; calibration suites may supply a lease."""
+        return (
+            FakeGame(seed)
+            if offline
+            else NativeGame(config.environment, seed, calibration=calibration)
+        )
+
     def execute(
         self,
         config,
@@ -179,12 +187,8 @@ class RunService:
         with lock_path.open("a") as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                game = (
-                    FakeGame(seed)
-                    if offline
-                    else NativeGame(
-                        config.environment, seed, calibration=calibration or bool(resume)
-                    )
+                game = self.create_game(
+                    config, seed, offline=offline, calibration=calibration or bool(resume)
                 )
                 rules = {"core": "See the shared rules kernel."}
                 frozen = ROOT / "private/rules.json"
