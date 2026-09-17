@@ -9,10 +9,12 @@ from balatro_horizons.engine.native_state import normalize
 from balatro_horizons.storage.journal import Store
 
 
-def collection(tmp_path, *, bad_delta=False, bad_public=False):
+def collection(tmp_path, *, bad_delta=False, bad_public=False, omit_zero_interest=False):
     store = Store(tmp_path)
     eid = store.create({"evidence_kind": "NATIVE", "agent": "evaluator_fixture"}, {})
     for index, money in enumerate(("4", "10")):
+        if omit_zero_interest and index == 0:
+            continue
         decision = index * 2
         rows = [{"kind": "hands", "label": "Remaining Hands ($1 each)", "dollars": "3"}]
         if index:
@@ -51,6 +53,14 @@ def test_saved_native_settlement_gate_accepts_matched_collection(tmp_path, monke
 
     result = verify(*collection(tmp_path))
     assert result == dict(cashouts=2, interest_rows=1, omitted_interest_rows=1, other_phases=2)
+
+
+def test_saved_native_settlement_gate_requires_zero_interest_coverage(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    from verify_settlement_evidence import verify
+
+    with pytest.raises(AssertionError, match="MISSING_ZERO_INTEREST_CASHOUT"):
+        verify(*collection(tmp_path, omit_zero_interest=True))
 
 
 @pytest.mark.parametrize("defect", ["bad_delta", "bad_public"])

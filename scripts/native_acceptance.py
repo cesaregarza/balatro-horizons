@@ -304,9 +304,14 @@ def exercise_reorder(config, *, game_factory=None):
         a.take({"type": "select_blind", "blind_id": a.obs.state.revealed_blinds[0].id})
         for area in ("hand", "jokers", "consumables"):
             reorder(area)
-        a.fixture("easy_blind")
-        a.take({"type": "play_hand", "card_ids": [a.obs.state.hand[0].id]})
+        # The injected Half/Abstract/Polychrome inventory clears the ordinary
+        # first White blind with <=3 cards. Keep the starting cash below $5:
+        # easy_blind sets it to $100 and cannot witness an omitted interest row.
+        assert 0 <= float(a.obs.state.resources.money) < 5
+        a.take({"type": "play_hand", "card_ids": [card.id for card in a.obs.state.hand[:3]]})
         assert a.obs.phase == "ROUND_EVAL"
+        assert not any(row.kind == "interest" for row in a.obs.state.settlement.rows)
+        checks.append("zero_interest_cashout")
         reorder("jokers")
         reorder("consumables")
         a.capture()

@@ -62,7 +62,8 @@ def verify(store, episode_ids):
         assert metrics["settlements_with_unknown_interest"] == 0
         assert metrics["settlements_with_known_interest"] == len(seen)
     assert result["cashouts"] > 0 and result["interest_rows"] > 0
-    assert result["omitted_interest_rows"] > 0 and result["other_phases"] > 0
+    assert result["omitted_interest_rows"] > 0, "MISSING_ZERO_INTEREST_CASHOUT"
+    assert result["other_phases"] > 0, "MISSING_NON_SETTLEMENT_PHASE"
     return result
 
 
