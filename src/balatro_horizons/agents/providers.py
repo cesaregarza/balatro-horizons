@@ -13,8 +13,9 @@ from balatro_horizons.agents.tool_interface import (
     CONTINUATION_INTERFACES,
     FOCUSED_INTERFACES,
     NAMED_INTERFACES,
-    NOTEBOOK_INTERFACE,
+    NOTEBOOK_INTERFACES,
     STABLE_TOOL_INTERFACES,
+    WORKING_MEMORY_INTERFACE,
     decode_tool,
 )
 from balatro_horizons.config import PROVIDER_TIMEOUT_SECONDS
@@ -44,9 +45,12 @@ def canonical_messages(ctx, exchanges):
     if "current_costs" in ctx:
         # Dynamic prices follow the observation, outside the stable developer/tool prefix.
         content["current_costs"] = ctx["current_costs"]
-    if ctx.get("interface_version") == NOTEBOOK_INTERFACE:
+    if ctx.get("interface_version") in NOTEBOOK_INTERFACES:
         content.update(run_notebook=ctx["run_notebook"], permitted_tools=ctx["allowed_tools"],
                        helper_status=ctx["helper_status"])
+    if ctx.get("interface_version") == WORKING_MEMORY_INTERFACE:
+        content.update(working_memory=ctx["working_memory"],
+                       notebook_maintenance=ctx["notebook_maintenance"])
     messages = [
         {
             "role": "user",

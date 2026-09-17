@@ -22,7 +22,8 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     from balatro_horizons.agents.tool_interface import (
         CONTINUATION_INTERFACES,
         FOCUSED_INTERFACES,
-        NOTEBOOK_INTERFACE,
+        NOTEBOOK_INTERFACES,
+        WORKING_MEMORY_INTERFACE,
         stable_tools,
     )
 
@@ -37,10 +38,11 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     tools = stable_tools(skills=skills)
     if interface in FOCUSED_INTERFACES:
         tools = focused_tools(tools)
-    if interface == NOTEBOOK_INTERFACE:
+    if interface in NOTEBOOK_INTERFACES:
         from balatro_horizons.agents.notebook import notebook_tools
 
-        tools = notebook_tools(tools)
+        tools = notebook_tools(tools, action_notes=interface == WORKING_MEMORY_INTERFACE)
+    from balatro_horizons.agents.working_memory import policy as working_memory_policy
     model = getattr(policy, "model", None)
     return {
         "version": "agent-protocol-v1",
@@ -63,7 +65,7 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         "knowledge_hash": digest(rules),
         "skills_preset": config.skills,
         "memory_policy": {
-            "across_actions": "run-notebook-v1" if interface == NOTEBOOK_INTERFACE else "explicit_memory_only",
+            "across_actions": "run-notebook-v1" if interface in NOTEBOOK_INTERFACES else "explicit_memory_only",
             "recent_public_events": RECENT_PUBLIC_EVENT_LIMIT,
             "retained_results": RETAINED_RESULTS if interface in FOCUSED_INTERFACES else None,
             "page_bytes": PAGE_BYTES if interface in FOCUSED_INTERFACES else None,
@@ -73,7 +75,12 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
                 "note_writes": "journaled_helpers",
                 "branch_boundary": "pre_decision",
                 "helper_exhaustion": "bounded_invalid_feedback"}
-               if interface == NOTEBOOK_INTERFACE else {}),
+               if interface in NOTEBOOK_INTERFACES else {}),
+            **({"across_actions": "run-notebook-v1-and-working-memory-v1",
+                "working_memory": working_memory_policy(),
+                "notebook_guidance": "maintain_on_change_with_pre_eviction_notice",
+                "note_writes": "journaled_helpers_or_validated_action_attachment"}
+               if interface == WORKING_MEMORY_INTERFACE else {}),
         },
         "public_export_policy": "public-schema-v1-opaque-continuations-omitted",
         "implementation_hash": implementation_fingerprint(),

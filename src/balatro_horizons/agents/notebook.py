@@ -9,7 +9,7 @@ VERSION = "run-notebook-v1"
 MAX_KEY_CHARACTERS = 64
 
 
-def notebook_tools(definitions):
+def notebook_tools(definitions, *, action_notes=False):
     from balatro_horizons.agents.tool_interface import ACTION_MODELS, tool
 
     result = deepcopy(definitions)
@@ -18,6 +18,20 @@ def notebook_tools(definitions):
             schema = definition["parameters"]
             schema["properties"].pop("memory_update", None)
             schema["required"].remove("memory_update")
+            if action_notes:
+                schema["properties"]["note_update"] = {
+                    "anyOf": [{"type": "null"}, {
+                        "type": "object", "additionalProperties": False,
+                        "properties": {
+                            "key": {"type": "string", "minLength": 1,
+                                    "maxLength": MAX_KEY_CHARACTERS},
+                            "text": {"type": ["string", "null"],
+                                     "maxLength": MAX_MEMORY_CHARACTERS},
+                        }, "required": ["key", "text"],
+                    }],
+                    "description": "One notebook edit with this action: null keeps notes unchanged; {key,text} sets a note; text:null deletes it. Invalid edits reject the action too. No helper call is charged. The edit is journaled before action execution and survives execution failure.",
+                }
+                schema["required"].append("note_update")
     key = {"type": "string", "minLength": 1, "maxLength": MAX_KEY_CHARACTERS}
     return result + [
         tool("set_run_note", "Create or replace one agent-authored run note. Counts against the helper allowance; does not advance the game.",

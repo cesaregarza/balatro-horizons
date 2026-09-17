@@ -313,6 +313,10 @@ def working_context(ctx, exchanges, byte_limit):
         clear_at(loaded_positions()[0])
 
     def update_metadata():
+        if "working_memory" in ctx:
+            from balatro_horizons.agents.working_memory import maintenance
+
+            maintenance(ctx, len(loaded_positions()))
         metadata = {
             "policy": "bounded_recent_results_provider_turns_retained"
             if preserve_turns
@@ -326,8 +330,12 @@ def working_context(ctx, exchanges, byte_limit):
 
     update_metadata()
     while context_bound(ctx, delivered) > byte_limit:
+        from balatro_horizons.agents.working_memory import trim_oldest
+
         loaded = loaded_positions()
-        if loaded:
+        if trim_oldest(ctx):
+            update_metadata()
+        elif loaded:
             clear_at(loaded[0])
             update_metadata()
         elif ctx["observation"]["recent_public_events"]:

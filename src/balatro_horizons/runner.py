@@ -25,8 +25,10 @@ from balatro_horizons.agents.tool_interface import (
     CONTINUATION_INTERFACES,
     FOCUSED_INTERFACES,
     NAMED_INTERFACES,
-    NOTEBOOK_INTERFACE,
+    NOTEBOOK_INTERFACES,
+    WORKING_MEMORY_INTERFACE,
 )
+from balatro_horizons.agents.working_memory import WorkingMemory, restore_working_memory
 from balatro_horizons.config import (
     CONTEXT_FRAMING_BYTES,
     LEGACY_GUIDE_PAGE_SIZES,
@@ -62,6 +64,7 @@ class Runner:
         self.cost = 0.0
         self.memory = ""
         self.notebook = RunNotebook(self.limits.memory_max_characters)
+        self.working_memory = WorkingMemory()
         self.recent = []
         self.issuer = HandleIssuer()
         self.eid = None
@@ -70,7 +73,10 @@ class Runner:
         self.prompt_bytes = prompt_bytes
 
     def log(self, kind, payload, **kwargs):
-        return self.store.append(self.eid, kind, payload, **kwargs)
+        event = self.store.append(self.eid, kind, payload, **kwargs)
+        if self.interface == WORKING_MEMORY_INTERFACE:
+            self.working_memory.consume(event)
+        return event
 
     def _record_failure(self, error):
         # Stack locations help diagnose failures without serializing secrets from
@@ -164,7 +170,9 @@ class Runner:
                 frozen=self.protocol,
                 **({"notebook": self.notebook.view(),
                     "helper_remaining": max(0, self.limits.max_helper_calls_per_decision - helper_count)}
-                   if self.interface == NOTEBOOK_INTERFACE else {}),
+                   if self.interface in NOTEBOOK_INTERFACES else {}),
+                **({"working_memory": self.working_memory.view()}
+                   if self.interface == WORKING_MEMORY_INTERFACE else {}),
             )
             ctx["observation"]["remaining_budget"]["provider_calls"] = (
                 self.limits.max_provider_calls - self.calls
@@ -195,14 +203,17 @@ class Runner:
                     observation_id=observation.observation_id,
                 )
                 operation = Operation.validate_python(raw)
-                if (self.interface != NOTEBOOK_INTERFACE
+                if (self.interface != WORKING_MEMORY_INTERFACE
+                        and operation.kind == "action" and "note_update" in raw):
+                    raise ProtocolFailure("UNAVAILABLE_TOOL_ARGUMENT")
+                if (self.interface not in NOTEBOOK_INTERFACES
                         and operation.kind in ("set_run_note", "delete_run_note", "action_result")):
                     raise ProtocolFailure("UNAVAILABLE_TOOL")
                 if operation.kind == "abort":
                     return None, "AGENT_ABORT"
                 if operation.kind != "action":
                     if helper_count >= self.limits.max_helper_calls_per_decision:
-                        if self.interface == NOTEBOOK_INTERFACE:
+                        if self.interface in NOTEBOOK_INTERFACES:
                             raise ProtocolFailure("HELPER_LIMIT_REACHED")
                         raise BudgetExhausted("HELPER_CALL_LIMIT")
                     helper_count += 1
@@ -236,11 +247,24 @@ class Runner:
                     exchanges.append(self._exchange(raw, result))
                     continue
                 self.attempted += 1
-                if self.interface == NOTEBOOK_INTERFACE and operation.envelope.memory_update is not None:
+                if self.interface in NOTEBOOK_INTERFACES and operation.envelope.memory_update is not None:
                     raise ProtocolFailure("LEGACY_MEMORY_UPDATE_NOT_ALLOWED")
                 validate_action(
                     operation.envelope, observation, memory_limit=self.limits.memory_max_characters
                 )
+                if operation.note_update is not None:
+                    edit = operation.note_update
+                    kind = "delete_run_note" if edit.text is None else "set_run_note"
+                    mutation, result = self.notebook.propose(kind, edit.key, edit.text)
+                    if mutation is None:
+                        raise ProtocolFailure(result["error"], **{
+                            k: v for k, v in result.items() if k != "error"
+                        })
+                    # Validate BOTH first, then journal the note before native execution.
+                    # A failed native action must never roll back an accepted durable edit.
+                    self.log("run_note", mutation, actor="agent",
+                             observation_id=observation.observation_id)
+                    self.notebook.apply(mutation)
                 return operation.envelope, None
             except (ValidationError, InvalidAction, ProtocolFailure) as error:
                 invalid += 1
@@ -254,7 +278,7 @@ class Runner:
                 feedback = {"error": code}
                 if self.interface in NAMED_INTERFACES:
                     feedback = self._tool_feedback(error, code, observation)
-                if self.interface == NOTEBOOK_INTERFACE and (
+                if self.interface in NOTEBOOK_INTERFACES and (
                     code == "HELPER_LIMIT_REACHED"
                     or (code == "UNAVAILABLE_TOOL"
                         and helper_count >= self.limits.max_helper_calls_per_decision)
@@ -348,6 +372,10 @@ class Runner:
                 "PROVIDER_CONTEXT_LIMIT": "The provider reached its context limit before completing an operation.",
                 "PROVIDER_REFUSAL": "The provider declined to return an operation.",
                 "LEGACY_MEMORY_UPDATE_NOT_ALLOWED": "Use set_run_note or delete_run_note; gameplay actions do not replace your notebook.",
+                "UNAVAILABLE_TOOL_ARGUMENT": "This harness version does not support that tool argument.",
+                "RUN_NOTEBOOK_LIMIT": "The attached note exceeds notebook capacity. Shorten it or keep note_update null; neither the edit nor the action executed.",
+                "INVALID_RUN_NOTE_KEY": "Use a nonblank note key of 1-64 characters without control characters; neither the edit nor the action executed.",
+                "RUN_NOTE_NOT_FOUND": "That note key does not exist. Correct it or keep note_update null; neither the edit nor the action executed.",
             }
             feedback["message"] = messages.get(
                 code,
@@ -396,9 +424,13 @@ class Runner:
         self.protocol_reference = {"episode_id": self.eid, "hash": digest(self.protocol)}
         self.knowledge_reference = {"episode_id": self.eid, "hash": digest(self.rules)}
         self.history_prefix = history_prefix or []
-        if self.interface == NOTEBOOK_INTERFACE and resume:
+        if self.interface in NOTEBOOK_INTERFACES and resume:
             self.notebook = restore_notebook(
                 resume.get("run_notebook"), self.history_prefix, self.limits.memory_max_characters
+            )
+        if self.interface == WORKING_MEMORY_INTERFACE and resume:
+            self.working_memory = restore_working_memory(
+                resume.get("working_memory"), self.history_prefix, resume["observation"]
             )
         self.spending = self.spending or Spending(
             self.store.root / "private_runs" / self.eid / "spending.json",
@@ -484,7 +516,9 @@ class Runner:
                         "recent": [e.model_dump() for e in self.recent],
                         "public_prefix_hash": obs_event["hash"],
                         **({"run_notebook": self.notebook.snapshot()}
-                           if self.interface == NOTEBOOK_INTERFACE else {}),
+                           if self.interface in NOTEBOOK_INTERFACES else {}),
+                        **({"working_memory": self.working_memory.view()}
+                           if self.interface == WORKING_MEMORY_INTERFACE else {}),
                     }
                     self.store.private_json(self.eid, f"checkpoint-{decision}.json", checkpoint)
                     self.log(
@@ -532,7 +566,7 @@ class Runner:
                 )
                 if hasattr(self.policy, "on_commit"):
                     self.policy.on_commit()
-                if self.interface != NOTEBOOK_INTERFACE and envelope.memory_update is not None:
+                if self.interface not in NOTEBOOK_INTERFACES and envelope.memory_update is not None:
                     self.memory = envelope.memory_update
                 self.recent.append(
                     RecentPublicEvent(

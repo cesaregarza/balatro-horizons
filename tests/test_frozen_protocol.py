@@ -15,7 +15,7 @@ from balatro_horizons.runner import Runner
 
 
 @pytest.mark.parametrize(
-    "interface", ["operate_v1", "tools_v2", "tools_v3", "tools_v4", "tools_v5", "tools_v6"]
+    "interface", ["operate_v1", "tools_v2", "tools_v3", "tools_v4", "tools_v5", "tools_v6", "tools_v7"]
 )
 def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
     store, config, tmp_path, monkeypatch, interface

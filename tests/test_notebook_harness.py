@@ -232,12 +232,13 @@ def test_branch_inherits_only_boundary_notebook_and_ancestry(store, config):
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
-def test_provider_parity_dynamic_notes_and_bounded_helper_feedback(store, monkeypatch, provider):
+@pytest.mark.parametrize("interface", ["tools_v6", "tools_v7"])
+def test_provider_parity_dynamic_notes_and_bounded_helper_feedback(store, monkeypatch, provider, interface):
     config = config_for(provider)
     config.skills = "none"
     config.budgets.max_helper_calls_per_decision = 1
     cfg = model(provider)
-    cfg.settings["harness_interface"] = "tools_v6"
+    cfg.settings["harness_interface"] = interface
     config.models["luna"] = cfg
     requests = []
 
@@ -254,6 +255,8 @@ def test_provider_parity_dynamic_notes_and_bounded_helper_feedback(store, monkey
         elif index == 3:
             name, args = "select_blind", {"observation_id": 0, "decision_note": None,
                 "blind_id": view["observation"]["state"]["revealed_blinds"][0]["id"]}
+            if interface == "tools_v7":
+                args["note_update"] = {"key": "plan", "text": "updated with action"}
         else:
             name, args = "abort_run", {"reason": "test finished"}
         usage = {"input_tokens": 10, "output_tokens": 1,
@@ -273,9 +276,13 @@ def test_provider_parity_dynamic_notes_and_bounded_helper_feedback(store, monkey
     def stable_prefix(body):
         return body["input"][0] if provider == "openai" else body["system"]
     assert all(stable_prefix(r) == stable_prefix(requests[0]) for r in requests)
-    for body in requests[1:]:
+    for index, body in enumerate(requests[1:], start=1):
         first = next(m for m in body.get("input", body.get("messages", [])) if m.get("role") == "user")
-        assert json.loads(first["content"])["run_notebook"]["entries"] == {"plan": "keep visible"}
+        view = json.loads(first["content"])
+        expected = "updated with action" if interface == "tools_v7" and index == 3 else "keep visible"
+        assert view["run_notebook"]["entries"] == {"plan": expected}
+        if interface == "tools_v7" and index == 3:
+            assert view["working_memory"]["frames"][0]["action"]["type"] == "select_blind"
     second = requests[1].get("input", requests[1].get("messages"))
     view = json.loads(next(m for m in second if m.get("role") == "user")["content"])
     assert "calculate" not in view["permitted_tools"]

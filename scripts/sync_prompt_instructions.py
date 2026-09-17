@@ -11,8 +11,8 @@ from balatro_horizons.agents.instructions import END as END
 from balatro_horizons.agents.instructions import render as render
 
 
-def sync(root: Path, *, write: bool = False, interface: str = "tools_v6") -> bool:
-    if interface not in ("tools_v5", "tools_v6"):
+def sync(root: Path, *, write: bool = False, interface: str = "tools_v7") -> bool:
+    if interface not in ("tools_v5", "tools_v6", "tools_v7"):
         raise ValueError("Unsupported persistent-instruction interface")
     root = root.resolve()
     if root.is_relative_to("/mnt"):
@@ -45,7 +45,7 @@ def sync(root: Path, *, write: bool = False, interface: str = "tools_v6") -> boo
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--interface", choices=("tools_v5", "tools_v6"), default="tools_v6")
+    parser.add_argument("--interface", choices=("tools_v5", "tools_v6", "tools_v7"), default="tools_v7")
     parser.add_argument("--write", action="store_true", help="atomically update the selected prompt")
     args = parser.parse_args()
     try:

@@ -9,8 +9,8 @@ export type ModelConfig = {
   settings: Record<string, string | number>;
 };
 
-export const CURRENT_HARNESS = "tools_v6";
-export const harnesses = [[CURRENT_HARNESS, "Current harness (v6)"]] as const;
+export const CURRENT_HARNESS = "tools_v7";
+export const harnesses = [[CURRENT_HARNESS, "Current harness (v7)"]] as const;
 
 // Historical settings still need a stable preference order when aliases are
 // deduplicated. This list does not define selectable harnesses.
@@ -20,6 +20,7 @@ const harnessOrder = [
   "tools_v3",
   "tools_v4",
   "tools_v5",
+  "tools_v6",
   CURRENT_HARNESS,
 ];
 

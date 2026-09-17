@@ -44,7 +44,7 @@ def exchange(policy, operation, result):
     }
 
 
-@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6"])
+@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
 def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly(interface):
     observation, ctx, policy, first = initial("openai", interface)
     assert first["include"] == ["reasoning.encrypted_content"]
@@ -81,7 +81,7 @@ def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly(interface
     assert json.dumps(followup).count("opaque-openai-state") == 1
 
 
-@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6"])
+@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
 def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly(interface):
     observation, ctx, policy, first = initial("anthropic", interface)
     assert first["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
@@ -110,7 +110,7 @@ def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly(in
     assert "is_error" not in tool_result
 
 
-@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6"])
+@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
 def test_cache_transport_and_accounting_remain_conservative(interface):
     _, _, openai, openai_body = initial("openai", interface)
     assert openai_body["prompt_cache_options"] == {"mode": "explicit"}
