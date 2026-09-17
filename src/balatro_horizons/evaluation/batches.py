@@ -101,6 +101,7 @@ def summarize(plan, attempts):
             "attempt_outcomes": dict(status),
             "all_attempt_cost_usd": costs,
             "seed_bootstrap_ci": cluster_interval(clusters),
+            "seed_bootstrap_diagnostic": cluster_diagnostic(clusters),
             "selected_slots": selected,
         }
     comparisons = []
@@ -132,6 +133,7 @@ def summarize(plan, attempts):
                     - len(pairs),
                     "difference": sum(a[p] - b[p] for p in pairs) / len(pairs) if pairs else None,
                     "seed_bootstrap_ci": cluster_interval(differences),
+                    "seed_bootstrap_diagnostic": cluster_diagnostic(differences),
                 }
             )
     return {
@@ -148,6 +150,16 @@ def summarize(plan, attempts):
         "bootstrap": {"unit": "seed", "draws": 10000, "analysis_rng": 0},
         "branches_excluded": True,
     }
+
+
+def cluster_diagnostic(clusters):
+    if len(clusters) < 2:
+        return {"status": "insufficient_seed_clusters", "seed_clusters": len(clusters)}
+    means = {sum(group) / len(group) for group in clusters.values()}
+    if len(means) == 1:
+        return {"status": "degenerate", "seed_clusters": len(clusters),
+                "caution": "No observed variation between seed means; a collapsed bootstrap interval does not establish certainty."}
+    return {"status": "varying_seed_means", "seed_clusters": len(clusters)}
 
 
 def cluster_interval(clusters, draws=10000):

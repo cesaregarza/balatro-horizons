@@ -3,6 +3,7 @@
 import json
 from copy import deepcopy
 
+from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.tool_interface import (
     CONTINUATION_INTERFACES,
     INSPECT_SECTIONS,
@@ -329,7 +330,13 @@ def working_context(ctx, exchanges, byte_limit):
                 ctx["observation"]["recent_public_events"].pop(0)["event_id"]
             )
         else:
-            raise ValueError("REQUIRED_CONTEXT_EXCEEDS_LIMIT")
+            raise HarnessFailure(
+                "LOCAL_CONTEXT_LIMIT",
+                stage="helper_followup" if exchanges else "initial_request",
+                request_bytes=context_bound(ctx, delivered), byte_limit=byte_limit,
+                retained_provider_turns=sum(bool(e.get("provider_turn")) for e in delivered),
+                retained_helper_results=len(loaded_positions()),
+            )
     update_metadata()
     ctx["context_bytes_upper_bound"] = context_bound(ctx, delivered)
     return ctx, delivered

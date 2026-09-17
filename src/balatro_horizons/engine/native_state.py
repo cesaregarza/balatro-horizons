@@ -95,6 +95,7 @@ def normalize(raw):
                 f"{k}: {value[k]}" for k in ("level", "chips", "mult", "played") if k in value
             )
     visible["owned_vouchers"] = bh.get("owned_vouchers")
+    visible["settlement"] = bh.get("settlement") if phase == "ROUND_EVAL" else None
     if visible["owned_vouchers"] is None:
         # Older captured engine states may contain only keys and optional descriptions.
         visible["owned_vouchers"] = [

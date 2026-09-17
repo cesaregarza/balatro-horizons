@@ -15,10 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# Context accounting (bytes) and model allowance (tokens) have different units.
-# Historical behavior is preserved: the runner still uses the input-token
-# allowance as its byte ceiling. Separating those controls is a pending fix.
+# Transport bytes, model tokens, and dollar reservations have independent units.
 DEFAULT_INPUT_TOKEN_LIMIT = 32_768
+DEFAULT_REQUEST_BYTE_LIMIT = 262_144
+INPUT_TOKEN_SAFETY_MARGIN = 512
 CONTEXT_FRAMING_BYTES = 4_096
 CONTEXT_SETTINGS_BYTES = 1_024
 
@@ -55,6 +55,7 @@ class Limits(Options):
     max_provider_calls: int = Field(default=2000, ge=1)
     max_helper_calls_per_decision: int = Field(default=8, ge=0)
     max_input_tokens_per_call: int = Field(default=DEFAULT_INPUT_TOKEN_LIMIT, ge=128)
+    max_request_bytes: int = Field(default=DEFAULT_REQUEST_BYTE_LIMIT, ge=1024)
     max_output_tokens_per_call: int = Field(default=8192, ge=64)
     max_consecutive_invalid_actions: int = Field(default=3, ge=1)
     max_transport_attempts: int = Field(default=3, ge=1, le=3)
@@ -142,6 +143,9 @@ class ModelConfig(Options):
             or self.settings["thinking_budget"] < 1024
         ):
             raise ValueError("invalid thinking budget")
+        if self.provider == "anthropic" and "thinking_budget" in self.settings:
+            if "temperature" in self.settings:
+                raise ValueError("temperature is incompatible with manual thinking")
         return self
 
 

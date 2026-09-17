@@ -1,0 +1,35 @@
+{
+  "provenance": "Public cash, reroll quotes and selected offers from decisions 14-17, 25-29 and 162-163 of the reviewed Terra run. Other fixture board fields are synthetic; these tests are not native continuation evidence.",
+  "source_episode_id": "c95b4a81ae2049d686b44ea9ae936283",
+  "sequences": [
+    {
+      "name": "chaos_with_intervening_purchase",
+      "chaos": true,
+      "states": [
+        {"decision": 14, "phase": "SHOP", "money": 22, "reroll": 0, "action": "reroll_shop"},
+        {"decision": 15, "phase": "SHOP", "money": 22, "reroll": 5, "action": "buy", "offer": {"name": "Green Joker", "set": "JOKER", "price": 4}},
+        {"decision": 16, "phase": "SHOP", "money": 18, "reroll": 5, "action": "reroll_shop"},
+        {"decision": 17, "phase": "SHOP", "money": 13, "reroll": 6}
+      ]
+    },
+    {
+      "name": "chaos_with_pack_visit",
+      "chaos": true,
+      "states": [
+        {"decision": 25, "phase": "SHOP", "money": 13, "reroll": 0, "action": "reroll_shop"},
+        {"decision": 26, "phase": "SHOP", "money": 13, "reroll": 5, "action": "buy", "offer": {"name": "Celestial Pack", "set": "BOOSTER", "price": 4}},
+        {"decision": 27, "phase": "SMODS_BOOSTER_OPENED", "money": 9, "reroll": 5, "action": "choose_pack", "offer": {"name": "Saturn", "set": "PLANET", "price": 0}},
+        {"decision": 28, "phase": "SHOP", "money": 9, "reroll": 5, "action": "reroll_shop"},
+        {"decision": 29, "phase": "SHOP", "money": 4, "reroll": 6}
+      ]
+    },
+    {
+      "name": "zero_upfront_rental_banner",
+      "chaos": false,
+      "states": [
+        {"decision": 162, "phase": "SHOP", "money": 34, "reroll": 5, "action": "buy", "offer": {"name": "Banner", "set": "JOKER", "price": 0, "modifiers": {"edition": "POLYCHROME", "rental": true, "perishable": 5}}},
+        {"decision": 163, "phase": "SHOP", "money": 34, "reroll": 5}
+      ]
+    }
+  ]
+}

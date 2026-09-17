@@ -86,6 +86,8 @@ def episode_export(store, eid):
             "provider_response",
             "helper_result",
             "action_rejected",
+            "provider_input_check",
+            "harness_failure",
         ):
             payload = event["payload"]
         else:

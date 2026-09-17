@@ -217,7 +217,7 @@ uv --directory /root/dev/balatro-horizons run python scripts/certify_prefix.py E
 
 See [native audit](docs/native-audit.md), [third-party notices](docs/THIRD_PARTY.md), and the [original contract](docs/contract/balatro_horizons_spec/BALATRO_HORIZONS_SPEC.md). The owner's implementation plan overrides earlier handoff defaults and the historical planning pause.
 
-The private calibration panel contains fixed regression seeds selected for short diagnostic runs. It is excluded from study performance estimates and is separate from generated development panels and any held-out panel. `scripts/verify_release.py` runs the complete serial native verification; its named fixtures and baseline calibration runs make no provider calls.
+The private calibration panel contains fixed regression seeds selected for short diagnostic runs. It is excluded from study performance estimates and is separate from generated development panels and any held-out panel. Native regression cases share one owned process and start new games between cases. Inspect `scripts/verify_release.py --gameplay-only --plan` for the focused collection, or `--plan` for full startup/restoration certification, before executing a native suite. Its named fixtures and baseline calibration runs make no provider calls. See [native test lifecycle](docs/native-test-lifecycle.md) for expected launch counts and the staged validation boundary.
 
 After `verify_release.py` passes, run `uv --directory /root/dev/balatro-horizons run python scripts/finalize_evidence.py` to validate the collected evidence, activate matching native capabilities, and write the sanitized diagnostic report. `verify_release.py --resume-certification` reuses completed collection for the same pinned runtime and repeats certification plus the branch test.
 
@@ -244,10 +244,12 @@ Protocol identities, game rules, and provider-specific constraints remain in
 their owning modules. Changing defaults does not update frozen prompt prose;
 review affected prompt text when changing a protocol allowance or retention rule.
 
-The existing **32,768-token allowance is also used as a serialized-byte ceiling**
-by legacy context accounting. The refactor preserves values and behavior; it does
-not fix that unit coupling or raise spending limits. See
-[persistent instructions](docs/persistent-instructions.md#existing-context-limit-defect).
+The **32,768-token allowance** is separate from `max_request_bytes` (262,144 by
+default). Complete provider input is counted before generation, while spending
+reservations retain the full configured token ceilings and maximum input price.
+See [persistent instructions](docs/persistent-instructions.md#separate-transport-token-and-spending-controls)
+and the [reliability change record](docs/harness-reliability.md) for the controls,
+safe failure diagnostics, and pending native/provider deployment gates.
 
 The [defaults-refactor verification](docs/defaults-refactor.md) records offline
 checks and the native activation boundary for this change.
@@ -268,7 +270,7 @@ The current harness also receives the short
 [ALWAYS-LOADED.md](configs/prompts/ALWAYS-LOADED.md) mechanics reference on every
 call. Its contents are embedded in the frozen prompt and shared by both provider
 adapters. See [persistent instructions](docs/persistent-instructions.md) for editing,
-the prompt sync command, and the existing byte/token limit issue.
+the prompt sync command, admission freshness checks, and byte/token limits.
 
 New observations use [public information contract 1.1](docs/public-information-v1.1.md):
 visible playing-card offers retain rank/suit, blind effects and skip rewards are

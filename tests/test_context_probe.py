@@ -4,6 +4,7 @@ import sys
 
 import httpx
 import pytest
+from provider_transport import with_input_count
 from test_boundary import project
 
 from balatro_horizons.agents.protocol import Operation, context, helper
@@ -79,7 +80,7 @@ def test_probe_spending_is_one_call_no_actions_and_scanned(store, monkeypatch, c
         probe,
         "DirectProvider",
         lambda model, limits: DirectProvider(
-            model, limits, client=httpx.Client(transport=httpx.MockTransport(receive))
+            model, limits, client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive)))
         ),
     )
     monkeypatch.setattr(

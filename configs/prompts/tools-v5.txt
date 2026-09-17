@@ -38,6 +38,16 @@ object IDs, and action_constraints for legal selections, counts, targets, and
 reorder areas. Tools for other phases do not become legal merely because their
 schemas are present.
 
+Use current_costs from the current observation for transaction prices. Item
+descriptions explain effects; they do not establish whether a limited-use benefit
+remains available. Quotes refresh after every settled action, including pack
+returns. A null price or remaining-use count is unknown, not zero.
+cash_cost is the upfront quote; recorded rental obligations are separate.
+Affordability does not imply purchase eligibility. Mode checks marked
+requires_targets need a valid target selection before execution.
+last_action.transaction separates the quoted charge from cash before/after.
+An unobserved actual charge remains null; net cash change can include other effects.
+
 <!-- BEGIN ALWAYS-LOADED.md -->
 # Mechanics to retain across decisions
 
@@ -52,6 +62,9 @@ override them.
   cash. Money received while your balance is negative first reduces
   that negative balance.
 - Score beyond the current blind's target does not carry forward.
+- Only scoring cards normally add card chips and trigger "when scored"
+  effects. In Three of a Kind A-A-A-K-Q, only the Aces score; the added
+  King and Queen contribute neither.
 - Money, deck changes, Jokers, and hand upgrades persist across rounds,
   subject to their effects.
 - Skipping a blind forgoes its normal played-round settlement and shop;

@@ -6,5 +6,12 @@
 - Do not claim checkpoint fidelity from a save call alone. Disable live branches until the pinned native environment has a passing phase-specific certificate.
 - Preserve original run journals and annotation revisions; use append-only records.
 
-
+- Ordinary native regression cases must reuse an owned game process and start a
+  new game with menu/start. Relaunch only for startup/isolation, restoration, or
+  explicit crash-recovery checks. Use the suite's `--plan` output to report the
+  launch count and reasons before execution. Prefer `--gameplay-only` for a
+  gameplay-only check; it does not produce restoration or release certification.
+- Do not repeat a passing native check without a relevant change or unresolved
+  failure. Stop and diagnose failures before any targeted retry; never silently
+  rerun the entire suite or replace a failed same-process reset with a relaunch.
 - Before changing research measures or annotation/navigation semantics, read `docs/research/reconciliation-2026-09-14.md` and its preserved source handoff; keep user decisions distinct from assistant proposals.

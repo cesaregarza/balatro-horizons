@@ -11,6 +11,9 @@ override them.
   cash. Money received while your balance is negative first reduces
   that negative balance.
 - Score beyond the current blind's target does not carry forward.
+- Only scoring cards normally add card chips and trigger "when scored"
+  effects. In Three of a Kind A-A-A-K-Q, only the Aces score; the added
+  King and Queen contribute neither.
 - Money, deck changes, Jokers, and hand upgrades persist across rounds,
   subject to their effects.
 - Skipping a blind forgoes its normal played-round settlement and shop;

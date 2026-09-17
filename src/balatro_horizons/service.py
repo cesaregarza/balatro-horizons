@@ -123,6 +123,14 @@ class RunService:
             return self.human
         return DirectProvider(config.models[agent], config.budgets)
 
+    def create_game(self, config, seed, *, offline=False, calibration=False):
+        """Production ownership by default; calibration suites may supply a lease."""
+        return (
+            FakeGame(seed)
+            if offline
+            else NativeGame(config.environment, seed, calibration=calibration)
+        )
+
     def execute(
         self,
         config,
@@ -145,6 +153,11 @@ class RunService:
                 restore_protocol(self.store, resume), config, agent, human=agent == "human"
             )
         policy = self.policy(config, agent)
+        from balatro_horizons.agents.instructions import load_prompt
+
+        # NativeGame's constructor launches the game. Validate and capture prompt
+        # bytes before constructing it; ordinary branches use their original snapshot.
+        prompt_bytes = None if resume else load_prompt(ROOT, getattr(policy, "interface", "operate_v1"))
         if operations:
             policy = InterventionPolicy(operations, policy)
         if human_steps:
@@ -174,12 +187,8 @@ class RunService:
         with lock_path.open("a") as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                game = (
-                    FakeGame(seed)
-                    if offline
-                    else NativeGame(
-                        config.environment, seed, calibration=calibration or bool(resume)
-                    )
+                game = self.create_game(
+                    config, seed, offline=offline, calibration=calibration or bool(resume)
                 )
                 rules = {"core": "See the shared rules kernel."}
                 frozen = ROOT / "private/rules.json"
@@ -188,7 +197,8 @@ class RunService:
                     if rules.get("environment_hash") != digest(game.lock):
                         raise ValueError("FROZEN_RULES_ENVIRONMENT_MISMATCH")
                 return Runner(
-                    self.store, config, game, policy, stop=self.stop, spending=spending, rules=rules
+                    self.store, config, game, policy, stop=self.stop, spending=spending, rules=rules,
+                    prompt_bytes=prompt_bytes,
                 ).run(eid=eid, resume=resume, history_prefix=prefix)
             except Exception as error:
                 if game:
@@ -221,6 +231,11 @@ class RunService:
             self.stop.clear()
             self.error = None
             self.validate_policy(config, agent)
+            from balatro_horizons.agents.instructions import load_prompt
+
+            interface = (config.models[agent].settings.get("harness_interface", "operate_v1")
+                         if agent in config.models else "operate_v1")
+            load_prompt(ROOT, interface)
             eid = self.store.create(
                 {
                     "evidence_kind": "SYNTHETIC_TEST" if offline else "NATIVE",

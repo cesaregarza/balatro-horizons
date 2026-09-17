@@ -2,6 +2,9 @@
 -- No endpoint in this file is exposed directly to playing providers.
 local json = require('json')
 local public = assert(SMODS.load_file('horizons_public.lua'))()
+local settlement = assert(SMODS.load_file('horizons_settlement.lua'))()
+local reset = assert(SMODS.load_file('horizons_reset.lua'))()
+settlement.install()
 local token = assert(os.getenv('BH_TOKEN'), 'Missing private bridge token')
 local runtime = assert(os.getenv('BH_RUNTIME'), 'Missing isolated runtime directory')
 local manifest_file=assert(io.open(runtime .. '/environment.lock.json','r'))
@@ -90,6 +93,7 @@ local function inspect()
     rng=G.GAME.pseudorandom, tags={},deck_composition={}}
   for _, tag in ipairs(G.GAME.tags or {}) do table.insert(state.bh.tags,tag.key) end
   public.extend(state)
+  state.bh.settlement = settlement.visible()
   for _, card in ipairs(G.playing_cards or {}) do
     local key = public.deck_key(card)
     state.bh.deck_composition[key]=(state.bh.deck_composition[key] or 0)+1
@@ -230,6 +234,7 @@ BB_DISPATCHER.dispatch=function(request)
       return
     end
     if busy then respond_error(original_send,'BUSY'); return end
+    if request.method == 'start' and G.STATE == G.STATES.MENU then reset.before_start() end
     unlock()
     busy=true; active_id=tostring(request.id)
     ledger[active_id]={status='pending',intent=intent}; persist_ledger()

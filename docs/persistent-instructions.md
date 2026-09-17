@@ -13,7 +13,10 @@ Edit that Markdown file, then publish it into the current prompt:
 ```
 
 Without `--write`, the command checks freshness and fails if the embedded copy is
-stale. The offline tests also check this. `tools-v5.txt` contains a generated block;
+stale. New `tools_v5` runs also check this before starting the game: stale content
+raises `PERSISTENT_INSTRUCTIONS_STALE`, while missing or malformed source content
+raises `PERSISTENT_INSTRUCTIONS_INVALID`. Both admission and the editing script
+use the same renderer. `tools-v5.txt` contains a generated block;
 edit the Markdown source instead of that block. The update replaces the prompt
 atomically so a worker always reads a complete file.
 
@@ -24,18 +27,32 @@ branches retain the frozen prompt even if the source files change. New runs use
 the updated prompt without a backend restart. Legacy prompt files are unchanged.
 This is a recorded prompt change, not evidence of improved gameplay.
 
-## Existing context-limit defect
+## Separate transport, token and spending controls
 
-`Limits.max_input_tokens_per_call` defaults to 32,768 in `config.py`. This setting
-also determines the input-cost reservation. The runner passes it as `byte_limit`
-to the context builder, which measures serialized UTF-8 JSON bytes plus 5,120
-bytes of framing/settings allowance. The provider request has another check of
-serialized bytes plus 4,096 against the same setting.
+`Limits.max_request_bytes` defaults to 262,144 in `config.py`. Context construction
+uses this independent transport bound, including framing/settings headroom;
+the final request is checked using the HTTP JSON encoding. This value does not
+change token allowances or dollar reservations.
 
-These are conservative byte-based token bounds, not the model's actual context
-window or a tokenizer count. In a recorded Terra run the follow-up failed this
-local check after a helper lookup, while the preceding request reported only
-5,195 input tokens. Increasing the setting would also increase reservations.
-Independent byte, token, and spending controls remain a separate fix; adding this
-reference does not fix that defect and adds a small amount to the current bound.
-Settlement/interest payout extraction is also still pending.
+`max_input_tokens_per_call` remains 32,768. Before generation the adapter sends
+the complete supported input fields, including tools and original provider items,
+to the provider's counting endpoint. Counts receive a 512-token safety margin;
+that margin is headroom, not a proof of exactness for every provider/model.
+An unavailable or malformed count stops before generation. Identical input on
+transport retries reuses its count. Counts do not warm the generation cache.
+`provider_input_check` records the count, payload hash and separate bounds.
+
+Reservations still use the full input allowance at the highest configured input
+price, plus the output ceiling. Unknown generation usage retains that reservation;
+actual reported costs are recorded. No ciphertext-byte/token conversion is used.
+`LOCAL_CONTEXT_LIMIT`, `INPUT_TOKEN_LIMIT`, and `TOKEN_COUNT_UNAVAILABLE` identify
+the specific local failure. Private diagnostics contain stack locations, without
+exception messages, source lines or locals.
+
+The previous coupling caused a recorded Terra helper follow-up to fail after a
+5,195-token request. `scripts/replay_helper_context.py` reproduces the local bound
+offline and verifies preservation of provider items. This is transport evidence,
+not a live token count, native continuation, or new model result.
+
+See [the reliability change record](harness-reliability.md) for settlement parity,
+descriptive economy metrics and the required deployment gates.

@@ -2,6 +2,7 @@
 
 import json
 import threading
+import traceback
 import uuid
 from copy import deepcopy
 
@@ -14,6 +15,7 @@ from balatro_horizons.agents.budget import (
     reservation_usd,
     validate_paid_configuration,
 )
+from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.frozen import freeze_protocol, restore_protocol
 from balatro_horizons.agents.protocol import KERNEL, Operation, decision_context, helper
 from balatro_horizons.agents.providers import ProtocolFailure, ProviderFailure
@@ -41,7 +43,8 @@ class OperatorAbort(RuntimeError):
 
 
 class Runner:
-    def __init__(self, store, config, game, policy, *, stop=None, spending=None, rules=None):
+    def __init__(self, store, config, game, policy, *, stop=None, spending=None, rules=None,
+                 prompt_bytes=None):
         self.store, self.config, self.game, self.policy = (
             store,
             config.model_copy(deep=True),
@@ -61,12 +64,37 @@ class Runner:
         self.eid = None
         self.observation = None
         self.protocol = None
+        self.prompt_bytes = prompt_bytes
 
     def log(self, kind, payload, **kwargs):
         return self.store.append(self.eid, kind, payload, **kwargs)
 
+    def _record_failure(self, error):
+        # Stack locations help diagnose failures without serializing secrets from
+        # locals, exception messages, provider bodies, or source-code lines.
+        frames = traceback.extract_tb(error.__traceback__)
+        try:
+            self.store.private_json(self.eid, "failure-diagnostic.json", {
+                "exception_type": type(error).__name__,
+                "diagnostic": error.public() if isinstance(error, HarnessFailure) else None,
+                "frames": [{"file": f.filename, "line": f.lineno, "function": f.name}
+                           for f in frames],
+            })
+        except OSError:
+            pass  # A diagnostic-write failure must not prevent the terminal record.
+
     def _provider(self, ctx, exchanges):
         body = self.policy.request(ctx, exchanges)
+        if self.stop.is_set():
+            raise OperatorAbort
+        if self.calls >= self.limits.max_provider_calls:
+            raise BudgetExhausted("PROVIDER_CALL_LIMIT")
+        input_measurement = (
+            self.policy.check_input(body) if hasattr(self.policy, "check_input") else None
+        )
+        if input_measurement is not None:
+            self.log("provider_input_check", input_measurement,
+                     observation_id=self.observation.observation_id)
         model = self.policy.model
         reserve = reservation_usd(model, self.limits)
         for attempt in range(self.limits.max_transport_attempts):
@@ -118,7 +146,7 @@ class Runner:
 
     def _decision(self, observation):
         if self.protocol and self.protocol["implementation_hash"] != implementation_fingerprint():
-            raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")
+            raise HarnessFailure("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED", stage="decision_start")
         exchanges = []
         helper_count = invalid = 0
         while True:
@@ -127,7 +155,7 @@ class Runner:
             ctx, delivered_exchanges = decision_context(
                 observation,
                 exchanges,
-                byte_limit=self.limits.max_input_tokens_per_call,
+                byte_limit=self.limits.max_request_bytes,
                 interface=self.interface,
                 skills=self.rules.get("skills", []),
                 frozen=self.protocol,
@@ -226,7 +254,7 @@ class Runner:
             ctx, delivered = decision_context(
                 observation,
                 proposed,
-                byte_limit=self.limits.max_input_tokens_per_call,
+                byte_limit=self.limits.max_request_bytes,
                 interface=self.interface,
                 skills=self.rules.get("skills", []),
                 frozen=self.protocol,
@@ -234,7 +262,7 @@ class Runner:
             encoded = json.dumps({"context": ctx, "exchanges": delivered}, ensure_ascii=False)
             if (
                 len(json.dumps(encoded, ensure_ascii=False).encode()) + CONTEXT_FRAMING_BYTES
-                <= self.limits.max_input_tokens_per_call
+                <= self.limits.max_request_bytes
             ):
                 return page
         return {
@@ -307,7 +335,7 @@ class Runner:
         self.protocol = (
             restore_protocol(self.store, resume)
             if resume
-            else freeze_protocol(self.config, self.policy, self.rules)
+            else freeze_protocol(self.config, self.policy, self.rules, prompt_bytes=self.prompt_bytes)
         )
         self.interface = self.protocol["interface"]
         if resume:
@@ -499,9 +527,14 @@ class Runner:
         except (NativeFailure, ProviderFailure) as error:
             outcome, reason = "INFRASTRUCTURE_FAILURE", str(error)
             self.log("action_status_unknown", {"code": reason})
+        except HarnessFailure as error:
+            outcome, reason = "INFRASTRUCTURE_FAILURE", error.code
+            self.log("harness_failure", error.public())
+            self._record_failure(error)
         except Exception as error:
             # Exception text may contain private native state; only the type crosses.
             outcome, reason = "INFRASTRUCTURE_FAILURE", type(error).__name__
+            self._record_failure(error)
         finally:
             self.store.finish(
                 self.eid,

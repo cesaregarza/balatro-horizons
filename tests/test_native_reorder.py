@@ -55,6 +55,7 @@ def test_owned_ordering_is_advertised_validated_and_sent_once(phase):
             calls.append((method, params, request_id))
 
     game = NativeGame.__new__(NativeGame)
+    game._closed = False
     game.raw, game.bridge = raw, Bridge()
     game.wait_ready = lambda: None
     for area in expected:

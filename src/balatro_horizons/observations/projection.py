@@ -21,6 +21,8 @@ from balatro_horizons.contracts import (
     RecentPublicEvent,
     RemainingBudget,
     Resources,
+    Settlement,
+    SettlementRow,
     SkipReward,
 )
 
@@ -122,6 +124,7 @@ def project_public(
     visible = raw["visible"]
     progress = visible["progress"]
     resources = visible["resources"]
+    settlement = visible.get("settlement") if visible["phase"] == "ROUND_EVAL" else None
     state = PublicState(
         progress=Progress(
             ante=progress.get("ante"),
@@ -190,6 +193,16 @@ def project_public(
             if visible.get("pending_tags") is not None
             else None
         ),
+        settlement=(
+            Settlement(
+                source=settlement["source"], total=str(settlement["total"]),
+                omitted_rows=settlement.get("omitted_rows", 0),
+                rows=[SettlementRow(kind=row["kind"], label=str(row["label"]),
+                                    dollars=str(row["dollars"]),
+                                    count=str(row["count"]) if row.get("count") is not None else None)
+                      for row in settlement["rows"]],
+            ) if settlement is not None else None
+        ),
     )
     action_types = [str(kind) for kind in visible["available_action_types"]]
     constraints = _constraints(action_types, state)
@@ -252,7 +265,7 @@ def _offer(raw, issuer):
         face_down=hidden,
         rank=None if hidden or raw.get("rank") is None else str(raw["rank"]),
         suit=None if hidden or raw.get("suit") is None else str(raw["suit"]),
-        price=str(raw["price"]),
+        price=None if raw.get("price") is None else str(raw["price"]),
         acquire_allowed=bool(raw.get("acquire_allowed", True)),
         buy_and_use_allowed=not hidden and bool(raw.get("buy_and_use_allowed", False)),
         min_targets=0 if hidden else int(raw.get("min_targets", 0)),

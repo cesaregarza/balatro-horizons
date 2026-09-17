@@ -57,7 +57,7 @@ class PublicOffer(StrictModel):
     id: str
     label: str
     kind: str
-    price: str
+    price: str | None
     acquire_allowed: bool = True
     buy_and_use_allowed: bool = False
     min_targets: int = 0
@@ -97,6 +97,20 @@ class DeckKnowledge(StrictModel):
     provenance: Literal["public_history", "native_deck_view", "unknown"] = "unknown"
 
 
+class SettlementRow(StrictModel):
+    kind: Literal["blind", "hands", "discards", "interest", "other"]
+    label: str
+    dollars: str
+    count: str | None = None
+
+
+class Settlement(StrictModel):
+    source: Literal["native_cashout_rows"]
+    rows: list[SettlementRow]
+    total: str
+    omitted_rows: int = Field(default=0, ge=0)
+
+
 class PublicState(StrictModel):
     progress: Progress
     resources: Resources
@@ -110,6 +124,7 @@ class PublicState(StrictModel):
     persistent_effects: list[str] = Field(default_factory=list)
     owned_vouchers: list[PublicEffect] | None = None
     pending_tags: list[PublicEffect] | None = None
+    settlement: Settlement | None = None
 
 
 class PublicObjectReference(StrictModel):
@@ -124,6 +139,19 @@ class PublicFieldChange(StrictModel):
     after: JsonValue
 
 
+class PublicTransaction(StrictModel):
+    version: Literal["public_transaction_v1"] = "public_transaction_v1"
+    quote_source: Literal["pre_action_public_observation"] = "pre_action_public_observation"
+    actual_charge_source: Literal["not_observed"] = "not_observed"
+    quoted_cash_charge: str | None = None
+    quoted_cash_proceeds: str | None = None
+    actual_cash_charge: str | None = None
+    actual_cash_proceeds: str | None = None
+    cash_before: str | None
+    cash_after: str | None
+    net_cash_change: str | None
+
+
 class LastAction(StrictModel):
     version: Literal["public_delta_v1"] = "public_delta_v1"
     source: Literal["observed_public_states"] = "observed_public_states"
@@ -134,6 +162,7 @@ class LastAction(StrictModel):
     added_objects: list[PublicObjectReference]
     removed_objects: list[PublicObjectReference]
     changes: list[PublicFieldChange]
+    transaction: PublicTransaction | None = None
 
 
 class RecentPublicEvent(StrictModel):

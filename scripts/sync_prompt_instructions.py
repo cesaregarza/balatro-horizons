@@ -6,27 +6,9 @@ import os
 import tempfile
 from pathlib import Path
 
-from balatro_horizons.config import ALWAYS_LOADED_MAX_BYTES
-
-BEGIN = "<!-- BEGIN ALWAYS-LOADED.md -->"
-END = "<!-- END ALWAYS-LOADED.md -->"
-
-
-def render(prompt: str, instructions: str) -> str:
-    if not instructions.strip() or len(instructions.encode("utf-8")) > ALWAYS_LOADED_MAX_BYTES:
-        raise ValueError(f"ALWAYS-LOADED.md must contain 1-{ALWAYS_LOADED_MAX_BYTES} UTF-8 bytes")
-    if BEGIN in instructions or END in instructions:
-        raise ValueError("Instructions must not contain generated-block markers")
-    block = BEGIN + "\n" + instructions.strip() + "\n" + END
-    if BEGIN not in prompt and END not in prompt:
-        return prompt.rstrip() + "\n\n" + block + "\n"
-    if prompt.count(BEGIN) != 1 or prompt.count(END) != 1:
-        raise ValueError("Prompt must contain exactly one complete generated block")
-    before, _, remainder = prompt.partition(BEGIN)
-    if END not in remainder:
-        raise ValueError("Generated-block markers are out of order")
-    _, _, after = remainder.partition(END)
-    return before + block + after
+from balatro_horizons.agents.instructions import BEGIN as BEGIN
+from balatro_horizons.agents.instructions import END as END
+from balatro_horizons.agents.instructions import render as render
 
 
 def sync(root: Path, *, write: bool = False) -> bool:

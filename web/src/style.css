@@ -448,7 +448,7 @@ td button {
   margin: 18px 0 22px;
 }
 .playing-card {
-  width: 108px;
+  width: 118px;
   min-height: 142px;
   background: #e8e5dd;
   color: #293240;
@@ -469,7 +469,7 @@ td button {
   display: block;
   font-size: 23px;
 }
-.playing-card > span {
+.playing-card > .card-suit {
   display: block;
   font-size: 23px;
   margin: 5px 0;
@@ -523,6 +523,208 @@ td button {
 }
 .offers article {
   border-top: 3px solid #d3a778;
+}
+
+/* Color is supplementary: editions, enhancements and seals also have labels. */
+.card-name {
+  overflow-wrap: anywhere;
+}
+.card-name.edition-foil {
+  color: #9ddaff;
+}
+.card-name.edition-holographic {
+  color: #e7baff;
+}
+.card-name.edition-negative {
+  color: #f5f4ff;
+  text-shadow: 0 0 6px #ba9ce8;
+}
+.card-name.edition-polychrome {
+  color: #ffb7df;
+}
+@supports (background-clip: text) {
+  .card-name.edition-polychrome {
+    background: linear-gradient(
+      100deg,
+      #ffbbcc,
+      #ffe4a1 27%,
+      #95efc6 50%,
+      #a4d5ff 73%,
+      #e9b5ff
+    );
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+  }
+}
+.card-modifiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+  line-height: 1.35;
+  text-align: left;
+}
+.modifier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  border: 1px solid #8b9fb8;
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #eef4ff;
+  background: #24364e;
+  overflow-wrap: anywhere;
+}
+.modifier-badge.edition-foil {
+  border-color: #80caff;
+  background: #163d5d;
+}
+.modifier-badge.edition-holographic {
+  border-color: #d1a2ed;
+  background: #4a2856;
+}
+.modifier-badge.edition-polychrome {
+  border-color: #f8abd6;
+  background: linear-gradient(105deg, #612c49, #3b4b2b, #203e64, #543566);
+}
+.modifier-badge.edition-negative {
+  border-color: #ddd7ed;
+  background: #100f18;
+}
+.modifier-badge.eternal {
+  border-color: #e9c46b;
+  color: #ffe49b;
+}
+.modifier-badge.perishable {
+  border-style: dashed;
+  border-color: #e2af8c;
+}
+.modifier-badge.rental {
+  border-color: #a1db9c;
+  color: #bbecb7;
+}
+.modifier-badge.debuffed {
+  border-color: #f099a0;
+  color: #ffb7bd;
+}
+.modifier-badge.seal-red {
+  border-color: #ff9c9c;
+  background: #712e35;
+}
+.modifier-badge.seal-blue {
+  border-color: #a4d7ff;
+  background: #204b78;
+}
+.modifier-badge.seal-gold {
+  border-color: #f5d57e;
+  background: #604918;
+}
+.modifier-badge.seal-purple {
+  border-color: #d5adff;
+  background: #583575;
+}
+.seal-stamp {
+  font-size: 13px;
+}
+.owned article.card-edition-foil,
+.playing-card.card-edition-foil {
+  border-color: #70bff2;
+}
+.owned article.card-edition-holographic,
+.playing-card.card-edition-holographic {
+  border-color: #d194e8;
+}
+.owned article.card-edition-negative,
+.playing-card.card-edition-negative {
+  border-color: #cbc2e2;
+  box-shadow:
+    0 3px 0 #17121f,
+    0 0 0 2px #4d405d;
+}
+.owned article.card-edition-polychrome,
+.playing-card.card-edition-polychrome {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--card-surface, #1b2b3e), var(--card-surface, #1b2b3e))
+      padding-box,
+    linear-gradient(125deg, #ff9ebb, #f1d282, #79dfb1, #83bbee, #d297ef)
+      border-box;
+}
+.playing-card {
+  --card-surface: #e8e5dd;
+}
+.playing-card .card-name.edition-foil {
+  color: #145388;
+}
+.playing-card .card-name.edition-holographic {
+  color: #742383;
+}
+.playing-card .card-name.edition-negative {
+  color: #402654;
+  text-shadow: none;
+}
+.playing-card .card-name.edition-polychrome {
+  background: none;
+  color: #74377e;
+}
+.playing-card .card-modifiers {
+  gap: 4px;
+}
+.playing-card .modifier-badge {
+  font-size: 10px;
+  padding: 2px 4px;
+}
+.playing-card.card-enhancement-steel {
+  --card-surface: #cbd6df;
+  background-color: var(--card-surface);
+}
+.playing-card.card-enhancement-glass {
+  --card-surface: #e2f2f2;
+  background-color: var(--card-surface);
+}
+.playing-card.card-enhancement-gold {
+  --card-surface: #ead69a;
+  background-color: var(--card-surface);
+}
+.playing-card.card-enhancement-stone {
+  --card-surface: #c9c8c2;
+  background-color: var(--card-surface);
+}
+.modifier-badge.enhancement-steel {
+  background: #405060;
+  border-color: #c8d6e4;
+}
+.modifier-badge.enhancement-glass {
+  background: #264f57;
+  border-color: #b3ecf2;
+}
+.modifier-badge.enhancement-gold {
+  background: #604918;
+  border-color: #f5d57e;
+}
+.modifier-badge.enhancement-stone {
+  background: #49483f;
+  border-color: #c9c8b9;
+}
+.playing-card.card-debuffed {
+  border-style: dashed;
+}
+.playing-card.selected {
+  outline: 3px solid #edb06e;
+  outline-offset: 2px;
+}
+@media (forced-colors: active) {
+  .card-name.edition-polychrome {
+    background: none;
+    color: CanvasText;
+  }
+  .modifier-badge {
+    border-color: CanvasText;
+  }
 }
 .horizons {
   display: flex;
@@ -676,7 +878,7 @@ footer {
     min-width: 80px;
   }
   .playing-card {
-    width: 84px;
+    width: 118px;
     min-height: 120px;
   }
   .cards {

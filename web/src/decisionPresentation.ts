@@ -1,4 +1,5 @@
 import type { DecisionRow } from "./api";
+import { cardLabel } from "./cardPresentation";
 
 export function humanize(value: string) {
   return value.replaceAll("_", " ").toLowerCase();
@@ -13,7 +14,7 @@ export function number(value: string | number | null | undefined) {
 }
 
 export function actionTitle(row: DecisionRow) {
-  const item = row.item || "item";
+  const item = cardLabel(row.item || "item", row.effects);
   switch (row.type) {
     case "play_hand":
       return `Play ${row.hand_types?.join(" / ") || "hand"}`;
@@ -36,6 +37,19 @@ export function actionTitle(row: DecisionRow) {
     default:
       return humanize(row.type).replace(/^./, (char) => char.toUpperCase());
   }
+}
+
+export function jokerChanges(row: DecisionRow, change: "added" | "removed") {
+  const names =
+    row[change === "added" ? "jokers_added" : "jokers_removed"] || [];
+  const direct = change === "added" ? ["buy", "choose_pack"] : ["sell"];
+  // A name-only change list cannot identify duplicate Jokers or indirect gains.
+  // Use modifiers only when the action unambiguously names the single changed card.
+  return names.length === 1 &&
+    names[0] === row.item &&
+    direct.includes(row.type)
+    ? [cardLabel(names[0], row.effects)]
+    : names;
 }
 
 export function actionResult(row: DecisionRow) {

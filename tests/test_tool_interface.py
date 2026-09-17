@@ -1,3 +1,4 @@
+
 """Named-tool integration uses mocked providers and synthetic mechanics only."""
 
 import json
@@ -5,12 +6,15 @@ from copy import deepcopy
 
 import httpx
 import pytest
+from provider_transport import with_input_count
 from pydantic import ValidationError
 from test_boundary import project
 
 from balatro_horizons.agents.baselines import Baseline
+from balatro_horizons.agents.failures import HarnessFailure
+from balatro_horizons.agents.input_limits import request_size
 from balatro_horizons.agents.protocol import Operation, context, decision_context, helper
-from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
+from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure
 from balatro_horizons.agents.tool_interface import decode_tool, tools_for
 from balatro_horizons.config import ROOT, ModelConfig, load_config
 from balatro_horizons.contracts import RecentPublicEvent
@@ -104,19 +108,17 @@ def test_large_repeated_inspection_delivers_each_value_once_and_fits_budget():
         }
     ] * 2
     original = deepcopy(exchanges)
-    cfg.budgets.max_input_tokens_per_call = 100000
+    cfg.budgets.max_request_bytes = 100000
     policy = DirectProvider(cfg.models["luna"], cfg.budgets)
     old = context(obs, interface="tools_v2", byte_limit=100000)
     old_body = policy.request(old, exchanges)
-    cfg.budgets.max_input_tokens_per_call = (
-        len(json.dumps(old_body, ensure_ascii=False).encode()) + 4095
-    )
+    cfg.budgets.max_request_bytes = request_size(old_body) - 1
     # Providers freeze their settings at construction; this is a new allowance.
     policy = DirectProvider(cfg.models["luna"], cfg.budgets)
-    with pytest.raises(ProviderFailure, match="REQUIRED_CONTEXT_EXCEEDS_LIMIT"):
+    with pytest.raises(HarnessFailure, match="LOCAL_CONTEXT_LIMIT"):
         policy.request(old, exchanges)
     ctx, delivered = decision_context(
-        obs, exchanges, interface="tools_v2", byte_limit=cfg.budgets.max_input_tokens_per_call
+        obs, exchanges, interface="tools_v2", byte_limit=cfg.budgets.max_request_bytes
     )
     body = policy.request(ctx, delivered)
     assert json.dumps(body).count("RETRIEVED_CARD_DESCRIPTION") == 1
@@ -259,7 +261,7 @@ def test_named_tools_inspect_calculate_correct_error_and_finish(
     policy = DirectProvider(
         config.models["luna"],
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(receive)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
     runner = Runner(store, config, game, policy)
     result = runner.run()
@@ -307,7 +309,7 @@ def test_inspection_respects_helper_budget_without_advancing_game(store, monkeyp
     policy = DirectProvider(
         config.models["luna"],
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(receive)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
     result = Runner(store, config, game, policy).run()
     assert result["reason"] == "HELPER_CALL_LIMIT"

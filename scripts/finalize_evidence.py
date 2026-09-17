@@ -29,6 +29,10 @@ def main():
     source = implementation_fingerprint()
     require(release["environment_hash"] == digest(lock), "STALE_NATIVE_ENVIRONMENT")
     require(release["implementation_hash"] == source, "STALE_NATIVE_SOURCE")
+    settlement = read("native-settlement.json")
+    require(settlement["status"] == "passed", "MISSING_SETTLEMENT_EVIDENCE")
+    require(settlement["implementation_hash"] == source, "STALE_SETTLEMENT_SOURCE")
+    require(settlement["environment_hash"] == digest(lock), "STALE_SETTLEMENT_ENVIRONMENT")
     reorder = read("native-reorder.json")
     require(reorder.get("status") == "passed", "MISSING_REORDER_REGRESSION")
     require(reorder.get("implementation_hash") == source, "STALE_REORDER_SOURCE")
@@ -128,6 +132,7 @@ def main():
         "reports/verification/native-release.json",
         "reports/verification/native-fixtures-final.json",
         "reports/verification/native-reorder.json",
+        "reports/verification/native-settlement.json",
         "reports/verification/native-invalid.json",
         "reports/verification/native-faults.json",
         "reports/verification/runtime-audit-WHITE.json",

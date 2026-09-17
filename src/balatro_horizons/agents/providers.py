@@ -7,6 +7,7 @@ from copy import deepcopy
 
 import httpx
 
+from balatro_horizons.agents.input_limits import InputCounter, check_request_bytes
 from balatro_horizons.agents.protocol import TOOL
 from balatro_horizons.agents.tool_interface import (
     CONTINUATION_INTERFACES,
@@ -14,7 +15,7 @@ from balatro_horizons.agents.tool_interface import (
     NAMED_INTERFACES,
     decode_tool,
 )
-from balatro_horizons.config import CONTEXT_FRAMING_BYTES, PROVIDER_TIMEOUT_SECONDS
+from balatro_horizons.config import PROVIDER_TIMEOUT_SECONDS
 
 
 class ProviderFailure(RuntimeError):
@@ -37,13 +38,14 @@ def encode(value, ctx):
 
 
 def canonical_messages(ctx, exchanges):
+    content = {"observation": ctx["observation"], "omitted_event_ids": ctx["omitted_event_ids"]}
+    if "current_costs" in ctx:
+        # Dynamic prices follow the observation, outside the stable developer/tool prefix.
+        content["current_costs"] = ctx["current_costs"]
     messages = [
         {
             "role": "user",
-            "content": encode(
-                {"observation": ctx["observation"], "omitted_event_ids": ctx["omitted_event_ids"]},
-                ctx,
-            ),
+            "content": encode(content, ctx),
         }
     ]
     for exchange in exchanges:
@@ -239,6 +241,7 @@ class DirectProvider:
         self.available_tools = {"operate"}
         self.last_tool_call = None
         self.last_provider_turn = None
+        self.input_counter = InputCounter()
         # Diagnostic comparison state is deliberately instance-local. RunService creates
         # a fresh provider for each run, so response IDs cannot cross episode lifecycles.
         self._last_completed_openai_response_id = None
@@ -331,17 +334,18 @@ class DirectProvider:
                 body["thinking"] = {"type": "enabled", "budget_tokens": settings["thinking_budget"]}
         if "temperature" in settings:
             body["temperature"] = settings["temperature"]
-        if (
-            len(json.dumps(body, ensure_ascii=False).encode()) + CONTEXT_FRAMING_BYTES
-            > self.limits.max_input_tokens_per_call
-        ):
-            raise ProviderFailure("REQUIRED_CONTEXT_EXCEEDS_LIMIT")
+        check_request_bytes(body, self.limits)
         return body
+
+    def check_input(self, body):
+        return self.input_counter.check(self, body)
 
     def send(self, body):
         key = os.environ.get(self.key_name)
         if not key:
             raise ProviderFailure("MISSING_PROVIDER_CREDENTIAL")
+        # Also protects CLI probes that use send directly. Exact retries reuse the count.
+        self.check_input(body)
         if self.model.provider == "openai":
             url = "https://api.openai.com/v1/responses"
             headers = {"Authorization": "Bearer " + key}

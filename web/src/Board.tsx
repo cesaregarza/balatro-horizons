@@ -1,5 +1,8 @@
 import { useState } from "react";
 import type { Observation, Action, Card } from "./api";
+import { cardLabel, cardClasses } from "./cardPresentation";
+import { CardName, CardModifiers } from "./CardModifiers";
+import { ModifierLegend } from "./ModifierLegend";
 const suits: Record<string, string> = {
   Hearts: "♥",
   Diamonds: "♦",
@@ -22,17 +25,28 @@ function CardTile({
         "playing-card " +
         (card.face_down ? "concealed " : "") +
         (selected ? "selected " : "") +
-        (["Hearts", "Diamonds"].includes(card.suit || "") ? "red" : "")
+        (!card.face_down && ["Hearts", "Diamonds"].includes(card.suit || "")
+          ? "red "
+          : "") +
+        cardClasses(card.effects, card.face_down)
       }
       onClick={onClick}
       aria-pressed={selected}
-      title={card.effects.join("\n")}
+      title={card.face_down ? "Hidden card" : card.effects.join("\n")}
+      aria-label={cardLabel(card.label, card.effects, card.face_down)}
     >
       <strong>{card.face_down ? "?" : card.rank || "✦"}</strong>
-      <span>
+      <span className="card-suit">
         {card.face_down ? "Hidden" : suits[card.suit || ""] || card.label}
       </span>
-      <small>{card.face_down ? "Unknown identity" : card.label}</small>
+      <small>
+        {card.face_down ? (
+          "Unknown identity"
+        ) : (
+          <CardName label={card.label} effects={card.effects} />
+        )}
+      </small>
+      <CardModifiers effects={card.effects} faceDown={card.face_down} />
     </button>
   );
 }
@@ -90,7 +104,11 @@ export function Board({
               canReorder("hand") &&
               o.state.hand.indexOf(card) > 0 && (
                 <button
-                  aria-label={"Move " + card.label + " left"}
+                  aria-label={
+                    "Move " +
+                    cardLabel(card.label, card.effects, card.face_down) +
+                    " left"
+                  }
                   onClick={() => {
                     const ids = o.state.hand.map((c) => c.id),
                       i = ids.indexOf(card.id);
@@ -125,10 +143,20 @@ export function Board({
           <h3>{area === "jokers" ? "Jokers" : "Consumables"}</h3>
           <div className="owned">
             {o.state[area].map((c, i) => (
-              <article key={c.id}>
-                <strong>{c.label}</strong>
-                <p>{c.effects.join(" · ")}</p>
-                {Object.keys(c.counters).length > 0 && (
+              <article
+                key={c.id}
+                className={cardClasses(c.effects, c.face_down)}
+              >
+                <strong>
+                  <CardName
+                    label={c.label}
+                    effects={c.effects}
+                    faceDown={c.face_down}
+                  />
+                </strong>
+                <CardModifiers effects={c.effects} faceDown={c.face_down} />
+                {!c.face_down && <p>{c.effects.join(" · ")}</p>}
+                {!c.face_down && Object.keys(c.counters).length > 0 && (
                   <small>
                     {Object.entries(c.counters)
                       .map(([k, v]) => `${k}: ${v}`)
@@ -159,7 +187,11 @@ export function Board({
                     )}
                     {canReorder(area) && i > 0 && (
                       <button
-                        aria-label={"Move " + c.label + " left"}
+                        aria-label={
+                          "Move " +
+                          cardLabel(c.label, c.effects, c.face_down) +
+                          " left"
+                        }
                         onClick={() => {
                           const ids = o.state[area].map((c) => c.id);
                           [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
@@ -177,6 +209,7 @@ export function Board({
           </div>
         </section>
       ))}
+      <ModifierLegend />
       {onAction && canReorder("hand") && o.state.hand.length > 1 && (
         <button
           onClick={() =>
@@ -195,11 +228,26 @@ export function Board({
           <h3>{available("choose_pack") ? "Pack choices" : "Shop"}</h3>
           <div className="owned offers">
             {o.state.offers.map((offer) => (
-              <article key={offer.id}>
+              <article
+                key={offer.id}
+                className={cardClasses(offer.effects, offer.face_down)}
+              >
                 <small>{offer.kind}</small>
-                <h4>{offer.label}</h4>
-                <p>{offer.effects.join(" · ")}</p>
-                <b>${offer.price}</b>
+                <h4>
+                  <CardName
+                    label={offer.label}
+                    effects={offer.effects}
+                    faceDown={offer.face_down}
+                  />
+                </h4>
+                <CardModifiers
+                  effects={offer.effects}
+                  faceDown={offer.face_down}
+                />
+                {!offer.face_down && <p>{offer.effects.join(" · ")}</p>}
+                <b>
+                  {offer.price === null ? "Price unknown" : `$${offer.price}`}
+                </b>
                 {onAction && (
                   <div className="actions">
                     {available("buy") && offer.acquire_allowed && (

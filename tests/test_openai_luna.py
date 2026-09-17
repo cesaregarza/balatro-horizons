@@ -1,9 +1,11 @@
+
 """Contract tests use mocked HTTP and the explicitly synthetic game only."""
 
 import json
 
 import httpx
 import pytest
+from provider_transport import with_input_count
 from pydantic import ValidationError
 from test_boundary import project
 
@@ -130,7 +132,7 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
     policy = DirectProvider(
         config.models["luna"],
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(receive)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
     summary = Runner(store, config, FakeGame(), policy).run()
     assert summary["outcome"] == "WIN" and summary["evidence_kind"] == "SYNTHETIC_TEST"
@@ -164,7 +166,7 @@ def test_unknown_http_attempts_consume_budget_before_retry(store, monkeypatch):
     policy = DirectProvider(
         config.models["luna"],
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(receive)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
     summary = Runner(store, config, FakeGame(), policy).run()
     assert summary["outcome"] == "BUDGET_EXHAUSTED"
@@ -196,7 +198,7 @@ def test_quota_failure_is_not_retried_and_private_error_text_is_not_logged(
     policy = DirectProvider(
         config.models["luna"],
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(receive)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
     result = Runner(store, config, FakeGame(), policy).run()
     events = store.events(result["episode_id"])
@@ -230,7 +232,7 @@ def test_prompt_cache_comparison_uses_only_last_explicitly_completed_response(mo
     policy = DirectProvider(
         config.models["luna"],
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(receive)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
     ctx = context(project(FakeGame().observe_private()))
 
@@ -295,7 +297,7 @@ def test_prompt_cache_comparison_is_episode_local_and_supported_models_only(monk
     terra = DirectProvider(
         terra_model,
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(completed)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(completed))),
     )
     first = terra.request(ctx, [])
     assert "prompt_cache_options" not in first
@@ -313,7 +315,7 @@ def test_prompt_cache_comparison_is_episode_local_and_supported_models_only(monk
     unsupported = DirectProvider(
         unsupported_model,
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(completed)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(completed))),
     )
     unsupported.send(unsupported.request(ctx, []))
     assert "prompt_cache_options" not in unsupported.request(ctx, [])
@@ -329,7 +331,7 @@ def test_prompt_cache_comparison_is_episode_local_and_supported_models_only(monk
     anthropic = DirectProvider(
         anthropic_model,
         config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(completed)),
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(completed))),
     )
     anthropic.send(anthropic.request(ctx, []))
     assert "prompt_cache_options" not in anthropic.request(ctx, [])

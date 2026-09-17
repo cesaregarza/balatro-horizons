@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.agents.budget import BudgetExhausted, Spending
+from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.protocol import Operation, decision_context
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
 from balatro_horizons.config import ROOT, load_config
@@ -45,7 +46,7 @@ def prepare(store, eid, decision, config):
         observation,
         exchanges,
         interface="tools_v2",
-        byte_limit=config.budgets.max_input_tokens_per_call,
+        byte_limit=config.budgets.max_request_bytes,
     )
     ReviewService(store).expose(
         eid, "context_probe_input", model_identity_seen=True, max_event_seen=source["sequence"]
@@ -148,6 +149,8 @@ def main():
         calls, cost, valid, proposed_kind = 0, 0.0, False, None
         outcome, reason = "INFRASTRUCTURE_FAILURE", "PROBE_FAILED"
         try:
+            store.append(eid, "provider_input_check", policy.check_input(body),
+                         observation_id=obs.observation_id)
             spending.reserve(request_id, eid, reserve, limits.max_episode_cost_usd)
             calls, cost = 1, reserve
             store.append(
@@ -180,6 +183,9 @@ def main():
             )
             valid, proposed_kind = True, operation.kind
             outcome, reason = "BUDGET_EXHAUSTED", "CONTEXT_PROBE_ONE_RESPONSE_LIMIT"
+        except HarnessFailure as error:
+            reason = error.code
+            store.append(eid, "harness_failure", error.public())
         except ProviderFailure as error:
             reason = error.code
             store.append(
