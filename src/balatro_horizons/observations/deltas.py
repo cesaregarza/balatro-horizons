@@ -1,6 +1,7 @@
 """Neutral last-action feedback, derived exclusively from two public observations."""
 
 from balatro_horizons.contracts import LastAction, PublicFieldChange, PublicObjectReference
+from balatro_horizons.observations.transactions import transaction_receipt
 
 AREAS = ("hand", "jokers", "consumables", "offers", "revealed_blinds")
 
@@ -62,4 +63,5 @@ def last_action(before, after, action):
         added_objects=added,
         removed_objects=removed,
         changes=changes,
+        transaction=transaction_receipt(before, after, action),
     )

@@ -15,7 +15,7 @@ export type Offer = {
   id: string;
   label: string;
   kind: string;
-  price: string;
+  price: string | null;
   effects: string[];
   acquire_allowed: boolean;
   buy_and_use_allowed: boolean;

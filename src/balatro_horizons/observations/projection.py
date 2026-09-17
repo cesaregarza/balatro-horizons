@@ -265,7 +265,7 @@ def _offer(raw, issuer):
         face_down=hidden,
         rank=None if hidden or raw.get("rank") is None else str(raw["rank"]),
         suit=None if hidden or raw.get("suit") is None else str(raw["suit"]),
-        price=str(raw["price"]),
+        price=None if raw.get("price") is None else str(raw["price"]),
         acquire_allowed=bool(raw.get("acquire_allowed", True)),
         buy_and_use_allowed=not hidden and bool(raw.get("buy_and_use_allowed", False)),
         min_targets=0 if hidden else int(raw.get("min_targets", 0)),

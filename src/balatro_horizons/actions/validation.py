@@ -40,6 +40,12 @@ def amount(value):
         raise InvalidAction("VISIBLE_RESOURCE_INCONSISTENCY") from None
 
 
+def can_afford(price, money, credit_limit):
+    """Use the same displayed-price admission rule in validation and presentation."""
+    charge = amount(price)
+    return charge <= 0 or charge <= amount(money) + amount(credit_limit)
+
+
 def targets(ids, hand, obj):
     if not unique_subset(ids, hand):
         raise InvalidAction("INVALID_TARGETS")
@@ -93,9 +99,7 @@ def validate_action(
         offer = offers.get(action.offer_id)
         if offer is None:
             raise InvalidAction("UNKNOWN_OFFER")
-        if amount(offer.price) > 0 and amount(offer.price) > amount(state.resources.money) + amount(
-            state.resources.credit_limit
-        ):
+        if not can_afford(offer.price, state.resources.money, state.resources.credit_limit):
             raise InvalidAction("UNAFFORDABLE")
         if action.mode == "acquire":
             if not offer.acquire_allowed or action.target_ids:
@@ -122,7 +126,5 @@ def validate_action(
             if isinstance(action, RerollShop)
             else state.resources.boss_reroll_cost
         )
-        if amount(cost) > 0 and amount(cost) > amount(state.resources.money) + amount(
-            state.resources.credit_limit
-        ):
+        if not can_afford(cost, state.resources.money, state.resources.credit_limit):
             raise InvalidAction("UNAFFORDABLE")

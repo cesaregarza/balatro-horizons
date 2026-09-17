@@ -68,7 +68,9 @@ def test_pack_and_boss_quotes_do_not_reuse_shop_prices():
     obs.state.resources.boss_reroll_cost = "10"
     obs.available_action_types.append("reroll_boss")
     summary = current_costs(obs.model_dump(mode="json"))
-    assert summary["rerolls"] == {"reroll_boss": {"cash_cost": "10", "offered": True}}
+    assert summary["rerolls"]["reroll_boss"]["cash_cost"] == "10"
+    assert summary["rerolls"]["reroll_boss"]["offered"] is True
+    assert summary["rerolls"]["reroll_boss"]["mode_check"] == {"status": "legal"}
     assert "offers" not in summary
 
 
@@ -82,9 +84,12 @@ def test_sale_values_are_proceeds_and_hidden_cards_do_not_gain_quotes():
             id="hidden", label="PRIVATE_CARD", face_down=True, sellable=True, sell_price="99"
         ),
     ]
-    assert current_costs(obs.model_dump(mode="json"))["sales"] == [
-        {"owned_id": "visible", "label": "Drunkard", "cash_received": "3"}
-    ]
+    owned = current_costs(obs.model_dump(mode="json"))["owned_items"]
+    assert [c["owned_id"] for c in owned] == ["visible", "eternal"]
+    assert owned[0]["quoted_sale_proceeds"] == "3" and owned[0]["sell_allowed"]
+    assert owned[0]["mode_check"] == {"status": "legal"}
+    assert owned[1]["quoted_sale_proceeds"] == "9" and not owned[1]["sell_allowed"]
+    assert owned[1]["mode_check"]["reason"] == "SELL_NOT_AVAILABLE"
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
