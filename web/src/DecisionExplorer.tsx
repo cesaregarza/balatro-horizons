@@ -14,7 +14,7 @@ import {
 import "./decisions.css";
 import { modelLabel } from "./modelSelection";
 import { downloadDecisions, type DecisionExportFormat } from "./decisionExport";
-import { modifierDescription } from "./cardPresentation";
+import { modifierDescription, editionClass } from "./cardPresentation";
 import { ModifierLegend } from "./ModifierLegend";
 
 export function DecisionExplorer({
@@ -441,7 +441,10 @@ export function DecisionExplorer({
                         #{row.decision + 1}
                       </span>
                       <span className="decision-row-body">
-                        <strong title={modifierDescription(row.effects)}>
+                        <strong
+                          className={`card-name ${editionClass(row.effects)}`}
+                          title={modifierDescription(row.effects)}
+                        >
                           {actionTitle(row)}
                         </strong>
                         <span
@@ -504,6 +507,7 @@ export function DecisionExplorer({
                     ref={detailHeading}
                     tabIndex={-1}
                     title={modifierDescription(active.effects)}
+                    className={`card-name ${editionClass(active.effects)}`}
                   >
                     {actionTitle(active)}
                   </h2>

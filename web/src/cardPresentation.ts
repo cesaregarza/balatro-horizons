@@ -6,16 +6,41 @@ const editions: Record<string, [string, string]> = {
   POLYCHROME: ["P", "Polychrome"],
   NEGATIVE: ["N", "Negative"],
 };
+const enhancements = new Set([
+  "BONUS",
+  "MULT",
+  "WILD",
+  "GLASS",
+  "STEEL",
+  "STONE",
+  "GOLD",
+  "LUCKY",
+]);
+const seals = new Set(["RED", "BLUE", "GOLD", "PURPLE"]);
 
-export function cardModifiers(effects: string[] = []) {
-  const found = new Map<string, [string, string]>();
+export type CardModifier = {
+  kind: string;
+  short: string;
+  label: string;
+  tone: string;
+};
+
+export function visualModifiers(
+  effects: string[] = [],
+  faceDown = false,
+): CardModifier[] {
+  if (faceDown) return [];
+  const found = new Map<string, CardModifier>();
+  const add = (kind: string, short: string, label: string, tone = kind) =>
+    found.set(kind, { kind, short, label, tone });
   for (const effect of effects) {
-    const match = /^(edition|eternal|perishable|rental):\s*(.+)$/i.exec(
-      effect.trim(),
-    );
+    const match =
+      /^(edition|seal|enhancement|eternal|perishable|rental):\s*(.+)$/i.exec(
+        effect.trim(),
+      );
     if (!match) {
       if (effect.trim().toLowerCase() === "debuffed")
-        found.set("debuffed", ["D", "Debuffed"]);
+        add("debuffed", "D", "Debuffed");
       continue;
     }
     const key = match[1].toLowerCase(),
@@ -23,23 +48,59 @@ export function cardModifiers(effects: string[] = []) {
     if (
       key === "edition" &&
       !["BASE", "NONE", "DEFAULT"].includes(value.toUpperCase())
-    )
-      found.set(
+    ) {
+      const edition = editions[value.toUpperCase()];
+      add(
         key,
-        editions[value.toUpperCase()] || [value, `Edition: ${value}`],
+        edition?.[0] || value,
+        edition?.[1] || `Edition: ${value}`,
+        edition ? `edition-${edition[1].toLowerCase()}` : "edition-unknown",
       );
+    }
+    if (key === "seal" && seals.has(value.toUpperCase())) {
+      const name = value[0].toUpperCase() + value.slice(1).toLowerCase();
+      add(key, `${name} seal`, `${name} seal`, `seal-${name.toLowerCase()}`);
+    }
+    if (key === "enhancement" && enhancements.has(value.toUpperCase())) {
+      const name = value[0].toUpperCase() + value.slice(1).toLowerCase();
+      add(key, name, name, `enhancement-${name.toLowerCase()}`);
+    }
     if (key === "eternal" && value.toLowerCase() === "true")
-      found.set(key, ["∞", "Eternal"]);
+      add(key, "∞", "Eternal");
     if (key === "rental" && value.toLowerCase() === "true")
-      found.set(key, ["R", "Rental"]);
+      add(key, "R", "Rental");
     if (key === "perishable" && /^\d+$/.test(value))
-      found.set(key, [`X${value}`, `Perishable (${value} rounds left)`]);
+      add(key, `X${value}`, `Perishable (${value} rounds left)`);
     else if (key === "perishable" && value.toLowerCase() === "true")
-      found.set(key, ["X", "Perishable"]);
+      add(key, "X", "Perishable");
   }
-  return ["edition", "eternal", "perishable", "rental", "debuffed"].flatMap(
-    (key) => (found.has(key) ? [found.get(key)!] : []),
+  return [
+    "edition",
+    "enhancement",
+    "seal",
+    "eternal",
+    "perishable",
+    "rental",
+    "debuffed",
+  ].flatMap((key) => (found.has(key) ? [found.get(key)!] : []));
+}
+
+export function cardModifiers(effects: string[] = []): [string, string][] {
+  return visualModifiers(effects).map((m) => [m.short, m.label]);
+}
+
+export function editionClass(effects: string[] = [], faceDown = false) {
+  return (
+    visualModifiers(effects, faceDown).find((m) => m.kind === "edition")
+      ?.tone || ""
   );
+}
+
+export function cardClasses(effects: string[] = [], faceDown = false) {
+  return visualModifiers(effects, faceDown)
+    .filter((m) => ["edition", "enhancement", "debuffed"].includes(m.kind))
+    .map((m) => `card-${m.tone}`)
+    .join(" ");
 }
 
 export function cardLabel(
