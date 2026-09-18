@@ -29,7 +29,7 @@ def notebook_tools(definitions, *, action_notes=False):
                                      "maxLength": MAX_MEMORY_CHARACTERS},
                         }, "required": ["key", "text"],
                     }],
-                    "description": "One notebook edit with this action: null keeps notes unchanged; {key,text} sets a note; text:null deletes it. Invalid edits reject the action too. No helper call is charged. The edit is journaled before action execution and survives execution failure.",
+                    "description": "One notebook edit saved BEFORE this action executes: null keeps notes unchanged; {key,text} sets a note; text:null deletes it. Write intentions or predictions, not unobserved success. Invalid edits reject the action too. No helper call is charged. The saved edit survives execution failure. On the next decision, previous_action_outcome pairs the recorded edit with observed results when retained; reconcile it then.",
                 }
                 schema["required"].append("note_update")
     key = {"type": "string", "minLength": 1, "maxLength": MAX_KEY_CHARACTERS}

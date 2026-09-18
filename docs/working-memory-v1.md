@@ -65,12 +65,41 @@ rewrite the notebook. No additional model call or helper operation is required.
 
 The receipt is assembled before request-history pruning and remains available
 when older frames are removed. It counts against the ordinary request bound.
-`previous-action-outcome-v1` is recorded in the frozen memory policy; the prompt
-and source hashes distinguish this condition from the original v7 runs. Neither
-the native interface nor checkpoint working-memory format changes. Rollout still
+The frozen memory policy records the outcome and working-memory versions; prompt
+and source hashes distinguish each condition from the original v7 runs. Rollout
 requires an idle worker and explicit reuse of unchanged native evidence.
 
-This revision, including target semantics and notebook guidance, passed 464
+### Linking action-attached notebook edits
+
+`previous-action-outcome-v2` also includes `recorded_note_update` when the last
+action carried a saved notebook edit. It preserves the original key, text (null
+for a deletion), notebook revision, and journal references, with explicit
+`before_action_execution` timing. The same record is retained in the bounded
+`working-memory-v2` frame. Both providers receive it in dynamic context beside
+the observed result; tool schemas and the instruction prefix remain static.
+
+Linking requires three matching events in the same episode and decision: the
+submitted action with its edit, the saved notebook mutation, and that exact
+committed action. Outcome pairing additionally checks the following public
+observation. Proposals without saves, standalone note helpers, rejected actions,
+execution failures, and mismatched records cannot produce a linked edit. A saved
+edit can survive failure without claiming that a game action succeeded.
+
+The edit is historical, not the current value of its key: a later helper may
+already have revised or deleted that entry. The prompt asks the model to compare
+the pre-action claim with the observed outcome and reconcile its own notebook.
+No automatic note rewrite, extra model call, or scoring judgment occurs. A
+missing or pruned edit stays null; after request-history pruning, the already
+assembled latest outcome and edit remain within the ordinary context bound.
+Old checkpoint identities remain unchanged and are not migrated to v2.
+
+The linked-edit revision passed 476 offline Python tests (nine native gates
+skipped), Ruff, and diff checks. Tests cover pre-action timing, set/delete edits,
+standalone helpers, invalid actions, execution failure, later notebook rewrites,
+branch inheritance, provider parity, and pruning. There were zero native launches
+and zero paid calls.
+
+The initial outcome revision, including target semantics and notebook guidance, passed 464
 offline Python tests (nine native gates skipped), Ruff, and diff checks. Coverage
 includes outcome isolation, fixed provider prefixes, target-selection preservation,
 and unchanged legacy tools. Saved Luna and Terra requests reproduced the 300/600

@@ -63,9 +63,15 @@ def test_action_attached_notes_need_no_helper_and_delete_is_visible(store, confi
     assert result["committed_actions"] == 2
     assert policy.contexts[1]["run_notebook"]["entries"] == {"plan": "Keep this conclusion"}
     assert policy.contexts[2]["run_notebook"]["entries"] == {}
+    written = policy.contexts[1]["previous_action_outcome"]["recorded_note_update"]
+    deleted = policy.contexts[2]["previous_action_outcome"]["recorded_note_update"]
+    assert (written["key"], written["text"], written["revision"]) == ("plan", "Keep this conclusion", 1)
+    assert written["timing"] == "before_action_execution"
+    assert (deleted["operation"], deleted["text"], deleted["revision"]) == ("delete_run_note", None, 2)
     assert all(c["helper_status"]["remaining"] == 0 for c in policy.contexts)
     events = store.events(result["episode_id"])
     assert len([e for e in events if e["type"] == "run_note"]) == 2
+    assert written["note_event_id"] == next(e["event_id"] for e in events if e["type"] == "run_note")
     assert not any(e["type"] == "helper_result" for e in events)
     assert read_checkpoint(store, result["episode_id"], 0)["run_notebook"]["revision"] == 0
     assert read_checkpoint(store, result["episode_id"], 1)["run_notebook"]["revision"] == 1
@@ -83,6 +89,7 @@ def test_bad_edit_rejects_entire_submission_without_execution(store, config, edi
     assert policy.contexts[0]["observation"]["observation_id"] == policy.contexts[1]["observation"]["observation_id"]
     assert policy.exchanges[1][-1]["result"]["error"] == code
     assert not any(e["type"] == "run_note" for e in store.events(result["episode_id"]))
+    assert policy.contexts[-1]["previous_action_outcome"]["recorded_note_update"] is None
 
 
 def test_bad_game_action_does_not_write_valid_attached_note(store, config):
@@ -94,6 +101,7 @@ def test_bad_game_action_does_not_write_valid_attached_note(store, config):
     result = Runner(store, config, FakeGame(), policy).run()
     assert result["committed_actions"] == 1
     assert policy.contexts[1]["run_notebook"]["revision"] == 0
+    assert policy.contexts[-1]["previous_action_outcome"]["recorded_note_update"] is None
 
 
 def test_durable_attached_note_survives_native_failure_without_claiming_success(store, config):
@@ -103,11 +111,13 @@ def test_durable_attached_note_survives_native_failure_without_claiming_success(
         def apply_public_action(self, *args):
             raise NativeRejected("test rejection")
 
-    result = Runner(store, config, RejectedGame(), WorkingScript(annotated(select))).run()
+    runner = Runner(store, config, RejectedGame(), WorkingScript(annotated(select)))
+    result = runner.run()
     events = store.events(result["episode_id"])
     assert result["committed_actions"] == 0
     assert any(e["type"] == "run_note" for e in events)
     assert not any(e["type"] == "action_commit" for e in events)
+    assert runner.working_memory.view()["frames"] == []
     assert read_checkpoint(store, result["episode_id"], 0)["run_notebook"]["revision"] == 0
 
 
@@ -164,7 +174,7 @@ def test_retention_bounds_drop_whole_frames_and_private_events_are_ignored():
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
 def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, config):
-    policy = WorkingScript(annotated(select), play)
+    policy = WorkingScript(annotated(select), annotated(play, text="I expect this hand to win"))
     Runner(store, config, FakeGame(), policy).run()
     first, last = [context_payload(ctx, [], provider, "tools_v7") for ctx in (policy.contexts[0], policy.contexts[-1])]
     assert first["tools"] == last["tools"]
@@ -172,9 +182,10 @@ def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, con
     messages = last.get("input", last.get("messages"))
     view = json.loads(next(m for m in messages if m.get("role") == "user")["content"])
     assert len(view["working_memory"]["frames"]) == 2
-    assert view["run_notebook"]["entries"] == {"plan": "Keep this conclusion"}
+    assert view["run_notebook"]["entries"] == {"plan": "I expect this hand to win"}
     assert view["previous_action_outcome"] == policy.contexts[-1]["previous_action_outcome"]
     assert view["previous_action_outcome"]["action_type"] == "play_hand"
+    assert view["previous_action_outcome"]["recorded_note_update"]["text"] == "I expect this hand to win"
     for definition in last["tools"]:
         if definition["name"] in ACTION_MODELS:
             schema = definition.get("parameters", definition.get("input_schema"))
@@ -252,6 +263,10 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
     view = child_policy.contexts[0]["working_memory"]
     assert view == checkpoint["working_memory"]
     assert view["frames"][0]["episode_id"] == root
+    assert child_policy.contexts[0]["previous_action_outcome"]["recorded_note_update"] == (
+        view["frames"][0]["recorded_note_update"]
+    )
+    assert view["frames"][0]["recorded_note_update"]["text"] == "Keep this conclusion"
     assert "FUTURE_PARENT" not in json.dumps(view)
     assert verify_checkpoint(store, config, child, 1)["status"] == "passed"
     grandchild, snapshot, ancestors = prepare_branch(store, config, child, 1, "agent_continue")

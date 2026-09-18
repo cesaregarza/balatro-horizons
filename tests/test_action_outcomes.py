@@ -74,7 +74,9 @@ def test_missing_pruned_future_or_unrelated_evidence_does_not_fabricate_a_note()
     assert previous_action_outcome({**observation, "observation_id": 17}, memory) is None
     assert previous_action_outcome(observation, {"frames": []})["recorded_decision_note"] is None
     memory["frames"][0]["decision_id"] = 19
+    memory["frames"][0]["recorded_note_update"] = {"key": "future", "text": "FUTURE_SENTINEL"}
     assert previous_action_outcome(observation, memory)["recorded_decision_note"] is None
+    assert previous_action_outcome(observation, memory)["recorded_note_update"] is None
     observation["phase"] = "UNKNOWN_PHASE"
     assert previous_action_outcome(observation, memory)["scoring"]["blind_status"] == "unknown"
 

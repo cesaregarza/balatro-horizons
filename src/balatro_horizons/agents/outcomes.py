@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-VERSION = "previous-action-outcome-v1"
+VERSION = "previous-action-outcome-v2"
 
 
 def previous_action_outcome(observation, working_memory):
@@ -37,6 +37,7 @@ def previous_action_outcome(observation, working_memory):
         "to_observation_id": observation["observation_id"],
         "action_type": action_type,
         "recorded_decision_note": frame.get("recorded_decision_note") if paired else None,
+        "recorded_note_update": deepcopy(frame.get("recorded_note_update")) if paired else None,
         "note_source": "agent_claim_before_action" if paired else "not_retained",
         "phase_before": phase_before,
         "phase_after": phase_after,

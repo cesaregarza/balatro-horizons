@@ -77,7 +77,7 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
                 "branch_boundary": "pre_decision",
                 "helper_exhaustion": "bounded_invalid_feedback"}
                if interface in NOTEBOOK_INTERFACES else {}),
-            **({"across_actions": "run-notebook-v1-and-working-memory-v1",
+            **({"across_actions": "run-notebook-v1-and-" + working_memory_policy()["version"],
                 "action_outcome": outcome_version,
                 "working_memory": working_memory_policy(),
                 "notebook_guidance": "evidence_backed_corrections_with_pre_eviction_notice",

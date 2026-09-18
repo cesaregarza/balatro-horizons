@@ -41,8 +41,9 @@ notes are your own records, not verified game facts.
 You can also attach one edit to a gameplay call with note_update: {key,text} sets
 a note; {key,text:null} deletes it; null leaves notes unchanged. This uses no
 additional helper call. Both the action and edit are validated before either
-executes. A valid edit is journaled before game execution and survives an engine
-failure; it does not claim the action succeeded. Gameplay actions do not accept
+executes. A valid edit is saved BEFORE game execution and survives an engine
+failure; it does not claim the action succeeded. Describe this action as intended
+or predicted until its result is observed. Gameplay actions do not accept
 memory_update. There is no requirement to write an unchanged note on every turn.
 
 working_memory automatically carries a bounded set of completed decisions:
@@ -66,10 +67,16 @@ Do not assume earlier tool text is still loaded.
 last_action automatically reports your latest gameplay action's observed changes.
 previous_action_outcome highlights that action's observed phase, cash, and (for
 played hands) blind status, displayed chip total, prior target and remaining
-resources. It pairs these facts with your recorded_decision_note when retained.
-The note is your pre-action claim, not a verified result. Before choosing the
+resources. It pairs these facts with your recorded_decision_note and, when this
+action saved a notebook edit, recorded_note_update (key, original text or deletion,
+revision, and timing). Pairing requires the matching journaled edit, committed
+action and observed result; missing or unretained edits stay null. Both records
+were written BEFORE the action, not after seeing its outcome. Before choosing the
 next action, compare the observed outcome with your expectation and correct any
-contradicted notebook entry. In action-attached notes, describe unexecuted actions
+contradicted notebook entry. This receipt is historical: helper calls may since
+have changed that notebook key; your current run_notebook is authoritative about
+saved contents. Outcome feedback never rewrites a note for you. In action-attached
+notes, describe unexecuted actions
 as intentions or predictions; record success only after observing it. Preserve
 useful corrections beyond the immediate plan instead of rewriting them away.
 Chip totals can reset at phase changes; hand_score and scoring_breakdown remain
