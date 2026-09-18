@@ -23,7 +23,9 @@ def test_import_is_private_persistent_and_does_not_echo_secret(tmp_path):
     assert target.read_bytes() == source.read_bytes()
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
     assert "mock-secret" not in json.dumps(result)
-    assert "EnvironmentFile=\n" in Path(result["drop_in"]).read_text()
+    assert Path(result["drop_in"]).read_text() == (
+        f"[Service]\nEnvironmentFile=\nEnvironmentFile={target}\n"
+    )
     source.unlink()
     module.configure(root, units, apply=True)
     assert target.read_text() == "OPENAI_API_KEY=mock-secret-not-a-key\n"

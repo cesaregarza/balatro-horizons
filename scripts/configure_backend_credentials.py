@@ -70,9 +70,9 @@ def configure(root, unit_dir, source=None, *, apply=False):
     names = credential_names(data)
     if source is not None and not names:
         raise ValueError("PROVIDER_CREDENTIAL_MISSING")
-    if any(c in str(target) for c in ('"', "\\", "\n", "\r", "%")):
+    if any(c in str(target) for c in ('"', "\\", "%")) or any(c.isspace() for c in str(target)):
         raise ValueError("UNSUPPORTED_ENVIRONMENT_PATH")
-    settings = f'[Service]\nEnvironmentFile=\nEnvironmentFile="{target}"\n'.encode()
+    settings = f'[Service]\nEnvironmentFile=\nEnvironmentFile={target}\n'.encode()
     if apply:
         atomic_private(target, data)
         atomic_private(dropin, settings)
