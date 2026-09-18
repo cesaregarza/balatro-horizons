@@ -49,7 +49,8 @@ def canonical_messages(ctx, exchanges):
         content.update(run_notebook=ctx["run_notebook"], permitted_tools=ctx["allowed_tools"],
                        helper_status=ctx["helper_status"])
     if ctx.get("interface_version") == WORKING_MEMORY_INTERFACE:
-        content.update(working_memory=ctx["working_memory"],
+        content.update(previous_action_outcome=ctx.get("previous_action_outcome"),
+                       working_memory=ctx["working_memory"],
                        notebook_maintenance=ctx["notebook_maintenance"])
     messages = [
         {

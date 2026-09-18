@@ -9,7 +9,7 @@ from test_notebook_harness import Script, note, play, select
 from balatro_horizons.agents.focused import context_bound
 from balatro_horizons.agents.protocol import decision_context
 from balatro_horizons.agents.providers import context_payload
-from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
+from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool, stable_tools
 from balatro_horizons.agents.working_memory import (
     WorkingMemory,
     restore_working_memory,
@@ -48,6 +48,10 @@ def test_recent_actions_results_and_helpers_survive_without_note_writes(store, c
     assert frames[-1]["observed_result"] == ctx["observation"]["last_action"]
     assert frames[-1]["recorded_decision_note"].startswith("Recorded note")
     assert ctx["run_notebook"]["entries"] == {}
+    outcome = ctx["previous_action_outcome"]
+    assert outcome["action_type"] == "play_hand"
+    assert outcome["recorded_decision_note"] == frames[-1]["recorded_decision_note"]
+    assert outcome["from_observation_id"] == frames[-1]["decision_id"]
     assert policy.exchanges[-1] == []  # No provider-native replay across actions.
     assert "Maintain a concise" in ctx["prompt"]
 
@@ -169,14 +173,53 @@ def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, con
     view = json.loads(next(m for m in messages if m.get("role") == "user")["content"])
     assert len(view["working_memory"]["frames"]) == 2
     assert view["run_notebook"]["entries"] == {"plan": "Keep this conclusion"}
+    assert view["previous_action_outcome"] == policy.contexts[-1]["previous_action_outcome"]
+    assert view["previous_action_outcome"]["action_type"] == "play_hand"
     for definition in last["tools"]:
         if definition["name"] in ACTION_MODELS:
             schema = definition.get("parameters", definition.get("input_schema"))
             assert "note_update" in schema["required"] and "memory_update" not in schema["properties"]
+            if definition["name"] in ("buy", "use_consumable", "choose_pack"):
+                guidance = schema["properties"]["target_ids"]["description"]
+                assert "list order does not move them" in guidance
+                assert "Death converts the left selected card into the right selected card" in guidance
     args = {"observation_id": 0, "note_update": {"key": "k", "text": "v"}}
     assert decode_tool("cash_out", args, interface="tools_v7")["note_update"] == args["note_update"]
     with pytest.raises(ValueError, match="UNAVAILABLE_TOOL_ARGUMENT"):
         decode_tool("cash_out", args, interface="tools_v6")
+
+
+def test_unfrozen_context_has_same_target_guidance_without_changing_legacy(store, config):
+    policy = WorkingScript(select)
+    result = Runner(store, config, FakeGame(), policy).run()
+    checkpoint = read_checkpoint(store, result["episode_id"], 0)
+    canonical = Observation.model_validate(checkpoint["observation"])
+    ctx, _ = decision_context(canonical, [], interface="tools_v7")
+    legacy, _ = decision_context(canonical, [], interface="tools_v6")
+    old_definitions = {definition["name"]: definition for definition in stable_tools()}
+    frozen_definitions = {definition["name"]: definition for definition in policy.contexts[0]["tools"]}
+    for definition in ctx["tools"]:
+        if definition["name"] in ("buy", "use_consumable", "choose_pack"):
+            assert definition == frozen_definitions[definition["name"]]
+    for definition in legacy["tools"]:
+        if definition["name"] in ("buy", "use_consumable", "choose_pack"):
+            assert definition["parameters"]["properties"]["target_ids"] == (
+                old_definitions[definition["name"]]["parameters"]["properties"]["target_ids"]
+            )
+    assert "previous_action_outcome" not in legacy
+
+
+@pytest.mark.parametrize("name,selection", [
+    ("buy", {"offer_id": "offer", "mode": "buy_and_use"}),
+    ("use_consumable", {"consumable_id": "death"}),
+    ("choose_pack", {"offer_id": "offer"}),
+])
+def test_target_guidance_never_reorders_a_submitted_selection(name, selection):
+    args = {"observation_id": 4, "target_ids": ["right_card", "left_card"],
+            "note_update": None, "decision_note": None, **selection}
+    action = decode_tool(name, args, interface="tools_v7")["envelope"]["action"]
+    assert action["target_ids"] == ["right_card", "left_card"]
+    assert args["target_ids"] == action["target_ids"]
 
 
 def test_context_budget_prunes_history_before_live_helpers_and_notebook(store, config):
@@ -188,6 +231,7 @@ def test_context_budget_prunes_history_before_live_helpers_and_notebook(store, c
     bound = context_bound(ctx, exchanges)
     smaller, _ = decision_context(observation, [], interface="tools_v7", working_memory=memory, byte_limit=bound-500)
     assert len(smaller["working_memory"]["frames"]) < 3
+    assert smaller["previous_action_outcome"] == ctx["previous_action_outcome"]
     assert smaller["working_memory"]["request_pruned_decisions"] > 0
     assert smaller["context_bytes_upper_bound"] <= bound-500
     assert memory["frames"][0]["decision_id"] == 2  # Source never mutated.

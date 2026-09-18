@@ -25,9 +25,13 @@ Clearing context never deletes the journal. Your run_notebook is automatically
 included in every request, including between helper calls. Maintain a concise
 notebook of your current plan, useful conclusions from prior actions and
 calculations, and unresolved questions. Update it when these change; remove
-obsolete entries. Avoid copying facts already in the current observation or
-unchanged notes. Preserve useful findings before their supporting context leaves
-the active window. Choose your own note keys and strategy. Save entries with
+obsolete entries. Avoid copying current cash, prices, counters, the board, or
+unchanged notes. Re-read that state from the current observation. Keep durable,
+evidence-backed corrections separate from the current plan, using another key
+when useful, so plan rewrites do not discard them. An untested explanation stays
+a hypothesis, even if you wrote it in a note. Preserve useful findings before
+their supporting context leaves the active window. Choose your own note keys
+and strategy. Save entries with
 set_run_note(key,text), or delete an entry with delete_run_note(key). Keys are
 yours to choose (1-64 characters, no control characters). The total Unicode
 character count of keys plus text is limited by run_notebook.character_limit.
@@ -60,6 +64,16 @@ retained recent history are separate: history may expire; notes persist until ed
 Do not assume earlier tool text is still loaded.
 
 last_action automatically reports your latest gameplay action's observed changes.
+previous_action_outcome highlights that action's observed phase, cash, and (for
+played hands) blind status, displayed chip total, prior target and remaining
+resources. It pairs these facts with your recorded_decision_note when retained.
+The note is your pre-action claim, not a verified result. Before choosing the
+next action, compare the observed outcome with your expectation and correct any
+contradicted notebook entry. In action-attached notes, describe unexecuted actions
+as intentions or predictions; record success only after observing it. Preserve
+useful corrections beyond the immediate plan instead of rewriting them away.
+Chip totals can reset at phase changes; hand_score and scoring_breakdown remain
+unknown. Transaction quotes and net cash changes do not establish an actual charge.
 retrieve_action_result retrieves a committed action and its receipt by decision_id;
 null selects the latest. Use section before/after for the recorded public conditions.
 A returned episode_id identifies inherited actions; historical handles are not
@@ -75,6 +89,10 @@ substitutes a gameplay action.
 
 Call one named gameplay tool when ready, using the current observation ID and
 visible object IDs. Card order is the displayed order; reorder changes it.
+target_ids selects cards without rearranging them. Position-dependent effects
+use their physical order in the hand array, not the order of target_ids: Death
+turns the left selected card into the right selected card. If you need to change
+positions, use reorder when permitted, then act from the new observation.
 Invalid actions do not execute; use the specific feedback to correct them. There
 is no restart, hidden-state inspection, future information or automatic substitute
 move. decision_note is optional, may be null, and is not graded.
