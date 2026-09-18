@@ -63,6 +63,22 @@ def probe(bridge):
     return result
 
 
+def progress(bridge):
+    """Inspect an owned running game without acquiring its worker or changing it."""
+    try:
+        bridge.verify_files()
+        record = json.loads((bridge.root / "process.json").read_text(encoding="utf-8-sig"))
+        bridge.instance_id = record["instance_id"]
+        raw = bridge.rpc("bh_inspect")
+        bridge.verify_identity(raw)
+        return {"status": "passed", "started": record["started"],
+                "phase": raw.get("state"), "ante": raw.get("ante_num"),
+                "round_number": raw.get("round_num"), "ready": raw["bh"].get("ready"),
+                "busy": raw["bh"].get("busy"), "provider_calls": 0, "game_launches": 0}
+    finally:
+        bridge._close_rpc()
+
+
 def restart(bridge):
     """Stop only the registered runtime, test a certified launch, clean our own process."""
     lock = bridge.verify_files()
@@ -133,10 +149,14 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--restart", action="store_true", help="Restart only an idle runtime")
     mode.add_argument("--workbench", action="store_true", help="Test the live browser worker")
+    mode.add_argument("--progress", action="store_true", help="Read-only public progress of the owned game, including during verification")
+    parser.add_argument("--calibration", action="store_true", help="With --progress, expect an unpaid verification process")
     mode.add_argument("--executable-access", action="store_true",
                       help="Read the configured PowerShell header only; no Windows process or game launch")
     parser.add_argument("--preset", choices=("smoke", "pilot"), default="pilot")
     args = parser.parse_args()
+    if args.calibration and not args.progress:
+        parser.error("--calibration requires --progress")
     if args.executable_access:
         result = executable_access(load_config(args.config).environment)
         print(json.dumps(result, sort_keys=True))
@@ -144,6 +164,14 @@ def main():
     if args.workbench:
         return workbench_startup(args.preset)
     bridge = WindowsBridge(load_config(args.config).environment)
+    if args.progress:
+        bridge.calibration = args.calibration
+        try:
+            print(json.dumps(progress(bridge), sort_keys=True), flush=True)
+            return 0
+        except (OSError, ValueError, RuntimeError, KeyError) as error:
+            print(json.dumps({"status": "failed", "reason": str(error) if str(error).isupper() else type(error).__name__}))
+            return 1
     result = {"provider_calls": 0, "restart_requested": args.restart}
     try:
         with (ROOT / "private/native-worker.lock").open("a") as worker_lock:

@@ -28,6 +28,17 @@ before launching games (requires permission for the configured Windows path):
 This reads only the executable header. A successful result does not certify game
 readiness, but a read failure distinguishes filesystem access from a game failure.
 
+During an unpaid native verification, inspect only public progress without taking
+over the worker or restarting the game:
+
+```bash
+.venv/bin/python scripts/diagnose_native_startup.py --progress --calibration
+```
+
+Omit `--calibration` for a production run. The command verifies the pinned runtime
+and process identity, prints only phase/ante/round/readiness and launch time, and
+closes only its own inspection transport.
+
 ## Session registration
 
 The Linux backend outlives individual WSL/Windows sessions. It must not treat

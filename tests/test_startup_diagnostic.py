@@ -71,6 +71,25 @@ def test_probe_closes_transport_on_failed_identity(tmp_path):
     bridge._close_rpc.assert_called_once()
 
 
+def test_progress_is_read_only_and_omits_private_values(tmp_path):
+    (tmp_path / "process.json").write_text(json.dumps({"instance_id": "secret-nonce", "started": "timestamp"}))
+    bridge = Mock(root=tmp_path)
+    bridge.rpc.return_value = {"state": "SHOP", "ante_num": 3, "round_num": 7,
+                               "seed": "secret-seed", "bh": {"ready": True, "busy": False}}
+    result = module.progress(bridge)
+    assert result["ante"] == 3 and result["game_launches"] == 0
+    assert "secret" not in json.dumps(result)
+    bridge.rpc.assert_called_once_with("bh_inspect")
+    bridge.verify_identity.assert_called_once_with(bridge.rpc.return_value)
+    bridge.launch.assert_not_called()
+    bridge.stop.assert_not_called()
+    bridge._close_rpc.assert_called_once()
+    bridge.verify_identity.side_effect = NativeFailure("NATIVE_PROCESS_IDENTITY_MISMATCH")
+    with pytest.raises(NativeFailure, match="IDENTITY_MISMATCH"):
+        module.progress(bridge)
+    assert bridge._close_rpc.call_count == 2
+
+
 @pytest.mark.parametrize("errors,calls,success", [(1, 2, True), (3, 3, False)])
 def test_launch_retries_only_pre_submission_eio(monkeypatch, errors, calls, success):
     from balatro_horizons.config import Environment
