@@ -1,8 +1,9 @@
-import { expect, test } from "@playwright/test";
-import type { DecisionLedger, DecisionRow } from "../src/api";
-import { decisionExport } from "../src/decisionExport";
+import assert from "node:assert/strict";
+import test from "node:test";
 
-const action: DecisionRow = {
+import { decisionExport } from "../.unit-dist/decisionExport.js";
+
+const action = {
   decision: 31,
   event_id: "committed-event",
   action_number: 1,
@@ -15,7 +16,7 @@ const action: DecisionRow = {
   money_after: "5",
   money_change: "-5",
 };
-const ledger: DecisionLedger = {
+const ledger = {
   source_journal_head: "verified-source-hash",
   manifest: {
     episode_id: "a".repeat(32),
@@ -50,26 +51,31 @@ const ledger: DecisionLedger = {
 
 test("JSONL groups each decision once, keeps failed attempts and preserves strings", () => {
   const result = decisionExport(ledger, "jsonl", "2026-09-16T12:00:00Z");
-  expect(result.decisionCount).toBe(2);
-  expect(result.content.endsWith("\n")).toBe(true);
+  assert.equal(result.decisionCount, 2);
+  assert.equal(result.content.endsWith("\n"), true);
   const lines = result.content
     .trimEnd()
     .split("\n")
     .map((line) => JSON.parse(line));
-  expect(lines.map((line) => line.decision)).toEqual([31, 32]);
-  expect(lines[0].committed_actions[0].note).toBe(action.note);
-  expect(lines[0].uncommitted_requests[0].rejection_code).toBe(
+  assert.deepEqual(
+    lines.map((line) => line.decision),
+    [31, 32],
+  );
+  assert.equal(lines[0].committed_actions[0].note, action.note);
+  assert.equal(
+    lines[0].uncommitted_requests[0].rejection_code,
     "INVALID_ACTION",
   );
-  expect(lines[1].committed_actions).toEqual([]);
-  expect(lines[1].uncommitted_requests[0].status).toBe(
+  assert.deepEqual(lines[1].committed_actions, []);
+  assert.equal(
+    lines[1].uncommitted_requests[0].status,
     "no_committed_transition",
   );
-  expect(result.content).not.toContain("<script>");
+  assert.equal(result.content.includes("<script>"), false);
   for (const line of lines) {
-    expect(line.source_journal_head).toBe(ledger.source_journal_head);
-    expect(line.episode.evidence_kind).toBe("SYNTHETIC_TEST");
-    expect(line.episode.evaluation_eligible).toBe(false);
+    assert.equal(line.source_journal_head, ledger.source_journal_head);
+    assert.equal(line.episode.evidence_kind, "SYNTHETIC_TEST");
+    assert.equal(line.episode.evaluation_eligible, false);
   }
 });
 
@@ -83,15 +89,15 @@ test("JSON and JSONL describe the same partial snapshot without mutating the led
     .trimEnd()
     .split("\n")
     .map((line) => JSON.parse(line));
-  expect(document.snapshot_status).toBe("in_progress");
-  expect(document.run_summary).toBe(null);
-  expect(json.filename).toContain("-partial.json");
-  expect(jsonl.filename).toContain("-partial.jsonl");
+  assert.equal(document.snapshot_status, "in_progress");
+  assert.equal(document.run_summary, null);
+  assert.equal(json.filename.includes("-partial.json"), true);
+  assert.equal(jsonl.filename.includes("-partial.jsonl"), true);
   for (const [index, line] of lines.entries()) {
     const { decisions, ...metadata } = document;
-    expect(line).toEqual({ ...metadata, ...decisions[index] });
+    assert.deepEqual(line, { ...metadata, ...decisions[index] });
   }
-  expect(JSON.stringify(partial)).toBe(before);
+  assert.equal(JSON.stringify(partial), before);
 });
 
 test("unexpected private and provider fields are not serialized", () => {
@@ -110,16 +116,14 @@ test("unexpected private and provider fields are not serialized", () => {
         memory_update: "MEMORY_SENTINEL",
       },
     ],
-    summary: { ...ledger.summary!, private_path: "PATH_SENTINEL" },
+    summary: { ...ledger.summary, private_path: "PATH_SENTINEL" },
   };
-  for (const format of ["json", "jsonl"] as const) {
+  for (const format of ["json", "jsonl"]) {
     const exported = decisionExport(extra, format);
-    expect(exported.content).not.toContain("SENTINEL");
-    expect(exported.content).toContain("omitted_content");
+    assert.equal(exported.content.includes("SENTINEL"), false);
+    assert.equal(exported.content.includes("omitted_content"), true);
   }
   const empty = { ...ledger, actions: [], uncommitted_actions: [] };
-  expect(decisionExport(empty, "jsonl").content).toBe("");
-  expect(JSON.parse(decisionExport(empty, "json").content).decisions).toEqual(
-    [],
-  );
+  assert.equal(decisionExport(empty, "jsonl").content, "");
+  assert.deepEqual(JSON.parse(decisionExport(empty, "json").content).decisions, []);
 });

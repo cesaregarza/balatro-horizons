@@ -17,6 +17,7 @@ web/playwright-report/
 *.egg-info/
 web/.e2e-data/
 web/tsconfig.tsbuildinfo
+web/.unit-dist/
 
 # Local development copies, generated builds, and machine-specific evidence.
 .worktrees/
