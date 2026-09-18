@@ -60,6 +60,9 @@ export default function App() {
     ]);
   const [priorSeedExposure, setPriorSeedExposure] = useState(false);
   const [modelSettings, setModelSettings] = useState("{}");
+  const [runtimeConnection, setRuntimeConnection] = useState<{
+    ready: boolean; code: string | null; message: string;
+  } | null>(null);
   const [harnessInterface, setHarnessInterface] =
     useState<string>(CURRENT_HARNESS);
   const [provider, setProvider] = useState("openai"),
@@ -146,6 +149,13 @@ export default function App() {
     () => api("/operator/status"),
     setStatus,
     (e) => setError(String(e)),
+  );
+  usePolling(
+    Boolean(config) && tab === "runs" && !offline,
+    5000,
+    () => api("/operator/runtime"),
+    setRuntimeConnection,
+    () => setRuntimeConnection({ ready: false, code: "UNREACHABLE", message: "Cannot check the runtime connection. Check that the backend is available." }),
   );
   usePolling(
     tab === "human",
@@ -364,7 +374,7 @@ export default function App() {
                 <div className="actions">
                   <button
                     className="primary"
-                    disabled={busy}
+                    disabled={busy || (!offline && runtimeConnection?.ready === false)}
                     onClick={() =>
                       run(async () => {
                         const chosenAgent = selectedModel
@@ -398,6 +408,11 @@ export default function App() {
                     Stop worker
                   </button>
                 </div>
+                {!offline && runtimeConnection && (
+                  <p role="status" className={runtimeConnection.ready ? "muted" : "error"}>
+                    {runtimeConnection.message}
+                  </p>
+                )}
               </section>
               <section className="panel live">
                 <p className="eyebrow">OPERATOR VIEW</p>

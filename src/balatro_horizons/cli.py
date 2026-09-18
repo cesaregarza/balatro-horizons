@@ -14,6 +14,7 @@ from balatro_horizons.storage.journal import Store
 
 def doctor(config, live=False):
     from balatro_horizons.engine.native import NativeFailure, WindowsBridge
+    from balatro_horizons.engine.windows_context import connection_status
 
     checks = {
         "python": sys.version.split()[0],
@@ -25,6 +26,9 @@ def doctor(config, live=False):
         "headless": "disabled_pending_parity",
         "blockers": [],
     }
+    checks["runtime_connection"] = connection_status()
+    if not checks["runtime_connection"]["ready"]:
+        checks["blockers"].append(checks["runtime_connection"]["code"])
     try:
         from balatro_horizons.agents.skills import prepare_rules
 

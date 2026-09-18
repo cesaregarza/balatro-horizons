@@ -73,6 +73,11 @@ Visible speed-1 execution is supported. Headless and accelerated execution are d
 
 ## Startup diagnostics
 
+For the current connection registration and recovery workflow, see
+[Windows runtime connection lifecycle](runtime-connection.md). Registration now
+refreshes the connection without restarting the backend; the historical service
+drop-in repair below is retained as incident context.
+
 For an idle runtime with a handshake timeout, use:
 
 ```bash

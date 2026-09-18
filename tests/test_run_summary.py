@@ -25,6 +25,38 @@ summary_script = load_script("summarize_run")
 renderer = load_script("decision_summary")
 
 
+def test_latest_model_uses_manifest_time_and_exact_selected_model(tmp_path):
+    store = Store(tmp_path / "data")
+    config = {"models": {"selected": {"model": "sol"}, "unused": {"model": "terra"}}}
+    older = store.create({"agent": "selected", "config": config, "created_at": "2026-01-01"})
+    newer = store.create({"agent": "selected", "config": config, "created_at": "2026-01-02"})
+    store.reindex(older)
+    assert summary_script.latest_model_episode(store, "sol") == newer
+    with pytest.raises(ValueError, match="NO_EPISODE_FOR_MODEL"):
+        summary_script.latest_model_episode(store, "terra")
+
+
+def test_status_uses_journal_not_stale_index_and_omits_payloads(tmp_path):
+    store = Store(tmp_path / "data")
+    eid = store.create({"agent": "fixture", "evidence_kind": "SYNTHETIC_TEST"})
+    store.append(eid, "provider_response", {"body": {"output": "opaque-secret"}})
+    store.append(eid, "terminal", {
+        "reason": "NATIVE_STARTUP_HANDSHAKE_TIMEOUT", "outcome": "INFRASTRUCTURE_FAILURE",
+        "cost_usd": 0, "provider_calls": 0, "committed_actions": 0,
+        "untrusted": "opaque-secret",
+    })
+    assert store.list_episodes()[0]["summary"] is None
+    status = summary_script.run_status(store, eid)
+    assert status["terminal"] and status["reason"] == "NATIVE_STARTUP_HANDSHAKE_TIMEOUT"
+    assert status["provider_responses"] == 1 and status["action_commits"] == 0
+    assert "opaque-secret" not in json.dumps(status)
+    assert ReviewService(store).exposure(eid)["outcome_seen"]
+    journal = store.episode_path(eid) / "events.jsonl"
+    journal.write_text(journal.read_text().replace("NATIVE_STARTUP", "INVALID_STARTUP"))
+    with pytest.raises(ValueError, match="JOURNAL_INTEGRITY_FAILURE"):
+        summary_script.run_status(store, eid)
+
+
 @pytest.fixture
 def recorded_run(tmp_path):
     store = Store(tmp_path / "data")

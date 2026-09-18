@@ -19,6 +19,7 @@ from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.config import ROOT, Config, load_config
 from balatro_horizons.contracts import AnnotationInput
 from balatro_horizons.engine.certification import require_checkpoint_certificate, verify_checkpoint
+from balatro_horizons.engine.windows_context import connection_status, load_session
 from balatro_horizons.evaluation.batches import plan_batch, seed_panel
 from balatro_horizons.evaluation.reports import export_batch, report_batch
 from balatro_horizons.review.operator_status import OperatorStatus
@@ -230,7 +231,12 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
             "active_episode": runs.active_id,
             "error": runs.error,
             "episodes": result,
+            "runtime_connection": connection_status(),
         }
+
+    @app.get("/api/operator/runtime", dependencies=[Depends(operator)])
+    def runtime_connection():
+        return connection_status()
 
     @app.get("/api/operator/stream", dependencies=[Depends(operator)])
     async def stream(request: Request):
@@ -421,6 +427,8 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
         with runs._guard:
             if runs.thread and runs.thread.is_alive():
                 raise ValueError("WORKER_BUSY")
+            if not data.offline:
+                load_session()
             runs.stop.clear()
             runs._launch(lambda: runs.run_batch(cfg, bid, offline=data.offline))
         return {"batch_id": bid, "queued": True}

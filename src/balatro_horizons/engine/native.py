@@ -11,6 +11,7 @@ from pathlib import Path
 
 from balatro_horizons.config import ROOT
 from balatro_horizons.engine.native_state import cards, normalize
+from balatro_horizons.engine.windows_context import bridge_environment
 
 
 class NativeFailure(RuntimeError):
@@ -38,6 +39,8 @@ class WindowsBridge:
         self.calibration = False
         self.lock = None
         self.instance_id = None
+        self._launch_process = None
+        self._startup_deadline = None
 
     def command(self, mode, input=None):
         command = [
@@ -65,12 +68,13 @@ class WindowsBridge:
                 # PowerShell returns. Launch detached; verify readiness through RPC.
                 for attempt in range(3):
                     try:
-                        subprocess.Popen(
+                        self._launch_process = subprocess.Popen(
                             command,
                             stdin=subprocess.DEVNULL,
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                             start_new_session=True,
+                            env=bridge_environment(),
                         )
                         break
                     except OSError as error:
@@ -86,7 +90,10 @@ class WindowsBridge:
                 text=True,
                 capture_output=True,
                 timeout=self.env.timeout_seconds + 15,
+                env=bridge_environment(),
             )
+        except ValueError as error:
+            raise NativeFailure(str(error)) from None
         except OSError as error:
             raise NativeFailure("WINDOWS_BRIDGE_OS_ERROR_" + str(error.errno)) from None
         except subprocess.TimeoutExpired:
@@ -110,6 +117,7 @@ class WindowsBridge:
                         stdout=subprocess.PIPE,
                         stderr=subprocess.DEVNULL,
                         bufsize=0,
+                        env=bridge_environment(),
                     )
                     break
                 except OSError as error:
@@ -122,6 +130,8 @@ class WindowsBridge:
             process.stdin.flush()
             result = bytearray()
             deadline = time.monotonic() + self.env.timeout_seconds + 5
+            if self._startup_deadline is not None:
+                deadline = min(deadline, self._startup_deadline)
             with selectors.DefaultSelector() as selector:
                 selector.register(process.stdout, selectors.EVENT_READ)
                 while b"\n" not in result:
@@ -193,16 +203,38 @@ class WindowsBridge:
     def launch(self):
         self.verify_files()
         self.instance_id = uuid.uuid4().hex
-        self.command("launch")
-        deadline = time.monotonic() + 45
-        while time.monotonic() < deadline:
-            try:
-                state = self.rpc("bh_inspect")
+        self._startup_deadline = time.monotonic() + 45
+        last_error = None
+        try:
+            self.command("launch")
+            while time.monotonic() < self._startup_deadline:
+                if self._launch_process is not None and self._launch_process.poll() not in (None, 0):
+                    raise NativeFailure("NATIVE_LAUNCH_PROCESS_FAILED")
+                try:
+                    state = self.rpc("bh_inspect")
+                except NativeFailure as error:
+                    last_error = str(error)
+                    if last_error != "RPC_TRANSPORT_UNKNOWN":
+                        raise
+                    time.sleep(0.5)
+                    continue
+                # Receiving the wrong process/profile is a definite failure, not a
+                # slow startup. Do not erase that evidence by retrying until timeout.
                 self.verify_identity(state)
                 return state
-            except (NativeFailure, NativeRejected):
-                time.sleep(0.5)
-        raise NativeFailure("NATIVE_STARTUP_HANDSHAKE_TIMEOUT")
+            raise NativeFailure("NATIVE_STARTUP_HANDSHAKE_TIMEOUT")
+        except (NativeFailure, NativeRejected) as error:
+            from balatro_horizons.storage.journal import atomic_json, now
+
+            record = {"created_at": now(), "code": str(error), "last_handshake_error": last_error,
+                      "launcher_exit_code": self._launch_process.poll() if self._launch_process else None}
+            try:
+                atomic_json(ROOT / "private/startup-failures" / (self.instance_id + ".json"), record, immutable=True)
+            except OSError:
+                pass  # Preserve the primary failure even when diagnostic storage fails.
+            raise
+        finally:
+            self._startup_deadline = None
 
     def verify_identity(self, state):
         bh = state.get("bh", {})
@@ -260,7 +292,10 @@ class NativeGame:
             self.bridge.verify_identity(self.raw)
             self.wait_ready()
         except BaseException:
-            self.close()
+            try:
+                self.close()
+            except (NativeFailure, OSError):
+                pass  # An expired connection must not obscure the startup failure.
             raise
         if certificate:
             from balatro_horizons.storage.journal import digest
