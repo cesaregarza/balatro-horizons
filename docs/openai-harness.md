@@ -31,8 +31,8 @@ configuration, manifests, journals, or browser settings.
 
 ```bash
 # Replace /path/to/openai.env with your private environment file.
-uv --directory /root/dev/balatro-horizons run --env-file /path/to/openai.env python scripts/smoke_openai.py --dry-run
-uv --directory /root/dev/balatro-horizons run --env-file /path/to/openai.env python scripts/smoke_openai.py --allow-paid
+uv run --env-file /path/to/openai.env python scripts/smoke_openai.py --dry-run
+uv run --env-file /path/to/openai.env python scripts/smoke_openai.py --allow-paid
 ```
 
 For an initial real-API check without controlling the Windows game, add
@@ -121,9 +121,9 @@ disabled). This checks startup and terminal recording, not Luna playing strength
 ## Monitor a smoke
 
 ```bash
-uv --directory /root/dev/balatro-horizons run python scripts/smoke_openai.py --status
+uv run python scripts/smoke_openai.py --status
 # Optionally select a specific run:
-uv --directory /root/dev/balatro-horizons run python scripts/smoke_openai.py --status --episode-id EPISODE_ID
+uv run python scripts/smoke_openai.py --status --episode-id EPISODE_ID
 ```
 
 Status reads only that episode's public journal and records the viewing exposure.
@@ -161,7 +161,7 @@ operator's total authorization. No larger campaign is authorized by this run.
 Register another model reproducibly with explicit accounting rates:
 
 ```bash
-uv --directory /root/dev/balatro-horizons run scripts/register_player.py \
+uv run scripts/register_player.py \
   --alias terra-tools --clone luna-tools --model gpt-5.6-terra \
   --input-rate 2.5 --output-rate 12 --pricing-date 2026-09-15 --apply
 ```

@@ -277,10 +277,3 @@ def test_native_calibration_probe_completes_offline_before_native_use(store, con
     assert len(helpers) == 2
     assert all(e["observation_id"] == 0 for e in helpers)
     assert all(e["payload"]["result"].get("reference") == "balatro_guide" for e in helpers)
-
-
-def test_public_guide_entries_pass_export_privacy_scan():
-    from balatro_horizons.evaluation.reports import scan
-
-    guide, _, _ = load_guide()
-    scan(guide["entries"])

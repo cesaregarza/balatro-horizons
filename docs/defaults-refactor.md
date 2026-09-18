@@ -1,7 +1,7 @@
 # Shared harness defaults refactor
 
-Prepared on 2026-09-16 from `44d4a4a` in the native Linux worktree
-`/root/dev/balatro-horizons-defaults`, branch `refactor/harness-defaults`.
+Prepared on 2026-09-16 from `44d4a4a` in a native Linux worktree on branch
+`refactor/harness-defaults`.
 
 ## Change
 

@@ -1,6 +1,5 @@
 """Local operator controls and separately scoped prospective review routes."""
 
-import asyncio
 import json
 import secrets
 import uuid
@@ -8,10 +7,9 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from balatro_horizons.agents.frozen import restore_protocol
@@ -231,15 +229,6 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
             "error": runs.error,
             "episodes": result,
         }
-
-    @app.get("/api/operator/stream", dependencies=[Depends(operator)])
-    async def stream(request: Request):
-        async def events():
-            while not await request.is_disconnected():
-                yield "data: " + json.dumps(await run_in_threadpool(status)) + "\n\n"
-                await asyncio.sleep(2)
-
-        return StreamingResponse(events(), media_type="text/event-stream")
 
     @app.get("/api/operator/human", dependencies=[Depends(operator)])
     def human():

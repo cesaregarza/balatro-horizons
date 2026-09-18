@@ -9,7 +9,7 @@ it does not prescribe a savings target or rank purchases.
 Edit that Markdown file, then publish it into the current prompt:
 
 ```bash
-/root/dev/balatro-horizons/.venv/bin/python /root/dev/balatro-horizons/scripts/sync_prompt_instructions.py --write
+uv run python scripts/sync_prompt_instructions.py --write
 ```
 
 Without `--write`, the command checks freshness and fails if the embedded copy is

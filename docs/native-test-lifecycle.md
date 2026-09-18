@@ -83,8 +83,8 @@ Before a native patch deployment, the existing installer can snapshot the owned
 instrumentation to a new private Linux directory:
 
 ```bash
-.venv/bin/python scripts/install_candidate.py --root /root/dev/balatro-horizons \
-  --snapshot-runtime --backup /root/dev/balatro-horizons/private/deployments/RELEASE/native
+uv run python scripts/install_candidate.py --root . \
+  --snapshot-runtime --backup private/deployments/RELEASE/native
 ```
 
 This requires the operator's Windows-path authorization. It copies pinned mod

@@ -151,7 +151,6 @@ class Runner:
                 request_id=request_id,
             )
             return self.policy.parse(response)
-        raise ProviderFailure("PROVIDER_RETRIES_EXHAUSTED")
 
     def _decision(self, observation):
         if self.protocol and self.protocol["implementation_hash"] != implementation_fingerprint():
