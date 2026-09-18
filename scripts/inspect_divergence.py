@@ -27,10 +27,13 @@ def differing_paths(left, right, path=""):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artifact", type=Path)
+    parser.add_argument("--expected-state", type=Path,
+                        help="Original private raw-state file when the artifact stores only its hash")
     parser.add_argument("--limit", type=int, default=20)
     args = parser.parse_args()
     data = json.loads(args.artifact.read_text())
-    differences = list(differing_paths(data["expected"], data["actual"]))
+    expected = (json.loads(args.expected_state.read_text()) if args.expected_state else data["expected"])
+    differences = list(differing_paths(expected, data["actual"]))
     print(
         json.dumps(
             {

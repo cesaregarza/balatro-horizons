@@ -11,7 +11,7 @@ from balatro_horizons.operator_client import operator_request
 from balatro_horizons.storage.journal import Store
 
 
-def continuation_plan(store, eid):
+def continuation_plan(store, eid, restoration="checkpoint"):
     terminal = store.summary(eid)
     if not terminal or terminal.get("outcome") not in ("BUDGET_EXHAUSTED", "CAMPAIGN_INTERRUPTED"):
         raise ValueError("PARENT_NOT_COST_EXHAUSTED")
@@ -23,6 +23,8 @@ def continuation_plan(store, eid):
         "original_spent_usd": terminal["cost_usd"],
         "all_attempts_committed_usd": sum(e["cost"] for e in ledger.values()),
         "unsettled_usd": sum(e["cost"] for e in ledger.values() if not e["settled"]),
+        "restoration": restoration,
+        "replayed_actions_per_restoration": terminal["committed_actions"] if restoration == "seed_prefix" else 0,
         "launches": {"restoration_verification": 3, "paid_continuation": 1},
         "reason": "Three fresh restorations and same-action probes, then one restored model run.",
         "funding": "Explicit combined cap includes the original run and all continuation attempts.",
@@ -37,21 +39,24 @@ def main(argv=None):
     mode.add_argument("--verify", action="store_true", help="Three unpaid restoration checks; requires Windows authorization")
     mode.add_argument("--start", action="store_true", help="Start the paid continuation; requires explicit spending authorization")
     parser.add_argument("--combined-cap-usd", type=float)
+    parser.add_argument("--restoration", choices=("checkpoint", "seed_prefix"), default="checkpoint",
+                        help="Explicit verification method; never changed automatically on failure")
     args = parser.parse_args(argv)
     if args.start != (args.combined_cap_usd is not None):
         parser.error("--start requires --combined-cap-usd; other modes do not accept spending caps")
     store = Store(ROOT / "data")
     try:
-        plan = continuation_plan(store, args.episode_id)
+        plan = continuation_plan(store, args.episode_id, args.restoration)
         if args.verify:
             checkpoint = read_checkpoint(store, args.episode_id, plan["decision"])
             action = Baseline("heuristic").decide(
                 {"observation": checkpoint["observation"]}, []
             )["envelope"]["action"]
             result = operator_request("/verify", "POST", {
-                "mode": "checkpoint_probe", "episode_id": args.episode_id,
+                "mode": "seed_prefix_probe" if args.restoration == "seed_prefix" else "checkpoint_probe",
+                "episode_id": args.episode_id,
                 "decision": plan["decision"], "probe_action": action,
-            }, timeout=600)
+            }, timeout=1800 if args.restoration == "seed_prefix" else 600)
             print(json.dumps({k: result[k] for k in (
                 "status", "certificate_id", "completed_repetitions", "failures")}, sort_keys=True))
             return 0 if result["status"] == "passed" else 1

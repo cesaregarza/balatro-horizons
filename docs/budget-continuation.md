@@ -44,3 +44,12 @@ and can stop the continuation. Verification and launch are separate commands;
 successful unpaid checks do not authorize provider spending. A timed-out request
 must be diagnosed before retrying. This path needs its targeted restoration checks,
 not a repeat of the full native gameplay certification suite.
+
+If the native save cannot reproduce the original boundary, explicitly select
+`--restoration seed_prefix` for the plan and verification commands. This uses the
+existing native seed-prefix restoration: start from the private original seed,
+replay the recorded actions and compare public and private state at every boundary,
+then compare the same generated probe in three fresh processes. The resulting
+certificate selects seed-prefix restoration for the child as well. The original
+save and failed certificate records are retained; comparisons are not weakened.
+This method can be slower and never starts automatically after a failed save load.

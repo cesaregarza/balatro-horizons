@@ -5,7 +5,12 @@ import uuid
 from balatro_horizons.actions.validation import validate_action
 from balatro_horizons.config import ROOT
 from balatro_horizons.contracts import ActionEnvelope, Observation
-from balatro_horizons.engine.certification import certificate_path, read_checkpoint
+from balatro_horizons.engine.certification import (
+    certificate_path,
+    prefix_snapshot,
+    read_checkpoint,
+    steps_for,
+)
 from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.engine.native import NativeGame
 from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
@@ -14,7 +19,8 @@ from balatro_horizons.observations.projection import HandleIssuer
 from balatro_horizons.storage.journal import atomic_json, digest, locked, now
 
 
-def verify_continuation_probe(store, config, eid, decision, action, *, repetitions=3):
+def verify_continuation_probe(store, config, eid, decision, action, *, repetitions=3,
+                              restoration="checkpoint"):
     """Three original-state comparisons plus same-action continuation comparisons.
 
     The probe is evaluator evidence only. It never becomes a parent action, an
@@ -22,6 +28,8 @@ def verify_continuation_probe(store, config, eid, decision, action, *, repetitio
     """
     if type(repetitions) is not int or repetitions < 3:
         raise ValueError("AT_LEAST_THREE_REPETITIONS_REQUIRED")
+    if restoration not in ("checkpoint", "seed_prefix"):
+        raise ValueError("UNKNOWN_RESTORATION_MODE")
     events = store.events(eid)
     if not events or events[-1]["type"] != "terminal":
         raise ValueError("PARENT_MUST_BE_TERMINAL")
@@ -35,6 +43,8 @@ def verify_continuation_probe(store, config, eid, decision, action, *, repetitio
     envelope = ActionEnvelope(observation_id=decision, action=action)
     validate_action(envelope, observation)
     native = checkpoint["game"]["kind"] == "native"
+    snapshot = (prefix_snapshot(store, eid, decision, steps_for(store, eid))
+                if restoration == "seed_prefix" else checkpoint["game"])
     source = implementation_fingerprint()
     failures, after_hashes = [], []
     lock_path = ROOT / "private/native-worker.lock" if native else store.root / "verification.lock"
@@ -44,7 +54,7 @@ def verify_continuation_probe(store, config, eid, decision, action, *, repetitio
             try:
                 game = (NativeGame(config.environment, checkpoint["game"]["seed"], calibration=True)
                         if native else FakeGame())
-                game.restore(checkpoint["game"])
+                game.restore(snapshot)
                 game.wait_ready()
                 check_private(game, checkpoint["continuation_hash"], decision)
                 issuer = HandleIssuer.restore(checkpoint["issuer"])
@@ -78,8 +88,10 @@ def verify_continuation_probe(store, config, eid, decision, action, *, repetitio
         "schema_version": 2,
         "certificate_id": uuid.uuid4().hex,
         "episode_id": eid, "decision": decision,
-        "mode": "checkpoint_probe",
+        "mode": "seed_prefix" if restoration == "seed_prefix" else "checkpoint_probe",
         "scope": "original_state_and_generated_same_action_probe",
+        "restoration_snapshot_hash": digest(snapshot),
+        "replayed_actions_per_repetition": sum(s["kind"] == "action" for s in snapshot.get("steps", [])),
         "evidence_kind": store.manifest(eid)["evidence_kind"],
         "status": "failed" if failures else "passed",
         "repetitions": repetitions, "completed_repetitions": len(after_hashes),

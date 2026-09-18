@@ -212,3 +212,54 @@ def test_launch_plan_is_read_only_and_counts_only_targeted_restarts(harness):
     assert plan["unsettled_usd"] == 0
     assert "PRIVATE_FIXTURE" not in json.dumps(plan)
     assert (h.store.episode_path(eid) / "events.jsonl").read_bytes() == before
+
+
+def test_explicit_seed_prefix_replays_boundaries_then_compares_probe(harness, monkeypatch, tmp_path):
+    from balatro_horizons.engine import continuation_probe as probe
+    from balatro_horizons.engine.certification import steps_for
+    from balatro_horizons.engine.replay import restore_seed_prefix
+
+    h = harness
+    eid, terminal, decision, action = stopped(h)
+    original = read_checkpoint(h.store, eid, decision)
+    first = read_checkpoint(h.store, eid, 0)
+    checkpoint = deepcopy(original)
+    checkpoint["game"] = {"kind": "native", "seed": "PRIVATE_FIXTURE", "environment": {}}
+    snapshot = {
+        "kind": "native", "restoration": "seed_prefix", "environment": {},
+        "seed": "PRIVATE_FIXTURE", "episode_id": eid,
+        "initial_issuer": first["issuer"], "initial_continuation_hash": first["continuation_hash"],
+        "steps": steps_for(h.store, eid),
+    }
+    games = []
+
+    class ReplayGame(FakeGame):
+        def __init__(self, environment, seed, *, calibration):
+            super().__init__(seed)
+            self.lock = {}
+            self.loaded = None
+            games.append(self)
+
+        def restore(self, value):
+            self.loaded = value
+            assert value["restoration"] == "seed_prefix"
+            restore_seed_prefix(self, value)
+
+    monkeypatch.setattr(probe, "ROOT", tmp_path)
+    monkeypatch.setattr(probe, "NativeGame", ReplayGame)
+    monkeypatch.setattr(probe, "read_checkpoint", lambda *args: checkpoint)
+    monkeypatch.setattr(probe, "prefix_snapshot", lambda *args: snapshot)
+    result = probe.verify_continuation_probe(h.store, h.config, eid, decision, action,
+                                            restoration="seed_prefix")
+    assert result["status"] == "passed" and result["mode"] == "seed_prefix"
+    assert result["replayed_actions_per_repetition"] == terminal["committed_actions"]
+    assert len(games) == 3 and all(g.committed == terminal["committed_actions"] + 1 for g in games)
+    assert all(g.loaded == snapshot for g in games)
+    assert read_checkpoint(h.store, eid, decision) == original
+
+
+def test_unknown_probe_restoration_is_rejected_before_game_creation(harness):
+    h = harness
+    eid, _, decision, action = stopped(h)
+    with pytest.raises(ValueError, match="UNKNOWN_RESTORATION_MODE"):
+        verify_continuation_probe(h.store, h.config, eid, decision, action, restoration="guess")

@@ -17,6 +17,19 @@ from balatro_horizons.engine.certification import require_environment_certificat
 from balatro_horizons.engine.native import NativeFailure, NativeRejected, WindowsBridge
 
 
+def executable_access(environment):
+    """Read only the configured executable header; no processes or RPC calls."""
+    try:
+        with Path(environment.powershell).open("rb") as stream:
+            valid = stream.read(2) == b"MZ"
+        return {"status": "passed" if valid else "failed", "provider_calls": 0,
+                "game_launches": 0,
+                "reason": None if valid else "WINDOWS_EXECUTABLE_HEADER_INVALID"}
+    except OSError as error:
+        return {"status": "failed", "reason": f"WINDOWS_EXECUTABLE_READ_ERROR_{error.errno}",
+                "provider_calls": 0, "game_launches": 0}
+
+
 def launch_metadata(root):
     """Return only allowlisted metadata; never emit raw logs or process nonces."""
     path = root / "process.json"
@@ -120,8 +133,14 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--restart", action="store_true", help="Restart only an idle runtime")
     mode.add_argument("--workbench", action="store_true", help="Test the live browser worker")
+    mode.add_argument("--executable-access", action="store_true",
+                      help="Read the configured PowerShell header only; no Windows process or game launch")
     parser.add_argument("--preset", choices=("smoke", "pilot"), default="pilot")
     args = parser.parse_args()
+    if args.executable_access:
+        result = executable_access(load_config(args.config).environment)
+        print(json.dumps(result, sort_keys=True))
+        return int(result["status"] != "passed")
     if args.workbench:
         return workbench_startup(args.preset)
     bridge = WindowsBridge(load_config(args.config).environment)

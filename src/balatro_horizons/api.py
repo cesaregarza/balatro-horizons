@@ -74,7 +74,7 @@ class BatchRun(Input):
 
 
 class VerifyInput(Input):
-    mode: Literal["checkpoint", "seed_prefix", "checkpoint_probe"] = "checkpoint"
+    mode: Literal["checkpoint", "seed_prefix", "checkpoint_probe", "seed_prefix_probe"] = "checkpoint"
     episode_id: str
     decision: int = Field(ge=0)
     probe_action: dict | None = None
@@ -350,7 +350,7 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
 
     def verify_idle(data: VerifyInput):
         parent = store.manifest(data.episode_id, True)
-        if data.mode == "checkpoint_probe":
+        if data.mode in ("checkpoint_probe", "seed_prefix_probe"):
             from balatro_horizons.engine.continuation_probe import verify_continuation_probe
 
             if data.probe_action is None:
@@ -358,6 +358,7 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
             return verify_continuation_probe(
                 store, Config.model_validate(parent["config"]), data.episode_id,
                 data.decision, data.probe_action,
+                restoration="seed_prefix" if data.mode == "seed_prefix_probe" else "checkpoint",
             )
         if data.probe_action is not None:
             raise ValueError("PROBE_ACTION_REQUIRES_PROBE_MODE")

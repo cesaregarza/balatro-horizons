@@ -1,5 +1,35 @@
 # Windows runtime connection lifecycle
 
+## Persistent backend credentials
+
+The user service must not depend on a file under `/tmp`, which may disappear
+when WSL restarts. Import a supplied Linux key file without echoing its contents:
+
+```bash
+.venv/bin/python scripts/configure_backend_credentials.py --source /tmp/tmpkey --apply
+systemctl --user daemon-reload
+# Restart only while the worker and native verifier are idle.
+systemctl --user restart balatro-horizons.service
+```
+
+The helper stores only provider credentials in `private/providers.env` with mode
+0600 and installs a user-service drop-in pointing to that persistent file. Without
+`--source`, it preserves existing credentials or creates an empty placeholder so
+the unpaid dashboard can start. Paid admission still requires a key and explicit
+spending limits. Preview mode performs no writes; no mode calls a provider.
+
+If registration appears healthy but Windows execution fails, check file access
+before launching games (requires permission for the configured Windows path):
+
+```bash
+.venv/bin/python scripts/diagnose_native_startup.py --executable-access
+```
+
+This reads only the executable header. A successful result does not certify game
+readiness, but a read failure distinguishes filesystem access from a game failure.
+
+## Session registration
+
 The Linux backend outlives individual WSL/Windows sessions. It must not treat
 the environment inherited when systemd started it as a permanent connection.
 

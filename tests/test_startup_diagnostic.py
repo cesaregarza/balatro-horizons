@@ -15,6 +15,19 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+def test_executable_access_reads_only_header_and_reports_safe_errors(tmp_path):
+    executable = tmp_path / "powershell.exe"
+    environment = Mock(powershell=str(executable))
+    missing = module.executable_access(environment)
+    assert missing["reason"] == "WINDOWS_EXECUTABLE_READ_ERROR_2"
+    executable.write_bytes(b"MZprivate-binary-content")
+    result = module.executable_access(environment)
+    assert result["status"] == "passed" and result["game_launches"] == 0
+    assert "private" not in json.dumps(result)
+    executable.write_bytes(b"no")
+    assert module.executable_access(environment)["status"] == "failed"
+
+
 def test_metadata_omits_private_contents_and_detects_stale_loader_log(tmp_path):
     assert module.launch_metadata(tmp_path) == {"process_record_present": False}
     (tmp_path / "process.json").write_text(
