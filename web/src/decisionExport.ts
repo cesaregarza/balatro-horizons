@@ -1,7 +1,5 @@
 import type { DecisionLedger, DecisionRow } from "./api";
 
-const CI_TYPE_ERROR: string = 1;
-
 export type DecisionExportFormat = "json" | "jsonl";
 
 const rowFields = [
