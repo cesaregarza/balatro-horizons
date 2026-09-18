@@ -8,7 +8,7 @@ from balatro_horizons.storage.journal import digest
 
 IMPLEMENTATION_FILES = (
     "config.py", "contracts.py", "runner.py", "service.py", "review/branches.py",
-    "evaluation/scheduling.py",
+    "evaluation/scheduling.py", "review/budget_continuation.py",
 )
 IMPLEMENTATION_DIRECTORIES = ("engine", "observations", "actions", "agents", "storage")
 
@@ -41,7 +41,8 @@ def native_components(sources=None):
     """
     sources = source_files(ROOT) if sources is None else sources
     prefix = "src/balatro_horizons/"
-    excluded = {"engine/certification.py", "engine/provenance.py", "engine/fake.py"}
+    excluded = {"engine/certification.py", "engine/continuation_probe.py",
+                "engine/provenance.py", "engine/fake.py"}
     result = {}
     for name, content in sources.items():
         relative = name.removeprefix(prefix)

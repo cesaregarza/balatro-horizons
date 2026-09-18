@@ -300,6 +300,36 @@ class RunService:
             )
             return eid
 
+    def continue_budget(self, parent, combined_cap, *, expected_head):
+        from balatro_horizons.review.budget_continuation import prepare_budget_continuation
+
+        with self._guard:
+            if self.thread and self.thread.is_alive():
+                raise ValueError("WORKER_BUSY")
+            plan = prepare_budget_continuation(
+                self.store, parent, combined_cap, expected_head=expected_head
+            )
+            config, manifest = plan["config"], plan["manifest"]
+            amount = self.validate_policy(config, manifest["agent"])
+            if amount is None:
+                raise ValueError("BUDGET_EXTENSION_REQUIRES_PAID_MODEL")
+            if not plan["spending"].affordability(amount)[0]:
+                raise ValueError("BUDGET_EXTENSION_BELOW_RESERVATION")
+            if plan["resume"]["calls"] >= config.budgets.max_provider_calls:
+                raise ValueError("PROVIDER_CALL_LIMIT")
+            offline = manifest["evidence_kind"] == "SYNTHETIC_TEST"
+            if not offline:
+                load_session()
+            eid = self.store.create(manifest, plan["private"])
+            self.stop.clear()
+            self.error = None
+            self.review.expose(eid, "operator_budget_extension", model_identity_seen=True)
+            self._launch(lambda: self.execute(
+                config, manifest["agent"], plan["private"]["seed"], offline=offline,
+                eid=eid, resume=plan["resume"], prefix=plan["prefix"], spending=plan["spending"],
+            ))
+            return eid
+
     def run_batch(self, config, bid, *, offline=False):
         # Serialize invocations of this frozen campaign, including preflight and stops.
         with locked(self.store.root / "batches" / identifier(bid) / "scheduling.lock"):
