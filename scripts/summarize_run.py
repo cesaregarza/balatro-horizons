@@ -57,6 +57,36 @@ def run_status(store, eid):
         )
     for key in ("cost_usd", "provider_calls", "committed_actions"):
         result[key] = summary.get(key)
+    latest = next((event for event in reversed(public["events"]) if event["type"] == "observation"), None)
+    if latest:
+        observation = latest["payload"]
+        decision = observation["observation_id"]
+        from balatro_horizons.agents.frozen import restore_protocol
+        from balatro_horizons.engine.certification import require_checkpoint_certificate
+
+        continuation = {"decision": decision, "phase": observation["phase"],
+                        "progress": observation["state"]["progress"]}
+        path = store.episode_path(eid, True) / f"checkpoint-{decision}.json"
+        continuation["checkpoint_saved"] = path.is_file()
+        if path.is_file():
+            checkpoint = json.loads(path.read_text())
+            continuation.update(checkpoint_cost=checkpoint.get("cost"), checkpoint_calls=checkpoint.get("calls"))
+            for name, check in (
+                ("protocol", lambda: restore_protocol(store, checkpoint)),
+                ("restoration", lambda: require_checkpoint_certificate(store, eid, decision)),
+            ):
+                try:
+                    check()
+                    continuation[name] = "verified"
+                except (ValueError, FileNotFoundError) as error:
+                    code = str(error)
+                    continuation[name] = code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", code) else "UNAVAILABLE"
+        result["continuation"] = continuation
+    context = summary.get("cost_context", {})
+    result["cost_context"] = {key: context[key] for key in (
+        "episode_cap_usd", "episode_committed_usd", "campaign_cap_usd",
+        "campaign_committed_usd", "required_usd", "unsettled_usd",
+    ) if key in context}
     scan(result, [store.manifest(eid, True).get("seed")])
     return result
 

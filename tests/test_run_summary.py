@@ -215,3 +215,17 @@ def test_cleared_round_keeps_the_target_that_was_played_against(tmp_path):
     report = renderer.render_decisions(result)
     assert "+12 chips; 12/10 total" in report
     assert "12/0 total" not in report
+
+
+def test_status_distinguishes_saved_checkpoint_from_certified_restore(recorded_run):
+    store, eid = recorded_run
+    store.private_json(eid, "checkpoint-1.json", {
+        "cost": 4.6, "calls": 146, "game": {"blob": "PRIVATE_SEED_SENTINEL"},
+    })
+    result = summary_script.run_status(store, eid)
+    assert result["continuation"]["decision"] == 1
+    assert result["continuation"]["checkpoint_saved"] is True
+    assert result["continuation"]["restoration"] == "CHECKPOINT_NOT_CERTIFIED"
+    assert result["continuation"]["protocol"] == "AGENT_PROTOCOL_SNAPSHOT_MISSING"
+    assert result["continuation"]["checkpoint_cost"] == 4.6
+    assert "PRIVATE_SEED_SENTINEL" not in json.dumps(result)

@@ -89,7 +89,8 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     }
 
 
-def restore_protocol(store, checkpoint):
+def read_protocol(store, checkpoint):
+    """Read hash-checked frozen data without accepting it for execution."""
     reference = checkpoint.get("agent_protocol")
     if not isinstance(reference, dict):
         raise ValueError("AGENT_PROTOCOL_SNAPSHOT_MISSING")
@@ -101,6 +102,30 @@ def restore_protocol(store, checkpoint):
         raise ValueError("AGENT_PROTOCOL_SNAPSHOT_MISSING") from None
     if digest(bundle) != reference.get("hash") or bundle.get("version") != "agent-protocol-v1":
         raise ValueError("AGENT_PROTOCOL_SNAPSHOT_MISMATCH")
+    return bundle
+
+
+def restore_protocol(store, checkpoint):
+    bundle = read_protocol(store, checkpoint)
+    reference = checkpoint["agent_protocol"]
+    extension = checkpoint.get("budget_extension")
+    if extension is not None:
+        from balatro_horizons.agents.budget import validate_caps
+
+        cap = extension.get("combined_cap_usd")
+        validate_caps(cap, cap)
+        if (extension.get("version") != "budget-extension-v1"
+                or extension.get("parent_protocol") != reference
+                or extension.get("recorded_implementation_hash") != bundle["implementation_hash"]
+                or extension.get("implementation_hash") != implementation_fingerprint()
+                or cap <= bundle["episode_limits"]["max_episode_cost_usd"]):
+            raise ValueError("BUDGET_EXTENSION_PROTOCOL_MISMATCH")
+        # A deliberate intervention creates a new protocol. Original snapshots,
+        # prompts, tools and model settings remain immutable. Source transitions
+        # are explicit; ordinary branches still reject changed implementations.
+        bundle["episode_limits"]["max_episode_cost_usd"] = cap
+        bundle["implementation_hash"] = implementation_fingerprint()
+        bundle["budget_extension"] = deepcopy(extension)
     if bundle["implementation_hash"] != implementation_fingerprint():
         raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")
     return bundle
