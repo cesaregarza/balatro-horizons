@@ -65,6 +65,7 @@ def test_launch_retries_only_pre_submission_eio(monkeypatch, errors, calls, succ
 
     spawn = Mock(side_effect=[OSError(5, "EIO")] * errors + [Mock()])
     monkeypatch.setattr(native.subprocess, "Popen", spawn)
+    monkeypatch.setattr(native, "bridge_environment", lambda: {"PATH": "/test"})
     monkeypatch.setattr(native.time, "sleep", Mock())
     bridge = native.WindowsBridge(Environment())
     if success:
@@ -81,6 +82,7 @@ def test_launch_does_not_retry_other_errors(monkeypatch):
 
     spawn = Mock(side_effect=OSError(13, "denied"))
     monkeypatch.setattr(native.subprocess, "Popen", spawn)
+    monkeypatch.setattr(native, "bridge_environment", lambda: {"PATH": "/test"})
     with pytest.raises(NativeFailure, match="WINDOWS_BRIDGE_OS_ERROR_13"):
         native.WindowsBridge(Environment()).command("launch")
     spawn.assert_called_once()

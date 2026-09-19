@@ -165,7 +165,13 @@ export async function api<T = any>(
   });
   const data = await response.json();
   if (!response.ok)
-    throw new Error(data.error || data.detail || "Request failed");
+    throw new Error(
+      String(data.error || data.detail || "Request failed").startsWith(
+        "WINDOWS_SESSION_",
+      )
+        ? "Windows runtime connection needs refreshing. Run scripts/configure_workbench_session.py --apply from a Windows-connected WSL terminal. No episode was started."
+        : data.error || data.detail || "Request failed",
+    );
   return data;
 }
 

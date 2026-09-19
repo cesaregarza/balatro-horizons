@@ -11,6 +11,7 @@ from pathlib import Path
 
 from balatro_horizons.config import ROOT
 from balatro_horizons.engine.native_state import cards, normalize
+from balatro_horizons.engine.windows_context import bridge_environment
 
 
 class NativeFailure(RuntimeError):
@@ -71,6 +72,7 @@ class WindowsBridge:
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                             start_new_session=True,
+                            env=bridge_environment(),
                         )
                         break
                     except OSError as error:
@@ -86,7 +88,10 @@ class WindowsBridge:
                 text=True,
                 capture_output=True,
                 timeout=self.env.timeout_seconds + 15,
+                env=bridge_environment(),
             )
+        except ValueError as error:
+            raise NativeFailure(str(error)) from None
         except OSError as error:
             raise NativeFailure("WINDOWS_BRIDGE_OS_ERROR_" + str(error.errno)) from None
         except subprocess.TimeoutExpired:
@@ -110,6 +115,7 @@ class WindowsBridge:
                         stdout=subprocess.PIPE,
                         stderr=subprocess.DEVNULL,
                         bufsize=0,
+                        env=bridge_environment(),
                     )
                     break
                 except OSError as error:

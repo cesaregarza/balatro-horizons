@@ -136,11 +136,13 @@ def test_intervention_modes_use_shared_human_api(store, config, episode, mode):
 
 
 def test_direct_human_runs_cannot_be_scored_as_autonomous(store, config, monkeypatch):
+    from balatro_horizons import service as service_module
     from balatro_horizons.review.service import ReviewService
     from balatro_horizons.service import RunService
 
     service = RunService(store, ReviewService(store))
     monkeypatch.setattr(service, "_launch", lambda task: None)
+    monkeypatch.setattr(service_module, "load_session", lambda: {})
     eid = service.start(config, "human", "TEST_PANEL_SEED", offline=False)
     assert store.manifest(eid)["evaluation_eligible"] is False
     assert store.manifest(eid)["assistance"] == "human_takeover"

@@ -13,6 +13,7 @@ from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import ROOT
 from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.engine.native import NativeGame
+from balatro_horizons.engine.windows_context import load_session
 from balatro_horizons.evaluation.scheduling import batch_attempts, reconcile_stop, record_stop
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.runner import OperatorAbort, Runner
@@ -158,6 +159,8 @@ class RunService:
         # NativeGame's constructor launches the game. Validate and capture prompt
         # bytes before constructing it; ordinary branches use their original snapshot.
         prompt_bytes = None if resume else load_prompt(ROOT, getattr(policy, "interface", "operate_v1"))
+        if not offline and eid is None:
+            load_session()
         if operations:
             policy = InterventionPolicy(operations, policy)
         if human_steps:
@@ -236,6 +239,8 @@ class RunService:
             interface = (config.models[agent].settings.get("harness_interface", "operate_v1")
                          if agent in config.models else "operate_v1")
             load_prompt(ROOT, interface)
+            if not offline:
+                load_session()
             eid = self.store.create(
                 {
                     "evidence_kind": "SYNTHETIC_TEST" if offline else "NATIVE",
@@ -282,6 +287,8 @@ class RunService:
             if chosen not in ("human", manifest["agent"]):
                 raise ValueError("PROTOCOL_CHANGE_INTERVENTION_NOT_SUPPORTED")
             self.validate_policy(config, chosen)  # Validate before immutable child records.
+            if manifest["evidence_kind"] != "SYNTHETIC_TEST":
+                load_session()
             eid, checkpoint, prefix = prepare_branch(self.store, config, parent, decision, mode)
             self.stop.clear()
             seed = self.store.manifest(parent, True)["seed"]
