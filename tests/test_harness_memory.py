@@ -6,7 +6,8 @@ from copy import deepcopy
 import pytest
 
 from balatro_horizons.agents.focused import context_bound
-from balatro_horizons.agents.protocol import decision_context
+from balatro_horizons.agents.notebook import RunNotebook, fold_notebook, restore_notebook
+from balatro_horizons.agents.protocol import ActionResult, decision_context, helper
 from balatro_horizons.agents.providers import context_payload
 from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.agents.working_memory import (
@@ -78,6 +79,45 @@ def annotated(action, key="plan", text="Keep this conclusion"):
         return {**action(ctx), "note_update": {"key": key, "text": text}}
 
     return operation
+
+
+def test_notebook_unicode_accounting_updates_and_delete_are_atomic():
+    book = RunNotebook(limit=10)
+    change, _ = book.propose("set_run_note", "é", "猫" * 9)
+    book.apply(change)
+    original = book.snapshot()
+    change, result = book.propose("set_run_note", "é", "猫" * 10)
+    assert change is None and result["error"] == "RUN_NOTEBOOK_LIMIT"
+    assert book.snapshot() == original
+    for kind, key, value in (
+        ("set_run_note", "é", "short"),
+        ("set_run_note", "x", "ok"),
+        ("delete_run_note", "é", None),
+    ):
+        change, _ = book.propose(kind, key, value)
+        book.apply(change)
+    assert book.entries == {"x": "ok"}
+    assert book.propose("delete_run_note", "missing")[1]["error"] == "RUN_NOTE_NOT_FOUND"
+    for key in ("", " ", "x\n", "a" * 65):
+        assert book.propose("set_run_note", key, "text")[1]["error"] == "INVALID_RUN_NOTE_KEY"
+
+
+def test_notebook_replay_rejects_missing_revisions_and_malformed_mutations():
+    book = RunNotebook()
+    change, _ = book.propose("set_run_note", "x", "y")
+    for corrupted in (
+        None,
+        {**change, "revision": 2},
+        {**change, "revision": True},
+        {**change, "text": "different"},
+        {**change, "extra": "unrecognized"},
+    ):
+        with pytest.raises(ValueError, match="RUN_NOTEBOOK_JOURNAL_MISMATCH"):
+            book.apply(corrupted)
+        assert book.entries == {} and book.revision == 0
+    book.apply(change)
+    with pytest.raises(ValueError, match="RUN_NOTEBOOK_JOURNAL_MISMATCH"):
+        book.apply(change)
 
 
 def test_recent_actions_results_and_helpers_survive_without_note_writes(store, config):
@@ -163,6 +203,22 @@ def test_note_storage_failure_prevents_game_action(store, config, monkeypatch):
     result = runner.run()
     assert result["outcome"] == "INFRASTRUCTURE_FAILURE"
     assert result["committed_actions"] == 0 and runner.notebook.entries == {}
+
+
+def test_helper_note_stays_durable_when_acknowledgment_write_fails(store, config, monkeypatch):
+    original = store.append
+
+    def append(eid, kind, payload, **kwargs):
+        if kind == "helper_result":
+            raise OSError("simulated failure after durable note write")
+        return original(eid, kind, payload, **kwargs)
+
+    monkeypatch.setattr(store, "append", append)
+    result = Runner(store, config, FakeGame(), WorkingScript(note("x", "y"))).run()
+    assert result["outcome"] == "INFRASTRUCTURE_FAILURE"
+    events = store.events(result["episode_id"])
+    assert fold_notebook(events).entries == {"x": "y"}
+    assert read_checkpoint(store, result["episode_id"], 0)["run_notebook"]["entries"] == {}
 
 
 def public_event(kind, payload, decision=0):
@@ -257,6 +313,9 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
     assert result["reason"] == "AGENT_ABORT"
     view = child_policy.contexts[0]["working_memory"]
     assert view == checkpoint["working_memory"]
+    assert child_policy.contexts[0]["run_notebook"]["entries"] == {
+        "plan": "Keep this conclusion"
+    }
     assert view["frames"][0]["episode_id"] == root
     assert "FUTURE_PARENT" not in json.dumps(view)
     assert verify_checkpoint(store, config, child, 1)["status"] == "passed"
@@ -264,11 +323,65 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
     grand = WorkingScript()
     Runner(store, config, FakeGame(), grand).run(eid=grandchild, resume=snapshot, history_prefix=ancestors)
     assert grand.contexts[0]["working_memory"] == view
+    assert grand.contexts[0]["run_notebook"]["entries"] == {
+        "plan": "Keep this conclusion"
+    }
+    assert grand.contexts[0]["run_notebook"]["revision"] == snapshot["run_notebook"]["revision"]
     assert "FUTURE_CHILD" not in json.dumps(grand.contexts[0])
     corrupt = deepcopy(snapshot["working_memory"])
     corrupt["frames"][0]["helpers"][0]["result"] = {"result": "999"}
     with pytest.raises(ValueError, match="WORKING_MEMORY_SNAPSHOT_MISMATCH"):
         restore_working_memory(corrupt, ancestors, snapshot["observation"])
+    tampered_notebook = deepcopy(snapshot["run_notebook"])
+    tampered_notebook["entries"]["plan"] = "tampered"
+    with pytest.raises(ValueError, match="RUN_NOTEBOOK_SNAPSHOT_MISMATCH"):
+        restore_notebook(tampered_notebook, ancestors)
+
+
+def read_action_result(events, observation, **kwargs):
+    chunks = []
+    offset = 0
+    while True:
+        result = helper(
+            ActionResult(kind="action_result", byte_offset=offset, **kwargs),
+            events,
+            {},
+            observation,
+        )
+        if "error" in result:
+            return result
+        chunks.append(result["content"])
+        if result["complete"]:
+            return {"value": json.loads("".join(chunks)), "references": result["references"]}
+        offset = result["next_offset"]
+
+
+def test_action_result_uses_exact_public_cutoff(store, config):
+    policy = WorkingScript(select, play, note("later", "do not include in old receipt"))
+    result = Runner(store, config, FakeGame(), policy).run()
+    events = store.events(result["episode_id"])
+    observations = [
+        Observation.model_validate(event["payload"])
+        for event in events
+        if event["type"] == "observation"
+    ]
+    receipt = read_action_result(events, observations[2])
+    assert receipt["value"]["action"]["type"] == "play_hand"
+    assert receipt["value"]["recorded_decision_note"].startswith("Recorded note")
+    assert receipt["value"]["hand_score"] is None
+    assert receipt["value"]["scoring_breakdown"] is None
+    assert receipt["value"]["observed_result"] == observations[2].last_action.model_dump(
+        mode="json"
+    )
+    before = read_action_result(events, observations[2], decision_id=1, section="before")
+    assert before["value"]["state"] == observations[1].state.model_dump(mode="json")
+    earlier = read_action_result(events, observations[1])
+    assert earlier["value"]["action"]["type"] == "select_blind"
+    for decision_id in (1, 99):
+        assert read_action_result(events, observations[1], decision_id=decision_id)["error"] == (
+            "ACTION_RESULT_NOT_AVAILABLE"
+        )
+    assert "do not include" not in json.dumps(earlier)
 
 
 def test_prospective_review_and_export_keep_current_edit_behind_action_reveal(store, config):

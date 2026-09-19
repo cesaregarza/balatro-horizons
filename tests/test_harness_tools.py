@@ -8,10 +8,13 @@ import pytest
 from provider_transport import with_input_count
 from test_boundary import project
 
+from balatro_horizons.actions.validation import validate_action
+from balatro_horizons.agents.baselines import Baseline, baseline_observation, candidates
 from balatro_horizons.agents.protocol import Operation, context
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure
 from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.config import ROOT, ModelConfig, load_config
+from balatro_horizons.contracts import ActionEnvelope
 from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
@@ -51,6 +54,25 @@ def test_catalog_is_static_while_allowed_actions_follow_the_observation():
     assert blind["tools"] == hand["tools"]
     assert "select_blind" not in hand["allowed_tools"]
     assert {"play_hand", "discard"} <= set(hand["allowed_tools"])
+
+
+def test_baselines_keep_canonical_action_validation_in_compact_shop_view():
+    game = FakeGame()
+    game.phase = "SHOP"
+    observation = project(game.observe_private())
+    delivered = context(observation)
+    choices = [
+        candidate.model_dump(mode="json")
+        for candidate in candidates(baseline_observation(delivered["observation"]))
+    ]
+    assert choices == [candidate.model_dump(mode="json") for candidate in candidates(observation)]
+    assert {choice["action"]["type"] for choice in choices} == {"buy", "leave_shop"}
+    assert all(choice["action"].get("mode") != "buy_and_use" for choice in choices)
+    for seed in range(20):
+        operation = Baseline("random_legal", seed).decide(delivered, [])
+        validate_action(ActionEnvelope.model_validate(operation["envelope"]), observation)
+    operation = Baseline("heuristic").decide(delivered, [])
+    validate_action(ActionEnvelope.model_validate(operation["envelope"]), observation)
 
 
 def test_flat_decode_accepts_only_the_current_tool_shapes():

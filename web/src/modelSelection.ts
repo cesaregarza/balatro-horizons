@@ -7,12 +7,11 @@ export type ModelConfig = {
   cache_write_input_usd_per_million?: number | null;
   pricing_date: string;
   settings: Record<string, string | number>;
-  interface?: string;
 };
 
-export function harnessLabel(model: ModelConfig) {
-  return model.interface
-    ? `Legacy harness (${String(model.interface)})`
+export function harnessLabel(recordedInterface?: string | null, current = false) {
+  return recordedInterface && !current
+    ? `Legacy harness (${recordedInterface})`
     : "Current harness";
 }
 
