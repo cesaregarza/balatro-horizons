@@ -65,8 +65,8 @@ def main():
             parser.error("Mounted paths are outside scope")
     config = load_config(args.config)
     model, limits = config.models[args.model], config.budgets
-    if model.provider != "openai" or model.settings.get("harness_interface") != "tools_v4":
-        parser.error("This probe requires the OpenAI tools_v4 interface")
+    if model.provider != "openai":
+        parser.error("This probe requires an OpenAI model")
     if not (
         limits.max_episode_cost_usd
         and limits.max_batch_cost_usd

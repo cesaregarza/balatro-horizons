@@ -222,7 +222,6 @@ def main():
                 else "openai_provider_smoke",
                 "smoke_campaign": args.campaign,
                 "campaign_revision": args.revision or "original",
-                "harness_interface": model.settings.get("harness_interface", "operate_v1"),
             },
         )
         events = store.events(summary["episode_id"])

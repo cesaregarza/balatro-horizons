@@ -39,7 +39,6 @@ def candidates(store, eid, config, model_name):
             ctx, delivered = decision_context(
                 obs,
                 previous["exchanges"],
-                interface=model.settings["harness_interface"],
                 skills=skills,
                 byte_limit=config.budgets.max_request_bytes,
             )

@@ -14,7 +14,7 @@ spec.loader.exec_module(module)
 
 
 def test_registration_preserves_existing_settings_and_rejects_replacement():
-    config = load_config(ROOT / "configs/luna-focused-smoke.yaml").public()
+    config = load_config(ROOT / "configs/luna-smoke.yaml").public()
     before = deepcopy(config)
     model = {
         **config["models"]["luna"],

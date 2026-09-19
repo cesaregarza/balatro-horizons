@@ -1,8 +1,9 @@
 # OpenAI harness and Luna smoke
 
-The [named-tools revision](harness-tools-v2.md) adds phase-specific gameplay tools,
-on-demand public inspection, and a smaller automatic context. This page records
-the original `operate_v1` smoke and its results; its preset remains reproducible.
+The current harness uses phase-specific gameplay tools, on-demand public
+inspection, and compact automatic context. This page is a historical
+record of the first OpenAI smoke. Retired prompt and preset definitions are
+preserved in the [changelog](../CHANGELOG.md), not as reproducible runtime assets.
 
 The existing shared runner uses the direct OpenAI Responses API. The Luna preset
 is `configs/luna-smoke.yaml`: `gpt-5.6-luna`, medium reasoning effort, returned

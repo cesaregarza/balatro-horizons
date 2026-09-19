@@ -1,17 +1,22 @@
 # Model selection in the workbench
 
-The source selector offers **Current harness (v6)** as the only choice for new runs in the run form and Models & budgets. V6 retains v5's on-demand context, provider continuation within a decision, prompt caching for supported OpenAI models, and cost accounting. It adds keyed run notes, direct action-result retrieval, and bounded helper exhaustion. These capabilities support notebook-style runs without changing the exact provider/model and reasoning-effort selection. Configured aliases for the same provider/model appear once. Saved defaults supply the model's effort and pricing; historical defaults, including v5, remain clearly labeled.
+New runs use one current harness in the run form and Models & budgets. It provides on-demand context, provider continuation within a decision, prompt caching for supported OpenAI models, cost accounting, keyed run notes, direct action-result retrieval, and bounded helper exhaustion. These capabilities support notebook-style runs without changing the exact provider/model and reasoning-effort selection. Configured aliases for the same provider/model appear once. Saved defaults supply the model's effort and pricing; historical recorded runs remain viewable.
 
 Save model defaults persists the selection without starting a run. Starting a model run saves the selection first, then submits the resulting model configuration key. Both operations use the existing settings and run services. Settings are merged with a fresh server configuration to preserve spending authorization, limits, and skill selection. A failed settings save prevents launch. The server still enforces credentials, paid-execution authorization, budget ceilings, and worker isolation.
 
-Defaults are stored under a deterministic provider/model key. Historical aliases remain available to existing manifests, branches, and frozen batches. V5 aliases retain their historical preference ahead of older interfaces, while v6 aliases are preferred when present; an explicitly saved canonical provider/model key still wins. Each episode freezes its configuration and agent protocol. New batch plans select models with checkboxes and freeze the current harness with their saved effort and pricing, including models whose previous default used a retired interface. Existing plans are unchanged.
+Defaults are stored under a deterministic provider/model key. Historical aliases remain available to existing manifests, branches, and frozen batches, while an explicitly saved canonical provider/model key wins. Each episode freezes its configuration and agent protocol. New batch plans select models with checkboxes and freeze the current harness with their saved effort and pricing. Existing plans are unchanged.
 
-`operate_v1` and `tools_v2` through `tools_v5` are historical interfaces and are not selectable for new runs. Backend support remains for historical configuration and continuation compatibility. The current harness requires a recognized compatible OpenAI model and configured read/write rates; a missing price blocks launch or batch creation rather than falling back to an obsolete interface. Anthropic retains its own provider settings without OpenAI cache requirements. All interfaces use tools to submit moves; there is no tools-off checkbox.
+Retired interface prompts and configurations are archived in the
+[changelog](../CHANGELOG.md), not selectable or accepted for new runs. The current
+harness requires a recognized compatible OpenAI model and configured read/write
+rates; a missing price blocks launch or batch creation. Anthropic retains its own
+provider settings without OpenAI cache requirements. The harness uses tools to
+submit moves; there is no tools-off checkbox.
 
-The v6 selector and backend were deployed together on September 17 after the
-offline checks and one consolidated native certification suite passed. Existing
-model settings and spending limits were preserved. See the
-[v6 deployment record](run-notebook-v1.md#local-deployment-record).
+The selector and backend were deployed together on September 17 after the offline
+checks and one consolidated native certification suite passed. Existing model
+settings and spending limits were preserved. The historical deployment record is
+summarized in the [changelog](../CHANGELOG.md).
 
 For GPT-5.6, the effort choices are none, low, medium, high, xhigh, and max. GPT-6 Astra offers low, medium, high, xhigh, and max (no none). Other model families retain their pinned settings instead of being assigned unverified effort options. Anthropic retains its configured thinking budget. [OpenAI's model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-terra) was checked on 2026-09-15.
 
@@ -20,10 +25,10 @@ Validation covers TypeScript and the production build; browser checks for alias 
 The Playwright server command now puts `--data-dir` after `review`. The old order was overridden by the review subparser's default and unintentionally used the main data directory. Earlier test-created episodes remain labeled synthetic; temporary model settings were restored and compared with the live server. Subsequent verification uses `web/.e2e-data`.
 
 The earlier selector cleanup changed only presentation and could deploy through
-static assets. V6 also changes executable harness behavior and its native
+static assets. Executable harness changes also alter the native
 implementation fingerprint. It requires matching native certification and an idle
 worker before the backend and frontend are deployed together; copying only the
-new selector would expose an unsupported interface on the old backend.
+new selector would expose unsupported behavior on the old backend.
 
 ## Sol and Astra registration (2026-09-15)
 

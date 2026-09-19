@@ -7,26 +7,13 @@ export type ModelConfig = {
   cache_write_input_usd_per_million?: number | null;
   pricing_date: string;
   settings: Record<string, string | number>;
+  interface?: string;
 };
 
-export const CURRENT_HARNESS = "tools_v7";
-export const harnesses = [[CURRENT_HARNESS, "Current harness (v7)"]] as const;
-
-// Historical settings still need a stable preference order when aliases are
-// deduplicated. This list does not define selectable harnesses.
-const harnessOrder = [
-  "operate_v1",
-  "tools_v2",
-  "tools_v3",
-  "tools_v4",
-  "tools_v5",
-  "tools_v6",
-  CURRENT_HARNESS,
-];
-
 export function harnessLabel(model: ModelConfig) {
-  const id = String(model.settings.harness_interface ?? "operate_v1");
-  return id === CURRENT_HARNESS ? harnesses[0][1] : `Legacy harness (${id})`;
+  return model.interface
+    ? `Legacy harness (${String(model.interface)})`
+    : "Current harness";
 }
 
 export function modelKey(model: Pick<ModelConfig, "provider" | "model">) {
@@ -42,19 +29,13 @@ export function modelLabel(model: ModelConfig) {
   return `${name} · ${model.provider === "openai" ? "OpenAI" : "Anthropic"}`;
 }
 
-// Saved defaults win. Before defaults exist, prefer the latest configured
-// harness for each exact provider/model pair. Keep historical aliases intact.
+// Saved defaults win; otherwise retain the first configured exact model pair.
 export function modelCatalog(models: Record<string, ModelConfig>) {
   const result: Record<string, ModelConfig> = {};
-  const rank = (model: ModelConfig) =>
-    harnessOrder.indexOf(
-      String(model.settings.harness_interface ?? "operate_v1"),
-    );
   for (const model of Object.values(models)) {
     const key = modelKey(model);
     if (models[key]) result[key] = models[key];
-    else if (!result[key] || rank(model) > rank(result[key]))
-      result[key] = model;
+    else if (!result[key]) result[key] = model;
   }
   return result;
 }
@@ -92,12 +73,7 @@ export function supportsCachedHarness(model: ModelConfig) {
 export function configureModel(
   model: ModelConfig,
   effort: string,
-  harness: string,
 ): ModelConfig {
-  if (harness !== CURRENT_HARNESS)
-    throw new Error(
-      "Legacy harnesses are unavailable for new runs. Use the current harness.",
-    );
   if (model.provider === "openai" && !supportsCachedHarness(model))
     throw new Error(
       "The current harness requires a supported OpenAI model with cache read/write pricing configured.",
@@ -107,11 +83,23 @@ export function configureModel(
   return {
     ...model,
     settings: {
-      ...model.settings,
-      harness_interface: harness,
+      ...supportedSettings(model.provider, model.settings),
       ...(model.provider === "openai" && effort
         ? { reasoning_effort: effort }
         : {}),
     },
   };
+}
+
+export function supportedSettings(
+  provider: ModelConfig["provider"],
+  settings: Record<string, unknown>,
+) {
+  const allowed =
+    provider === "openai"
+      ? new Set(["temperature", "reasoning_effort", "reasoning_summary"])
+      : new Set(["temperature", "thinking_budget"]);
+  return Object.fromEntries(
+    Object.entries(settings).filter(([key]) => allowed.has(key)),
+  );
 }

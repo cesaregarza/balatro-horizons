@@ -48,7 +48,8 @@ def harness(store, monkeypatch):
         calls.append(body)
         if fail_transport:
             raise httpx.ReadTimeout("synthetic transport failure")
-        context = json.loads(body["input"][0]["content"])
+        message = next(item for item in body["input"] if item.get("role") == "user")
+        context = json.loads(message["content"])
         operation = operations[0] if operations else Baseline("heuristic").decide(context, [])
         return httpx.Response(200, json=response(operation))
 
@@ -96,7 +97,7 @@ def harness(store, monkeypatch):
 
 def test_T01_unfunded_slot_is_unresolved_and_stop_survives_restart(harness, tmp_path):
     h = harness
-    h.config.budgets.max_batch_cost_usd = 0.0184
+    h.config.budgets.max_batch_cost_usd = 0.0200384
     plan = h.plan()
     bid = plan["batch_id"]
     h.service().run_batch(h.config, bid, offline=True)
@@ -123,7 +124,7 @@ def test_T01_unfunded_slot_is_unresolved_and_stop_survives_restart(harness, tmp_
 
 def test_T02_campaign_interruption_keeps_cost_and_unresolved_slot(harness, tmp_path):
     h = harness
-    h.config.budgets.max_batch_cost_usd = 0.0192
+    h.config.budgets.max_batch_cost_usd = 0.0208384
     plan = h.plan(3)
     h.service().run_batch(h.config, plan["batch_id"], offline=True)
     attempts = batch_attempts(h.store, plan)
@@ -144,7 +145,7 @@ def test_T02_campaign_interruption_keeps_cost_and_unresolved_slot(harness, tmp_p
 
 def test_T03_episode_only_limit_resolves_slots_without_stopping_batch(harness, tmp_path):
     h = harness
-    h.config.budgets.max_episode_cost_usd = 0.017
+    h.config.budgets.max_episode_cost_usd = 0.0186384
     plan = h.plan()
     h.service().run_batch(h.config, plan["batch_id"], offline=True)
     for attempt in batch_attempts(h.store, plan):
@@ -160,7 +161,8 @@ def test_T03_episode_only_limit_resolves_slots_without_stopping_batch(harness, t
 
 def test_T04_both_caps_resolve_current_slot_and_stickily_stop(harness, tmp_path):
     h = harness
-    h.config.budgets.max_episode_cost_usd = h.config.budgets.max_batch_cost_usd = 0.017
+    h.config.budgets.max_episode_cost_usd = 0.0186384
+    h.config.budgets.max_batch_cost_usd = 0.0186384
     plan = h.plan()
     bid = plan["batch_id"]
     h.service().run_batch(h.config, bid, offline=True)
@@ -187,9 +189,9 @@ def test_T05_transport_replacement_preserves_unknown_usage_reservations(harness,
     row = report["agents"]["luna"]
     assert row["attempt_outcomes"] == {"INFRASTRUCTURE_FAILURE": 2}
     assert row["valid"] == 0 and row["unresolved"] == 2
-    assert row["all_attempt_cost_usd"] == pytest.approx(0.032768)
+    assert row["all_attempt_cost_usd"] == pytest.approx(0.0360448)
     assert report["scheduling_stop"]["stage"] == "preflight"
-    assert report["scheduling_stop"]["cost_context"]["unsettled_usd"] == 0.032768
+    assert report["scheduling_stop"]["cost_context"]["unsettled_usd"] == 0.0360448
     assert len(h.games) == 2 and len(h.calls) == 2
 
 
@@ -241,7 +243,7 @@ def test_T08_recover_committed_terminal_before_index_or_stop_write(
     tmp_path,
 ):
     h = harness
-    h.config.budgets.max_batch_cost_usd = 0.017
+    h.config.budgets.max_batch_cost_usd = 0.0186384
     plan = h.plan()
     bid = plan["batch_id"]
 
@@ -329,7 +331,7 @@ def test_T10_invalid_paid_configuration_never_constructs_episode_or_game(
 
 def test_T11_real_report_and_export_include_stop_and_interrupted_costs(harness, tmp_path):
     h = harness
-    h.config.budgets.max_batch_cost_usd = 0.0192
+    h.config.budgets.max_batch_cost_usd = 0.0208384
     plan = h.plan(3)
     bid = plan["batch_id"]
     h.service().run_batch(h.config, bid, offline=True)
@@ -374,7 +376,7 @@ def test_T12_stopped_batch_still_validates_frozen_config_and_evidence_kind(harne
     [
         ("max_game_actions", 1, "GAME_ACTION_LIMIT"),
         ("max_provider_calls", 1, "PROVIDER_CALL_LIMIT"),
-        ("max_helper_calls_per_decision", 0, "HELPER_CALL_LIMIT"),
+        ("max_helper_calls_per_decision", 0, "AGENT_PROTOCOL_FAILURE"),
     ],
 )
 def test_T12_non_cost_resource_limits_remain_valid_outcomes(
@@ -388,7 +390,11 @@ def test_T12_non_cost_resource_limits_remain_valid_outcomes(
     h.service().run_batch(h.config, plan["batch_id"], offline=True)
     for row in batch_attempts(h.store, plan):
         assert row["summary"]["reason"] == reason
-        assert row["summary"]["outcome"] == "BUDGET_EXHAUSTED"
+        assert row["summary"]["outcome"] == (
+            "AGENT_PROTOCOL_FAILURE"
+            if limit == "max_helper_calls_per_decision"
+            else "BUDGET_EXHAUSTED"
+        )
     report = report_batch(h.store, plan["batch_id"], tmp_path / "report")
     assert report["scheduling_stop"] is None
     assert report["agents"]["luna"]["valid"] == 2
@@ -621,7 +627,7 @@ def test_terminal_committed_before_stop_write_failure_is_recovered(harness, monk
     from balatro_horizons.evaluation import scheduling
 
     h = harness
-    h.config.budgets.max_batch_cost_usd = 0.017
+    h.config.budgets.max_batch_cost_usd = 0.0186384
     plan = h.plan()
     write = scheduling.atomic_json
     monkeypatch.setattr(scheduling, "atomic_json", Mock(side_effect=OSError("simulated crash")))
@@ -637,7 +643,7 @@ def test_terminal_committed_before_stop_write_failure_is_recovered(harness, monk
 
 def test_committed_terminal_takes_precedence_over_execute_exception(harness, monkeypatch):
     h = harness
-    h.config.budgets.max_batch_cost_usd = 0.017
+    h.config.budgets.max_batch_cost_usd = 0.0186384
     plan = h.plan()
     service = h.service()
     execute = service.execute

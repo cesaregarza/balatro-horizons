@@ -70,7 +70,7 @@ def test_complete_helper_input_is_counted_unchanged_and_retry_reuses_count(provi
         )
     before = deepcopy(exchanges)
     ctx, delivered = decision_context(
-        obs, exchanges, interface="tools_v5", byte_limit=limits.max_request_bytes
+        obs, exchanges,  byte_limit=limits.max_request_bytes
     )
     body = policy.request(ctx, delivered)
     assert request_size(body) > 32768
@@ -123,7 +123,7 @@ def test_bad_or_excessive_count_never_generates(response, monkeypatch):
         model("openai"), Limits(), httpx.Client(transport=httpx.MockTransport(receive))
     )
     ctx, delivered = decision_context(
-        project(FakeGame().observe_private()), [], interface="tools_v5"
+        project(FakeGame().observe_private()), []
     )
     with pytest.raises(HarnessFailure) as error:
         policy.send(policy.request(ctx, delivered))
@@ -138,7 +138,7 @@ def test_request_bytes_are_independent_of_token_and_cost_limits():
     limits.max_request_bytes *= 2
     assert reservation_usd(model_config, limits) == before
     ctx, delivered = decision_context(
-        project(FakeGame().observe_private()), [], interface="tools_v5"
+        project(FakeGame().observe_private()), []
     )
     limits.max_request_bytes = 1024
     policy = DirectProvider(model_config, limits)
@@ -149,6 +149,7 @@ def test_request_bytes_are_independent_of_token_and_cost_limits():
 
 def test_helper_overflow_has_safe_size_and_retention_diagnostics():
     obs = project(FakeGame().observe_private())
+    initial, _ = decision_context(obs, [])
     exchange = {
         "operation": {"kind": "arithmetic", "expression": "1+1"},
         "result": {"result": "2"},
@@ -158,7 +159,11 @@ def test_helper_overflow_has_safe_size_and_retention_diagnostics():
         },
     }
     with pytest.raises(HarnessFailure, match="LOCAL_CONTEXT_LIMIT") as error:
-        decision_context(obs, [exchange], interface="tools_v5", byte_limit=32768)
+        decision_context(
+            obs,
+            [exchange],
+            byte_limit=initial["context_bytes_upper_bound"] + 100,
+        )
     assert error.value.details["stage"] == "helper_followup"
     assert error.value.details["retained_provider_turns"] == 1
     assert "PRIVATE_SENTINEL" not in json.dumps(error.value.public())

@@ -19,15 +19,13 @@ sync_module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(sync_module)
 
 
-@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
-def test_current_prompt_is_synced_and_delivered_to_both_providers(config, interface):
-    assert sync_module.sync(ROOT, interface=interface), "Run scripts/sync_prompt_instructions.py --write"
+def test_current_prompt_is_synced_and_delivered_to_both_providers(config):
+    assert sync_module.sync(ROOT), "Run scripts/sync_prompt_instructions.py --write"
     config.skills = "balatro-guide-v1"
     rules = prepare_rules({}, config.skills)
 
     class Policy:
         pass
-    Policy.interface = interface
 
     frozen = freeze_protocol(config, Policy(), rules)
     instructions = (ROOT / "configs/prompts/ALWAYS-LOADED.md").read_text().strip()
@@ -35,11 +33,10 @@ def test_current_prompt_is_synced_and_delivered_to_both_providers(config, interf
     for phase in ("BLIND_SELECT", "SELECTING_HAND", "ROUND_EVAL", "SHOP"):
         game.phase = phase
         ctx, exchanges = decision_context(
-            project(game.observe_private()), [], interface=interface,
-            skills=rules["skills"], frozen=frozen,
+            project(game.observe_private()), [], skills=rules["skills"], frozen=frozen
         )
-        openai = context_payload(ctx, exchanges, "openai", interface)
-        anthropic = context_payload(ctx, exchanges, "anthropic", interface)
+        openai = context_payload(ctx, exchanges, "openai")
+        anthropic = context_payload(ctx, exchanges, "anthropic")
         prefix = openai["input"][0]["content"][0]
         assert prefix["text"] == anthropic["system"]
         assert prefix["text"].count(instructions) == 1
@@ -50,7 +47,7 @@ def test_current_prompt_is_synced_and_delivered_to_both_providers(config, interf
 def test_sync_is_explicit_preserves_other_text_and_rejects_malformed_blocks(tmp_path):
     prompts = tmp_path / "configs/prompts"
     prompts.mkdir(parents=True)
-    source, target = prompts / "ALWAYS-LOADED.md", prompts / "tools-v7.txt"
+    source, target = prompts / "ALWAYS-LOADED.md", prompts / "harness.txt"
     source.write_text("Original instructions.\n")
     target.write_text("Harness instructions.\n")
     assert not sync_module.sync(tmp_path)
@@ -75,15 +72,15 @@ def test_instructions_remain_short():
         sync_module.render("Prompt", "é" * 513)
 
 
-@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
-def test_new_run_rejects_unsynced_instructions_before_game_start(config, store, tmp_path, monkeypatch, interface):
+def test_new_run_rejects_unsynced_instructions_before_game_start(
+    config, store, tmp_path, monkeypatch
+):
     from balatro_horizons.runner import Runner
     prompts = tmp_path / "source/configs/prompts"
     shutil.copytree(ROOT / "configs/prompts", prompts)
     monkeypatch.setattr("balatro_horizons.agents.frozen.ROOT", prompts.parents[1])
     class Policy:
         paid = False
-    Policy.interface = interface
     class UnstartedGame:
         evidence_kind = "fixture"
         def start(self, *args):
@@ -93,7 +90,7 @@ def test_new_run_rejects_unsynced_instructions_before_game_start(config, store, 
     with pytest.raises(HarnessFailure, match="PERSISTENT_INSTRUCTIONS_STALE"):
         Runner(store, config, UnstartedGame(), Policy()).run()
     assert store.list_episodes() == []
-    sync_module.sync(prompts.parents[1], write=True, interface=interface)
+    sync_module.sync(prompts.parents[1], write=True)
     frozen = freeze_protocol(config, Policy(), {})
     assert source.read_text().strip() in frozen["prompt_utf8"]
     source.write_text("too long" * 1024)

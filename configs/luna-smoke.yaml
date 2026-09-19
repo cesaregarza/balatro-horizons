@@ -1,5 +1,5 @@
 # Native plumbing test; opt in with scripts/smoke_openai.py --allow-paid.
-# Official standard prices verified 2026-09-14. No prompt caching or fast tier.
+# Official standard prices verified 2026-09-14. Explicit prompt caching; no fast tier.
 # Shared limits and disabled paid execution are inherited from config.py.
 environment:
   stake: WHITE
@@ -11,6 +11,8 @@ models:
     provider: openai
     model: gpt-5.6-luna
     input_usd_per_million: 0.20
+    cached_input_usd_per_million: 0.02
+    cache_write_input_usd_per_million: 0.25
     output_usd_per_million: 1.20
     pricing_date: "2026-09-14"
     settings:

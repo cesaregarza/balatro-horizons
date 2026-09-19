@@ -86,7 +86,7 @@ def test_AT10_AT18_checkpoint_and_immutable_override(store, episode, config):
     assert store.manifest(bid)["parent_episode_id"] == episode
     assert (store.episode_path(episode) / "events.jsonl").read_bytes() == before
     first = next(e for e in store.events(bid) if e["type"] == "agent_context")
-    assert first["payload"]["context"]["observation"]["memory"] == ""
+    assert "memory" not in first["payload"]["context"]["observation"]
     assert "original future" not in json.dumps(first)
 
 

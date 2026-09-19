@@ -1,6 +1,6 @@
 # Persistent playing-agent instructions
 
-The current `tools_v5` harness always receives the short
+The current harness always receives the short
 [`ALWAYS-LOADED.md`](../configs/prompts/ALWAYS-LOADED.md) mechanics reference.
 Its source is limited to 1,024 UTF-8 bytes. It supplies factual reminders about
 interest, unused hands, borrowing, scoring, persistent resources, and skipping;
@@ -13,10 +13,10 @@ uv run python scripts/sync_prompt_instructions.py --write
 ```
 
 Without `--write`, the command checks freshness and fails if the embedded copy is
-stale. New `tools_v5` runs also check this before starting the game: stale content
+stale. New runs also check this before starting the game: stale content
 raises `PERSISTENT_INSTRUCTIONS_STALE`, while missing or malformed source content
 raises `PERSISTENT_INSTRUCTIONS_INVALID`. Both admission and the editing script
-use the same renderer. `tools-v5.txt` contains a generated block;
+use the same renderer. `harness.txt` contains a generated block;
 edit the Markdown source instead of that block. The update replaces the prompt
 atomically so a worker always reads a complete file.
 
@@ -50,8 +50,8 @@ the specific local failure. Private diagnostics contain stack locations, without
 exception messages, source lines or locals.
 
 The previous coupling caused a recorded Terra helper follow-up to fail after a
-5,195-token request. `scripts/replay_helper_context.py` reproduces the local bound
-offline and verifies preservation of provider items. This is transport evidence,
+5,195-token request. Consolidated harness-context tests reproduce the local bound
+offline and verify preservation of provider items. This is transport evidence,
 not a live token count, native continuation, or new model result.
 
 See [the reliability change record](harness-reliability.md) for settlement parity,

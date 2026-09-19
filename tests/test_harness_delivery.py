@@ -12,7 +12,6 @@ from balatro_horizons.runner import Runner
 class GoldenProvider:
     paid = False
     name = "golden-fake"
-    interface = "tools_v7"
 
     def __init__(self):
         self.contexts = []

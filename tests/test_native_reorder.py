@@ -43,11 +43,14 @@ def test_owned_ordering_is_advertised_validated_and_sent_once(phase):
     if phase in ("SELECTING_HAND", "SMODS_BOOSTER_OPENED"):
         expected.insert(0, "hand")
     assert obs.action_constraints["reorder"]["areas"] == expected
-    for interface in ("tools_v2", "tools_v3"):
-        schema = next(
-            tool for tool in context(obs, interface=interface)["tools"] if tool["name"] == "reorder"
-        )
-        assert schema["parameters"]["properties"]["area"]["enum"] == expected
+    harness = context(obs)
+    schema = next(tool for tool in harness["tools"] if tool["name"] == "reorder")
+    assert schema["parameters"]["properties"]["area"]["enum"] == [
+        "hand",
+        "jokers",
+        "consumables",
+    ]
+    assert "reorder" in harness["allowed_tools"]
     calls = []
 
     class Bridge:

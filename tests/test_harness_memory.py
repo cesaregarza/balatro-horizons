@@ -1,10 +1,9 @@
-"""V7 continuity, edits and temporal isolation; synthetic game / mocked APIs only."""
+"""Harness continuity, edits and temporal isolation; synthetic game only."""
 
 import json
 from copy import deepcopy
 
 import pytest
-from test_notebook_harness import Script, note, play, select
 
 from balatro_horizons.agents.focused import context_bound
 from balatro_horizons.agents.protocol import decision_context
@@ -25,13 +24,59 @@ from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
 
 
-class WorkingScript(Script):
-    interface = "tools_v7"
+def select(ctx):
+    observation = ctx["observation"]
+    return {
+        "kind": "action",
+        "envelope": {
+            "observation_id": observation["observation_id"],
+            "action": {
+                "type": "select_blind",
+                "blind_id": observation["state"]["revealed_blinds"][0]["id"],
+            },
+        },
+    }
+
+
+def play(ctx):
+    observation = ctx["observation"]
+    return {
+        "kind": "action",
+        "envelope": {
+            "observation_id": observation["observation_id"],
+            "decision_note": "Recorded note; not necessarily a prediction.",
+            "action": {
+                "type": "play_hand",
+                "card_ids": [card["id"] for card in observation["state"]["hand"][:3]],
+            },
+        },
+    }
+
+
+def note(key, text):
+    return {"kind": "set_run_note", "key": key, "text": text}
+
+
+class WorkingScript:
+    paid = False
+    name = "heuristic"
+
+    def __init__(self, *operations):
+        self.operations = iter(operations)
+        self.contexts = []
+        self.exchanges = []
+
+    def decide(self, ctx, exchanges):
+        self.contexts.append(deepcopy(ctx))
+        self.exchanges.append(deepcopy(exchanges))
+        operation = next(self.operations, {"kind": "abort", "reason": "test finished"})
+        return operation(ctx) if callable(operation) else operation
 
 
 def annotated(action, key="plan", text="Keep this conclusion"):
     def operation(ctx):
         return {**action(ctx), "note_update": {"key": key, "text": text}}
+
     return operation
 
 
@@ -162,7 +207,10 @@ def test_retention_bounds_drop_whole_frames_and_private_events_are_ignored():
 def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, config):
     policy = WorkingScript(annotated(select), play)
     Runner(store, config, FakeGame(), policy).run()
-    first, last = [context_payload(ctx, [], provider, "tools_v7") for ctx in (policy.contexts[0], policy.contexts[-1])]
+    first, last = [
+        context_payload(ctx, [], provider)
+        for ctx in (policy.contexts[0], policy.contexts[-1])
+    ]
     assert first["tools"] == last["tools"]
     assert (first["input"][0] == last["input"][0]) if provider == "openai" else (first["system"] == last["system"])
     messages = last.get("input", last.get("messages"))
@@ -174,25 +222,27 @@ def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, con
             schema = definition.get("parameters", definition.get("input_schema"))
             assert "note_update" in schema["required"] and "memory_update" not in schema["properties"]
     args = {"observation_id": 0, "note_update": {"key": "k", "text": "v"}}
-    assert decode_tool("cash_out", args, interface="tools_v7")["note_update"] == args["note_update"]
-    with pytest.raises(ValueError, match="UNAVAILABLE_TOOL_ARGUMENT"):
-        decode_tool("cash_out", args, interface="tools_v6")
+    assert decode_tool("cash_out", args)["note_update"] == args["note_update"]
+    with pytest.raises(ValueError, match="LEGACY_MEMORY_UPDATE_NOT_ALLOWED"):
+        decode_tool("cash_out", {"observation_id": 0, "memory_update": "retired"})
 
 
 def test_context_budget_prunes_history_before_live_helpers_and_notebook(store, config):
     result = Runner(store, config, FakeGame(), WorkingScript(select)).run()
     observation = Observation.model_validate(read_checkpoint(store, result["episode_id"], 1)["observation"])
     memory = memory_fixture().view()
-    ctx, exchanges = decision_context(observation, [], interface="tools_v7", working_memory=memory)
+    ctx, exchanges = decision_context(observation, [], working_memory=memory)
     assert ctx["notebook_maintenance"]["oldest_decision_leaves_after_action"]["decision_id"] == 2
     bound = context_bound(ctx, exchanges)
-    smaller, _ = decision_context(observation, [], interface="tools_v7", working_memory=memory, byte_limit=bound-500)
+    smaller, _ = decision_context(
+        observation, [], working_memory=memory, byte_limit=bound - 500
+    )
     assert len(smaller["working_memory"]["frames"]) < 3
     assert smaller["working_memory"]["request_pruned_decisions"] > 0
-    assert smaller["context_bytes_upper_bound"] <= bound-500
+    assert smaller["context_bytes_upper_bound"] <= bound - 500
     assert memory["frames"][0]["decision_id"] == 2  # Source never mutated.
     helpers = [{"operation": {"kind": "arithmetic", "expression": "1+1"}, "result": {"result": "2"}}] * 3
-    ctx, _ = decision_context(observation, helpers, interface="tools_v7", working_memory=memory)
+    ctx, _ = decision_context(observation, helpers, working_memory=memory)
     assert ctx["notebook_maintenance"]["next_helper_may_clear_older_results"]
 
 

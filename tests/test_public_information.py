@@ -6,7 +6,7 @@ from copy import deepcopy
 import httpx
 import pytest
 from test_boundary import project
-from test_cached_context import model
+from test_provider_continuations import model
 
 from balatro_horizons.actions.validation import validate_action
 from balatro_horizons.agents.baselines import Baseline
@@ -81,10 +81,9 @@ def playing_card():
     }
 
 
-def request(observation, provider="openai", interface="tools_v4"):
+def request(observation, provider="openai"):
     settings = model(provider)
-    settings.settings["harness_interface"] = interface
-    ctx, exchanges = decision_context(observation, [], interface=interface)
+    ctx, exchanges = decision_context(observation, [])
     # Real request construction/serialization; no transport can make a network call.
     with httpx.Client(
         transport=httpx.MockTransport(lambda _: pytest.fail("unexpected API call"))
@@ -100,17 +99,16 @@ def delivered_observation(body, provider):
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
-@pytest.mark.parametrize("interface", ["operate_v1", "tools_v2", "tools_v3", "tools_v4"])
 @pytest.mark.parametrize(
     "phase,price,action_type", [("SHOP", "7", "buy"), ("STANDARD_PACK", "0", "choose_pack")]
 )
 def test_visible_playing_offer_identity_reaches_final_request(
-    provider, interface, phase, price, action_type
+    provider, phase, price, action_type
 ):
     raw = native_state(phase)
     original = deepcopy(raw)
     obs = project(normalize(raw))
-    view = delivered_observation(request(obs, provider, interface), provider)
+    view = delivered_observation(request(obs, provider), provider)
     (offer,) = view["state"]["offers"]
     assert (offer["rank"], offer["suit"], offer["label"]) == ("K", "Hearts", "K of Hearts")
     assert offer["effects"] == ["+30 chips", "edition: FOIL"]
@@ -290,7 +288,6 @@ def test_last_action_preserves_departed_labels_without_promoting_agent_claims(st
             [],
             {},
             after_play,
-            interface="tools_v4",
         )
         assert "Ace of Hearts" in page["content"]
     public = episode_export(store, result["episode_id"])

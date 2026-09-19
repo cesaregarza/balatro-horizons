@@ -68,7 +68,7 @@ def test_recorded_shop_sequences_reach_final_provider_request(sequence, provider
         obs = project(normalize(raw), issuer, step["decision"])
         if previous_action:
             obs.last_action = last_action(previous, obs, previous_action)
-        body = request(obs, provider, "tools_v5")
+        body = request(obs, provider)
         view, costs = delivered_observation(body, provider), delivered_costs(body, provider)
         assert costs["observation_id"] == view["observation_id"] == step["decision"]
         assert costs["cash_balance"] == view["state"]["resources"]["money"] == str(step["money"])
@@ -134,7 +134,7 @@ def test_affordability_capacity_and_targeted_modes_are_distinct(provider):
     raw["shop"]["cards"][0].update(acquire_allowed=False, min_targets=1, max_targets=2)
     obs = project(normalize(raw))
     obs.state.hand = [PublicCard(id="target", label="5 of Clubs")]
-    costs = delivered_costs(request(obs, provider, "tools_v5"), provider)
+    costs = delivered_costs(request(obs, provider), provider)
     offer = costs["offers"][0]
     assert offer["affordable"] is True
     assert offer["purchase_modes"]["acquire"] == {
@@ -167,7 +167,7 @@ def test_unknown_prices_survive_projection_and_serialization_without_becoming_fr
     raw["round"]["reroll_cost"] = None
     obs = project(normalize(raw))
     assert Observation.model_validate(obs.model_dump(mode="json")).state.offers[0].price is None
-    body = request(obs, provider, "tools_v5")
+    body = request(obs, provider)
     costs = delivered_costs(body, provider)
     assert costs["offers"][0]["cash_cost"] is None and costs["offers"][0]["affordable"] is None
     assert costs["offers"][0]["purchase_modes"]["acquire"]["status"] == "unknown"
@@ -190,7 +190,7 @@ def test_unknown_prices_survive_projection_and_serialization_without_becoming_fr
 def test_cash_and_credit_headroom_agree_with_validator(money, credit, headroom, affordable):
     obs = project(normalize(native_state()))
     obs.state.resources.money, obs.state.resources.credit_limit = money, credit
-    costs = delivered_costs(request(obs, "openai", "tools_v5"), "openai")
+    costs = delivered_costs(request(obs, "openai"), "openai")
     assert costs["cash_balance"] == money and costs["positive_price_spending_headroom"] == headroom
     assert costs["offers"][0]["affordable"] is affordable
 
@@ -202,7 +202,7 @@ def test_zero_upfront_quote_does_not_require_positive_cash_headroom(money):
     obs.state.resources.credit_limit = "0"
     obs.state.resources.shop_reroll_cost = "0"
     obs.state.offers[0].price = "0"
-    costs = delivered_costs(request(obs, "openai", "tools_v5"), "openai")
+    costs = delivered_costs(request(obs, "openai"), "openai")
     assert costs["offers"][0]["affordable"] is True
     assert costs["offers"][0]["purchase_modes"]["acquire"] == {"status": "legal"}
     assert costs["rerolls"]["reroll_shop"]["affordable"] is True
@@ -215,6 +215,6 @@ def test_costs_do_not_reveal_concealed_offer_effects(provider):
     raw["shop"]["cards"][0]["state"]["hidden"] = True
     changed = deepcopy(raw)
     changed["shop"]["cards"][0]["modifier"] = {"rental": True, "edition": "SECRET_EDITION"}
-    assert request(project(normalize(raw)), provider, "tools_v5") == request(
-        project(normalize(changed)), provider, "tools_v5"
+    assert request(project(normalize(raw)), provider) == request(
+        project(normalize(changed)), provider
     )

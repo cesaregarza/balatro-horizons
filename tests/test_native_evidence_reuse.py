@@ -157,14 +157,18 @@ def test_native_gate_requires_both_native_identity_and_explicit_harness_acceptan
 
 
 def test_old_checkpoint_source_identity_still_fails_closed(migration, monkeypatch):
-    from balatro_horizons.agents.frozen import restore_protocol
+    from balatro_horizons.agents.frozen import FROZEN_INTERFACE, restore_protocol
     from balatro_horizons.storage.journal import Store
 
     root, candidate, _, old = migration
     monkeypatch.setattr(provenance, 'ROOT', candidate)
     store = Store(root/'data')
     eid = store.create({'evidence_kind': 'fixture'}, {})
-    bundle = {'version': 'agent-protocol-v1', 'implementation_hash': old['implementation_hash']}
+    bundle = {
+        'version': 'agent-protocol-v1',
+        'interface': FROZEN_INTERFACE,
+        'implementation_hash': old['implementation_hash'],
+    }
     store.private_json(eid, 'agent-protocol.json', bundle)
     checkpoint = {'agent_protocol': {'episode_id': eid, 'hash': digest(deepcopy(bundle))}}
     with pytest.raises(ValueError, match='AGENT_PROTOCOL_IMPLEMENTATION_CHANGED'):

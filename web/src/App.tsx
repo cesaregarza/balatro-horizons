@@ -8,13 +8,13 @@ import { ModelControls } from "./ModelControls";
 import { usePolling } from "./usePolling";
 import {
   configureModel,
-  CURRENT_HARNESS,
   effortDefault,
-  harnesses,
   harnessLabel,
   modelCatalog,
   modelKey,
   modelLabel,
+  supportsCachedHarness,
+  supportedSettings,
   type ModelConfig,
 } from "./modelSelection";
 type Episode = {
@@ -35,8 +35,7 @@ export default function App() {
     [offline, setOffline] = useState(true),
     [preset, setPreset] = useState("pilot"),
     [seed, setSeed] = useState("");
-  const [effort, setEffort] = useState("medium"),
-    [runHarness, setRunHarness] = useState<string>(CURRENT_HARNESS);
+  const [effort, setEffort] = useState("medium");
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
@@ -60,8 +59,6 @@ export default function App() {
     ]);
   const [priorSeedExposure, setPriorSeedExposure] = useState(false);
   const [modelSettings, setModelSettings] = useState("{}");
-  const [harnessInterface, setHarnessInterface] =
-    useState<string>(CURRENT_HARNESS);
   const [provider, setProvider] = useState("openai"),
     [model, setModel] = useState("");
   const [inputRate, setInputRate] = useState(""),
@@ -80,11 +77,14 @@ export default function App() {
   const [credentials, setCredentials] = useState<Record<string, boolean>>({});
   const catalog = modelCatalog(config?.models ?? {});
   const selectedModel = catalog[agent];
+  const selectedModelSupported =
+    !selectedModel ||
+    selectedModel.provider !== "openai" ||
+    supportsCachedHarness(selectedModel);
   function selectAgent(value: string) {
     setAgent(value);
     if (catalog[value]) {
       setEffort(effortDefault(catalog[value]));
-      setRunHarness(CURRENT_HARNESS);
     }
   }
   async function saveModelDefaults() {
@@ -93,7 +93,7 @@ export default function App() {
     const current = modelCatalog(latest.models)[agent];
     if (!current)
       throw new Error("Model is no longer configured. Refresh the workbench.");
-    const chosen = configureModel(current, effort, runHarness);
+    const chosen = configureModel(current, effort);
     const key = modelKey(chosen);
     setConfig(
       await api("/settings", "PUT", {
@@ -317,13 +317,11 @@ export default function App() {
                     <ModelControls
                       model={selectedModel}
                       effort={effort}
-                      harness={runHarness}
                       onEffort={setEffort}
-                      onHarness={setRunHarness}
                       disabled={busy}
                     />
                     <button
-                      disabled={busy}
+                      disabled={busy || !selectedModelSupported}
                       onClick={() =>
                         run(async () => {
                           await saveModelDefaults();
@@ -364,7 +362,7 @@ export default function App() {
                 <div className="actions">
                   <button
                     className="primary"
-                    disabled={busy}
+                    disabled={busy || !selectedModelSupported}
                     onClick={() =>
                       run(async () => {
                         const chosenAgent = selectedModel
@@ -785,20 +783,6 @@ export default function App() {
                     ? "Credential is available."
                     : "Credential has not been configured."}
                 </p>
-                <label>
-                  Harness
-                  <select
-                    aria-label="Harness"
-                    value={harnessInterface}
-                    onChange={(e) => setHarnessInterface(e.target.value)}
-                  >
-                    {harnesses.map(([id, label]) => (
-                      <option key={id} value={id}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <p className="muted">
                   Includes on-demand tools, provider continuation within each
                   decision, and prompt caching for supported OpenAI models.
@@ -846,9 +830,13 @@ export default function App() {
                             : {}),
                           pricing_date: priceDate,
                           settings: {
-                            ...(latest.models[key]?.settings ?? {}),
-                            ...JSON.parse(modelSettings),
-                            harness_interface: harnessInterface,
+                            ...supportedSettings(
+                              provider as ModelConfig["provider"],
+                              {
+                                ...(latest.models[key]?.settings ?? {}),
+                                ...JSON.parse(modelSettings),
+                              },
+                            ),
                           },
                         },
                       };
@@ -892,13 +880,7 @@ export default function App() {
                             : String(value.cache_write_input_usd_per_million),
                         );
                         setPriceDate(value.pricing_date);
-                        setHarnessInterface(CURRENT_HARNESS);
-                        setModelSettings(
-                          JSON.stringify({
-                            ...value.settings,
-                            harness_interface: CURRENT_HARNESS,
-                          }),
-                        );
+                        setModelSettings(JSON.stringify(value.settings));
                       }}
                     >
                       Edit connection
@@ -1062,7 +1044,6 @@ export default function App() {
                       chosen[key] = configureModel(
                         available[key],
                         effortDefault(available[key]),
-                        CURRENT_HARNESS,
                       );
                     }
                     setConfig(

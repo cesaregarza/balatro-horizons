@@ -6,7 +6,7 @@ from copy import deepcopy
 import pytest
 from pydantic import ValidationError
 from test_boundary import project
-from test_tool_interface import config_for
+from test_harness_tools import config_for
 
 from balatro_horizons.agents.focused import (
     CARD_DEFAULTS,
@@ -23,7 +23,7 @@ from balatro_horizons.engine.fake import FakeGame
 
 
 def read(raw, obs, events=(), rules=None):
-    return helper(Operation.validate_python(raw), events, rules or {}, obs, interface="tools_v3")
+    return helper(Operation.validate_python(raw), events, rules or {}, obs)
 
 
 def test_compression_preserves_effects_order_defaults_and_unknown_counters():
@@ -33,7 +33,7 @@ def test_compression_preserves_effects_order_defaults_and_unknown_counters():
     obs.state.hand[0].counters = {**COUNTER_DEFAULTS, "mult": "4", "rounds_left": "0"}
     obs.state.hand[0].effects = ["Active effect"]
     original = obs.model_dump(mode="json")
-    ctx = context(obs, interface="tools_v3")
+    ctx = context(obs)
     cards = ctx["observation"]["state"]["hand"]
     assert [c["id"] for c in cards] == [c.id for c in obs.state.hand]
     first = cards[0]
@@ -46,7 +46,7 @@ def test_compression_preserves_effects_order_defaults_and_unknown_counters():
     assert ctx["observation"]["state"]["hand_levels"] == original["state"]["hand_levels"]
     assert obs.model_dump(mode="json") == original
     shop = obs.model_copy(update={"phase": "SHOP"})
-    view = context(shop, interface="tools_v3")["observation"]
+    view = context(shop)["observation"]
     assert "hand_levels" not in view["state"]
     assert "hand_levels" in view["presentation"]["deferred_sections"]
     assert (
@@ -122,7 +122,6 @@ def test_native_rules_and_index_are_paged_without_mutation():
 def test_bounded_working_set_clears_with_receipts_and_preserves_source(provider):
     obs = project(FakeGame().observe_private())
     cfg = config_for(provider)
-    cfg.models["luna"].settings["harness_interface"] = "tools_v3"
     skills = load_guide()[1]
     exchanges = []
     for i in range(8):
@@ -135,7 +134,7 @@ def test_bounded_working_set_clears_with_receipts_and_preserves_source(provider)
             }
         )
     before = deepcopy(exchanges)
-    ctx, delivered = decision_context(obs, exchanges, interface="tools_v3", skills=skills)
+    ctx, delivered = decision_context(obs, exchanges, skills=skills)
     assert len(delivered) == 3
     assert [
         r["exchange_index"] for r in ctx["observation"]["retrieval_context"]["cleared"]
@@ -145,13 +144,15 @@ def test_bounded_working_set_clears_with_receipts_and_preserves_source(provider)
         body = DirectProvider(cfg.models["luna"], cfg.budgets, client).request(ctx, delivered)
     assert (
         len(json.dumps(body, ensure_ascii=False).encode()) + 4096
-        <= cfg.budgets.max_input_tokens_per_call
+        <= cfg.budgets.max_request_bytes
     )
+    initial, _ = decision_context(obs, [], skills=skills)
+    byte_limit = initial["context_bytes_upper_bound"] + 1500
     smaller, retained = decision_context(
-        obs, exchanges, interface="tools_v3", skills=skills, byte_limit=18000
+        obs, exchanges, skills=skills, byte_limit=byte_limit
     )
     assert len(retained) < 3
-    cfg.budgets.max_input_tokens_per_call = 18000
+    cfg.budgets.max_request_bytes = byte_limit
     policy = DirectProvider(cfg.models["luna"], cfg.budgets)
     try:
         policy.request(smaller, retained)
@@ -170,8 +171,8 @@ def test_hidden_state_noninterference_and_tool_schema_parity():
     for card in right["visible"]["hand"]:
         card.update(native_id="private-new-id", label="PRIVATE_SENTINEL", rank="A")
     a, b = project(left), project(right)
-    assert context(a, interface="tools_v3") == context(b, interface="tools_v3")
-    for card in context(a, interface="tools_v3")["observation"]["state"]["hand"]:
+    assert context(a) == context(b)
+    for card in context(a)["observation"]["state"]["hand"]:
         assert "counter_defaults_apply" not in card
     op = {"kind": "inspect_page", "section": "hand", "offset": 0}
     assert read(op, a) == read(op, b)
@@ -182,16 +183,15 @@ def test_hidden_state_noninterference_and_tool_schema_parity():
     bodies = []
     for provider in ("openai", "anthropic"):
         cfg = config_for(provider)
-        cfg.models["luna"].settings["harness_interface"] = "tools_v3"
         policy = DirectProvider(cfg.models["luna"], cfg.budgets)
         try:
-            bodies.append(policy.request(context(a, interface="tools_v3"), []))
+            bodies.append(policy.request(context(a), []))
             with pytest.raises(ProtocolFailure, match="EXPECTED_PAGED_INSPECTION"):
                 policy._decode("inspect_state", {"sections": ["hand"]})
         finally:
             policy.client.close()
-    assert bodies[0]["input"] == bodies[1]["messages"]
-    assert bodies[0]["instructions"] == bodies[1]["system"]
+    assert bodies[0]["input"][1:] == bodies[1]["messages"]
+    assert bodies[0]["input"][0]["content"][0]["text"] == bodies[1]["system"]
     assert [(t["name"], t["parameters"]) for t in bodies[0]["tools"]] == [
         (t["name"], t["input_schema"]) for t in bodies[1]["tools"]
     ]

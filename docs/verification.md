@@ -4,8 +4,8 @@ This is a local implementation verification, not a model-performance study. The 
 
 ## Focused context update — 2026-09-15
 
-The [focused-context harness](harness-focused-context.md) is active for the saved
-`luna` and `luna-tools` players. It supplies a compact current board, bounded
+The then-current focused-context harness is preserved in the historical
+[changelog](../CHANGELOG.md). It supplied a compact current board, bounded
 retrieval results and paged access to public state, history and the frozen guide.
 The matched offline comparison reduced median first-request size by 10.1%; all
 106 recorded contexts and 2,544 additional guide-read reconstructions fit.
@@ -220,10 +220,10 @@ remain separate gates.
 
 ## Named-tools harness follow-up
 
-The [versioned interface](harness-tools-v2.md) adds named game tools, on-demand
-public inspection, a smaller automatic context, and structured rejection feedback.
-The original configuration remains available as `operate_v1`; `tools_v2` uses a
-separate frozen campaign revision and the same cumulative spending ledger.
+The historical named-tools interface added game tools, on-demand public
+inspection, a smaller automatic context, and structured rejection feedback. Its
+complete prompt is preserved in the [changelog](../CHANGELOG.md); the interface
+itself is retired.
 
 Native verification was refreshed after freezing the new source. The complete
 action fixture passed three seed replays (certificate

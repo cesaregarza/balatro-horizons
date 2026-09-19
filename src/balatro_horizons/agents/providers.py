@@ -8,16 +8,7 @@ from copy import deepcopy
 import httpx
 
 from balatro_horizons.agents.input_limits import InputCounter, check_request_bytes
-from balatro_horizons.agents.protocol import TOOL
-from balatro_horizons.agents.tool_interface import (
-    CONTINUATION_INTERFACES,
-    FOCUSED_INTERFACES,
-    NAMED_INTERFACES,
-    NOTEBOOK_INTERFACES,
-    STABLE_TOOL_INTERFACES,
-    WORKING_MEMORY_INTERFACE,
-    decode_tool,
-)
+from balatro_horizons.agents.tool_interface import decode_tool
 from balatro_horizons.config import PROVIDER_TIMEOUT_SECONDS
 
 
@@ -36,8 +27,7 @@ class ProtocolFailure(ValueError):
 
 
 def encode(value, ctx):
-    separators = (",", ":") if ctx.get("interface_version") in FOCUSED_INTERFACES else None
-    return json.dumps(value, ensure_ascii=False, separators=separators)
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def canonical_messages(ctx, exchanges):
@@ -45,12 +35,13 @@ def canonical_messages(ctx, exchanges):
     if "current_costs" in ctx:
         # Dynamic prices follow the observation, outside the stable developer/tool prefix.
         content["current_costs"] = ctx["current_costs"]
-    if ctx.get("interface_version") in NOTEBOOK_INTERFACES:
-        content.update(run_notebook=ctx["run_notebook"], permitted_tools=ctx["allowed_tools"],
-                       helper_status=ctx["helper_status"])
-    if ctx.get("interface_version") == WORKING_MEMORY_INTERFACE:
-        content.update(working_memory=ctx["working_memory"],
-                       notebook_maintenance=ctx["notebook_maintenance"])
+    content.update(
+        run_notebook=ctx["run_notebook"],
+        permitted_tools=ctx["allowed_tools"],
+        helper_status=ctx["helper_status"],
+        working_memory=ctx["working_memory"],
+        notebook_maintenance=ctx["notebook_maintenance"],
+    )
     messages = [
         {
             "role": "user",
@@ -174,53 +165,30 @@ def tool_messages(ctx, exchanges, provider):
     return messages
 
 
-def context_payload(ctx, exchanges, provider, interface):
+def context_payload(ctx, exchanges, provider):
     """One serializer shared by budget planning and the actual provider request."""
-    messages = (
-        tool_messages(ctx, exchanges, provider)
-        if interface in NAMED_INTERFACES
-        else canonical_messages(ctx, exchanges)
-    )
+    messages = tool_messages(ctx, exchanges, provider)
     instructions = ctx["prompt"] + "\n\n" + ctx["rules_kernel"]
-    definitions = ctx["tools"] if interface in NAMED_INTERFACES else [ctx.get("tool", TOOL)]
+    definitions = ctx["tools"]
     if provider == "openai":
-        if interface in STABLE_TOOL_INTERFACES:
-            # A stable developer block follows the fixed tool catalog. The explicit
-            # write ends here: observations and retrieved pages are not cached.
-            return {
-                "input": [
-                    {
-                        "role": "developer",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": instructions,
-                                "prompt_cache_breakpoint": {"mode": "explicit"},
-                            }
-                        ],
-                    }
-                ]
-                + messages,
-                "tools": [{"type": "function", **t, "strict": True} for t in definitions],
-                "tool_choice": (
-                    {
-                        "type": "allowed_tools",
-                        "mode": "auto",
-                        "tools": [
-                            {"type": "function", "name": name} for name in ctx["allowed_tools"]
-                        ],
-                    }
-                    if interface == "tools_v4"
-                    else "auto"
-                ),
-            }
+        # A stable developer block follows the fixed tool catalog. The explicit
+        # write ends here: observations and retrieved pages are not cached.
         return {
-            "instructions": instructions,
-            "input": messages,
-            "tools": [
-                {"type": "function", **t, "strict": interface in NAMED_INTERFACES}
-                for t in definitions
-            ],
+            "input": [
+                {
+                    "role": "developer",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": instructions,
+                            "prompt_cache_breakpoint": {"mode": "explicit"},
+                        }
+                    ],
+                }
+            ]
+            + messages,
+            "tools": [{"type": "function", **tool, "strict": True} for tool in definitions],
+            "tool_choice": "auto",
         }
     return {
         "system": instructions,
@@ -230,7 +198,7 @@ def context_payload(ctx, exchanges, provider, interface):
                 "name": t["name"],
                 "description": t["description"],
                 "input_schema": t["parameters"],
-                **({"strict": True} if interface in CONTINUATION_INTERFACES else {}),
+                "strict": True,
             }
             for t in definitions
         ],
@@ -246,8 +214,7 @@ class DirectProvider:
         self.key_name = "OPENAI_API_KEY" if model.provider == "openai" else "ANTHROPIC_API_KEY"
         self.last_request = None
         self.last_response = None
-        self.interface = model.settings.get("harness_interface", "operate_v1")
-        self.available_tools = {"operate"}
+        self.available_tools = set()
         self.last_tool_call = None
         self.last_provider_turn = None
         self.input_counter = InputCounter()
@@ -273,15 +240,8 @@ class DirectProvider:
 
     def request(self, ctx, exchanges):
         settings = self.model.settings
-        definitions = (
-            ctx["tools"] if self.interface in NAMED_INTERFACES else [ctx.get("tool", TOOL)]
-        )
-        payload = context_payload(ctx, exchanges, self.model.provider, self.interface)
-        self.available_tools = (
-            set(ctx["allowed_tools"])
-            if self.interface in STABLE_TOOL_INTERFACES
-            else {tool["name"] for tool in definitions}
-        )
+        payload = context_payload(ctx, exchanges, self.model.provider)
+        self.available_tools = set(ctx["allowed_tools"])
         self.last_tool_call = None
         self.last_provider_turn = None
         if self.model.provider == "openai":
@@ -305,20 +265,13 @@ class DirectProvider:
             if reasoning:
                 body["reasoning"] = reasoning
             prompt_cache_options = {}
-            if self.interface in STABLE_TOOL_INTERFACES:
-                if not self._supports_prompt_cache_diagnostics():
-                    raise ProviderFailure("EXPLICIT_CACHE_REQUIRES_GPT_5_6_OR_LATER")
-                if self.model.cache_write_input_usd_per_million is None:
-                    raise ProviderFailure("EXPLICIT_CACHE_PRICING_REQUIRED")
-                if self.limits.max_input_tokens_per_call > 272_000:
-                    raise ProviderFailure("CACHE_LONG_CONTEXT_PRICING_NOT_CONFIGURED")
-                prompt_cache_options["mode"] = "explicit"
-            elif self.model.model == "gpt-5.6-luna":
-                # Explicit mode without breakpoints disables cache reads/writes.
-                # Keep this first integration on the recorded standard input rate.
-                prompt_cache_options["mode"] = "explicit"
-                if self.limits.max_input_tokens_per_call > 272_000:
-                    raise ProviderFailure("LUNA_LONG_CONTEXT_PRICING_NOT_CONFIGURED")
+            if not self._supports_prompt_cache_diagnostics():
+                raise ProviderFailure("EXPLICIT_CACHE_REQUIRES_GPT_5_6_OR_LATER")
+            if self.model.cache_write_input_usd_per_million is None:
+                raise ProviderFailure("EXPLICIT_CACHE_PRICING_REQUIRED")
+            if self.limits.max_input_tokens_per_call > 272_000:
+                raise ProviderFailure("CACHE_LONG_CONTEXT_PRICING_NOT_CONFIGURED")
+            prompt_cache_options["mode"] = "explicit"
             if (
                 self._supports_prompt_cache_diagnostics()
                 and self._last_completed_openai_response_id
@@ -328,10 +281,9 @@ class DirectProvider:
                 )
             if prompt_cache_options:
                 body["prompt_cache_options"] = prompt_cache_options
-            if self.interface in CONTINUATION_INTERFACES:
-                # store=false is deliberate. Encrypted reasoning makes returned
-                # reasoning items round-trippable during this one decision.
-                body["include"] = ["reasoning.encrypted_content"]
+            # store=false is deliberate. Encrypted reasoning makes returned
+            # reasoning items round-trippable during this one decision.
+            body["include"] = ["reasoning.encrypted_content"]
         else:
             body = {
                 "model": self.model.model,
@@ -413,20 +365,6 @@ class DirectProvider:
             output = response.get("output")
             if not isinstance(output, list) or any(not isinstance(v, dict) for v in output):
                 raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
-            if self.interface not in CONTINUATION_INTERFACES:
-                calls = [v for v in output if v.get("type") == "function_call"]
-                if (
-                    len(calls) != 1
-                    or calls[0].get("name") not in self.available_tools
-                    or response.get("status", "completed") != "completed"
-                    or calls[0].get("status", "completed") != "completed"
-                ):
-                    raise ProtocolFailure("EXPECTED_ONE_COMPLETE_OPERATION")
-                try:
-                    args = json.loads(calls[0]["arguments"])
-                except (ValueError, KeyError, TypeError):
-                    raise ProtocolFailure("INVALID_OPERATION_JSON") from None
-                return self._decode(calls[0]["name"], args)
             self._capture_turn(output, "function_call", "call_id")
             status = response.get("status", "completed")
             if status == "incomplete":
@@ -462,9 +400,7 @@ class DirectProvider:
                 raise ProtocolFailure(
                     "PROVIDER_RESPONSE_UNRESOLVED", provider_status=str(call_status)
                 )
-            if self.interface in CONTINUATION_INTERFACES and (
-                not isinstance(call.get("call_id"), str) or not call["call_id"]
-            ):
+            if not isinstance(call.get("call_id"), str) or not call["call_id"]:
                 self.last_provider_turn = None
                 raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
             if call.get("name") not in self.available_tools:
@@ -479,15 +415,6 @@ class DirectProvider:
         ):
             raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
         content = response["content"]
-        if self.interface not in CONTINUATION_INTERFACES:
-            calls = [v for v in content if v.get("type") == "tool_use"]
-            if (
-                len(calls) != 1
-                or calls[0].get("name") not in self.available_tools
-                or response.get("stop_reason") == "max_tokens"
-            ):
-                raise ProtocolFailure("EXPECTED_ONE_COMPLETE_OPERATION")
-            return self._decode(calls[0]["name"], calls[0].get("input"))
         self._capture_turn(content, "tool_use", "id")
         stop_reason = response.get("stop_reason")
         if stop_reason == "max_tokens":
@@ -515,9 +442,7 @@ class DirectProvider:
         if len(calls) != 1:
             raise ProtocolFailure("MULTIPLE_OPERATIONS", operation_count=len(calls))
         call = calls[0]
-        if self.interface in CONTINUATION_INTERFACES and (
-            not isinstance(call.get("id"), str) or not call["id"]
-        ):
+        if not isinstance(call.get("id"), str) or not call["id"]:
             self.last_provider_turn = None
             raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
         if call.get("name") not in self.available_tools:
@@ -526,8 +451,6 @@ class DirectProvider:
 
     def _capture_turn(self, items, call_type, id_field):
         """Retain opaque provider blocks exactly for this decision only."""
-        if self.interface not in CONTINUATION_INTERFACES:
-            return
         calls = [item for item in items if item.get("type") == call_type]
         if any(not isinstance(call.get(id_field), str) or not call[id_field] for call in calls):
             return
@@ -539,10 +462,8 @@ class DirectProvider:
 
     def _decode(self, name, arguments):
         self.last_tool_call = {"name": name, "arguments": arguments}
-        if self.interface == "operate_v1":
-            return arguments
         try:
-            return decode_tool(name, arguments, interface=self.interface)
+            return decode_tool(name, arguments)
         except ValueError as error:
             raise ProtocolFailure(str(error)) from None
 

@@ -27,10 +27,10 @@ def test_live_quotes_change_without_changing_tools_or_cached_instructions(provid
     ]
     original = obs.model_dump(mode="json")
     obs.state.resources.shop_reroll_cost = "0"
-    first = request(obs, provider, "tools_v5")
+    first = request(obs, provider)
     obs.state.resources.shop_reroll_cost = "5"
     obs.observation_id += 1
-    second = request(obs, provider, "tools_v5")
+    second = request(obs, provider)
     assert prices(first, provider)["rerolls"]["reroll_shop"]["cash_cost"] == "0"
     assert prices(second, provider)["rerolls"]["reroll_shop"]["cash_cost"] == "5"
     assert prices(second, provider)["offers"][0]["cash_cost"] == "7"
@@ -93,15 +93,15 @@ def test_sale_values_are_proceeds_and_hidden_cards_do_not_gain_quotes():
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
-def test_costs_survive_helper_followups_and_legacy_interfaces_stay_unchanged(provider):
+def test_costs_survive_helper_followups_and_all_initial_requests(provider):
     obs = project(normalize(native_state()))
     exchange = {
         "operation": {"kind": "inspect_page", "section": "offers", "offset": 0},
         "tool_call": {"name": "inspect_state", "arguments": {"section": "offers", "offset": 0}},
         "result": {"content": "public offer details", "game_advanced": False},
     }
-    ctx, delivered = decision_context(obs, [exchange], interface="tools_v5")
-    body = context_payload(ctx, delivered, provider, "tools_v5")
+    ctx, delivered = decision_context(obs, [exchange])
+    body = context_payload(ctx, delivered, provider)
     assert prices(body, provider)["rerolls"]["reroll_shop"]["cash_cost"] == "5"
     assert "public offer details" in json.dumps(body)
-    assert "current_costs" not in json.dumps(request(obs, provider, "tools_v4"))
+    assert prices(request(obs, provider), provider) == prices(body, provider)
