@@ -1,10 +1,10 @@
-# Working context and notebook maintenance (`tools_v7`)
+# Working context, notebook maintenance, and observed action outcomes
 
-V7 preserves recent public working context across gameplay actions and instructs
+The current single harness preserves recent public working context across gameplay actions and instructs
 the model to maintain its own concise run notebook when its conclusions or plan
 change. It adds a one-edit notebook attachment to gameplay tools, avoiding an
-extra provider round trip when the agent is already ready to act. V6 and older
-interfaces retain their prompts, schemas and context behavior.
+extra provider round trip when the agent is already ready to act. Retired
+interfaces are archived in the [changelog](../CHANGELOG.md).
 
 This is a harness condition, not a scoring intervention. There are no prescribed
 strategic categories, economic recommendations, automatic strategic summaries,
@@ -42,12 +42,79 @@ Calling `inspect_state` again reads the current state, not the old inspection.
 There is no replay of provider-private reasoning, signatures, or executable tool
 messages across game actions. Within-decision provider continuation is unchanged.
 
+## Explicit previous-action outcome
+
+The outcome-feedback revision adds `previous_action_outcome` to the dynamic harness
+request for both providers. It highlights the latest observed action's phase and
+cash before/after, with blind status, displayed chip totals, the prior target,
+and remaining hands/discards for a played hand. Existing transaction receipts
+preserve their distinction between quotes, balance changes, and unmeasured actual
+charges. This is a deterministic presentation of already-public evidence.
+
+The prior decision note is copied alongside the outcome only when the retained
+frame matches the decision, action, and complete public delta. It is labelled a
+pre-action model claim. Missing or trimmed notes stay null; an absent or mismatched
+last-action boundary produces no summary. Counter resets never become a fabricated
+hand score or scoring breakdown. The full `last_action` evidence stays available.
+
+The fixed prompt asks the agent to compare its expectation with the observed
+outcome and correct contradicted notebook entries. Action-attached notes should
+state intentions or predictions until success has actually been observed. The
+harness does not grade the move, classify the model's prose, supply strategy, or
+rewrite the notebook. No additional model call or helper operation is required.
+
+The receipt is assembled before request-history pruning and remains available
+when older frames are removed. It counts against the ordinary request bound.
+The frozen memory policy records the outcome and working-memory versions; prompt
+and source hashes distinguish each condition from older runs. Rollout
+requires an idle worker and explicit reuse of unchanged native evidence.
+
+### Linking action-attached notebook edits
+
+`previous-action-outcome-v2` also includes `recorded_note_update` when the last
+action carried a saved notebook edit. It preserves the original key, text (null
+for a deletion), notebook revision, and journal references, with explicit
+`before_action_execution` timing. The same record is retained in the bounded
+`working-memory-v2` frame. Both providers receive it in dynamic context beside
+the observed result; tool schemas and the instruction prefix remain static.
+
+Linking requires three matching events in the same episode and decision: the
+submitted action with its edit, the saved notebook mutation, and that exact
+committed action. Outcome pairing additionally checks the following public
+observation. Proposals without saves, standalone note helpers, rejected actions,
+execution failures, and mismatched records cannot produce a linked edit. A saved
+edit can survive failure without claiming that a game action succeeded.
+
+The edit is historical, not the current value of its key: a later helper may
+already have revised or deleted that entry. The prompt asks the model to compare
+the pre-action claim with the observed outcome and reconcile its own notebook.
+No automatic note rewrite, extra model call, or scoring judgment occurs. A
+missing or pruned edit stays null; after request-history pruning, the already
+assembled latest outcome and edit remain within the ordinary context bound.
+Old checkpoint identities remain unchanged and are not migrated to v2.
+
+Offline tests cover pre-action timing, set/delete edits, standalone helpers,
+invalid actions, execution failure, later notebook rewrites, branch inheritance,
+provider parity, pruning, outcome isolation, fixed provider prefixes, and
+target-selection preservation. These tests use synthetic or recorded public
+data; they do not establish better play.
+
 ## Notebook guidance and clearing notice
 
 The fixed prompt instructs the agent to maintain its plan, useful conclusions,
 and unresolved questions; update changed notes, remove obsolete entries, and
-avoid duplicating the current board. It reminds the agent to preserve useful
-conclusions before their supporting context disappears.
+avoid duplicating current cash, prices, counters, or the board. It asks the agent
+to keep evidence-backed corrections separate from its current plan, using another
+key when useful, and mark untested explanations as hypotheses. It reminds the
+agent to preserve useful conclusions before their supporting context disappears.
+Keys remain model-chosen; no `learned/build/economy/threats` template is imposed.
+
+The fixed tool descriptions and prompt also clarify target semantics:
+`target_ids` selects cards without moving them. Position-dependent effects use
+the physical hand-array order; Death converts the left selected card into the
+right selected card. The model may reorder first when legal and then use the new
+observation. The harness never rearranges targets or repairs an action for it.
+This adds static guidance only, preserving caching and native action semantics.
 
 The dynamic `notebook_maintenance` block identifies the oldest frame that will
 leave after the next action when the decision count is full. It also signals
@@ -58,7 +125,7 @@ and it does not add an automatic model call or force a note on every turn.
 
 ## Editing a note alongside an action
 
-All v7 gameplay tools have a nullable `note_update` field:
+All current gameplay tools have a nullable `note_update` field:
 
 ```json
 {"key": "plan", "text": "Agent-authored conclusion to retain."}
@@ -79,16 +146,15 @@ no action or note is silently repaired.
 
 Attached edits consume no extra helper allowance or provider call. Their tokens
 still cost money normally. Standalone note helpers keep their usual accounting.
-V6 and older interfaces reject the new argument.
 
 ## Provenance, branches, and caches
 
-Every v7 checkpoint includes pre-decision working context and notebook state.
+Every current-harness checkpoint includes pre-decision working context and notebook state.
 Branch admission folds the immutable public ancestry, applies the checkpoint's
 boundary observation, and requires an exact working-context snapshot match.
 Later parent helpers, actions and notes cannot enter a child branch. Reused
 decision numbers remain disambiguated by episode ID. Current-decision edits
-remain behind prospective action reveal, as in v6.
+remain behind prospective action reveal.
 
 The source journal and complete delivered requests remain authoritative; history
 is folded incrementally during a run, without scanning the journal anew on every
@@ -104,37 +170,20 @@ no live cache-hit or cost improvement is claimed.
 ## Verification and rollout
 
 Offline verification covers bounded retention, exact results, helpers and note
-attachments, both provider transports, fixed prefixes, legacy interfaces,
-invalid-action isolation, storage/native failure handling, nested branches,
-snapshot tampering, and prospective/export boundaries. All games in these tests
-are deterministic fixtures; no paid-provider or native result is implied.
+attachments, both provider transports, fixed prefixes, invalid-action isolation,
+storage/engine failure handling, nested branches, snapshot tampering, and
+prospective/export boundaries. All game transitions in these tests use
+deterministic fixtures; no paid-provider or native result is implied.
 
-The 2026-09-17 offline gate passed: **418 Python tests, 18 browser tests, Ruff,
-diff checks, TypeScript, and the production build**. Nine native gates were
-skipped. Python 3.12.10 and Node 22.12.0 were used in an isolated Linux worktree;
-the browser suite used its fixture backend on port 8766. There were zero native
-launches and zero paid provider calls. The full API/browser suites required host
-local-socket access after the sandboxed API tests stalled; no assertion failed.
-
-The source selector targets v7. Deploy the backend and frontend together only
-when the worker is idle. This change does not alter the native interface or
-runtime: a fresh offline report and an explicit comparison with the certified
-source can accept the new harness using the existing native evidence, with zero
-Balatro launches. See [certification scope](native-certification-scope.md).
-Old checkpoint certificates retain their exact full harness identity and are
-not migrated. Paid behavior checks remain a separate gate.
-
-The subsequent compatibility update passed **438 Python tests** (nine native
-gates skipped), Ruff, and diff checks. V7 was then deployed with explicit reuse
-of the unchanged native components certified under `db23036`; the original
-native-tested source identity was preserved. All ten saved-evidence gate tests
-passed in the live checkout, and localhost served the exact verified v7 assets.
-This deployment made zero Balatro launches and zero paid calls, preserved
-operator settings, and did not migrate checkpoint certificates. The saved runtime
-lock was unchanged; Windows files were not re-inspected during this deployment.
+Deploy backend and frontend together only when the worker is idle. This slice
+does not alter the native interface or runtime, but executable harness changes
+alter the implementation fingerprint. Evidence reuse must be checked explicitly
+against the certified native components before activation. See
+[certification scope](native-certification-scope.md). Old checkpoint
+certificates are not migrated. Paid behavior checks remain a separate gate.
 
 Design references: [Codex instructions](https://developers.openai.com/codex/guides/agents-md),
 [OpenCode V2 compaction](https://opencode.ai/v2/docs/compaction), and
 [Hermes persistent memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory).
-V7 adapts their separation of durable guidance, recent working context, and
+The harness adapts their separation of durable guidance, recent working context, and
 editable memory; it does not reproduce their cross-session learning systems.

@@ -125,7 +125,7 @@ def helper_tools(*, skills=()):
     return result
 
 
-def stable_tools(*, skills=()):
+def stable_tools(*, skills=(), target_guidance=False):
     """Frozen catalog; current observation constraints determine legality.
 
     No observation IDs, card handles, phases or other changing data belong here.
@@ -135,6 +135,13 @@ def stable_tools(*, skills=()):
     for name, model in ACTION_MODELS.items():
         props = clean_schema(model.model_json_schema()["properties"])
         props.pop("type")
+        if target_guidance and "target_ids" in props:
+            props["target_ids"]["description"] = (
+                "Select cards by ID; list order does not move them. Position-dependent "
+                "effects use current hand order (left to right). Death converts the "
+                "left selected card into the right selected card. If needed and legal, "
+                "reorder the hand first, then use the new observation."
+            )
         actions.append(
             tool(
                 name,

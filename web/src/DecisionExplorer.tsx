@@ -16,6 +16,7 @@ import { modelLabel } from "./modelSelection";
 import { downloadDecisions, type DecisionExportFormat } from "./decisionExport";
 import { modifierDescription, editionClass } from "./cardPresentation";
 import { ModifierLegend } from "./ModifierLegend";
+import { DevTrace } from "./DevTrace";
 
 export function DecisionExplorer({
   token,
@@ -36,6 +37,7 @@ export function DecisionExplorer({
   const [refresh, setRefresh] = useState(0);
   const [busy, setBusy] = useState(false);
   const [liveUpdates, setLiveUpdates] = useState(true);
+  const [devMode, setDevMode] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [ante, setAnte] = useState("all");
@@ -71,6 +73,7 @@ export function DecisionExplorer({
         const rows = [
           ...data.actions,
           ...(data.uncommitted_actions || []),
+          ...(devMode ? data.pending_decisions || [] : []),
         ].sort((a, b) => a.decision - b.decision);
         setSelected(
           (previous) =>
@@ -94,14 +97,16 @@ export function DecisionExplorer({
       current = false;
       clearTimeout(timer);
     };
-  }, [token, refresh, initialDecision, liveUpdates]);
+  }, [token, refresh, initialDecision, liveUpdates, devMode]);
 
   const rows = useMemo(
     () =>
-      [...(ledger?.actions || []), ...(ledger?.uncommitted_actions || [])].sort(
-        (a, b) => a.decision - b.decision,
-      ),
-    [ledger],
+      [
+        ...(ledger?.actions || []),
+        ...(ledger?.uncommitted_actions || []),
+        ...(devMode ? ledger?.pending_decisions || [] : []),
+      ].sort((a, b) => a.decision - b.decision),
+    [ledger, devMode],
   );
   const visible = rows.filter(
     (row) =>
@@ -213,6 +218,14 @@ export function DecisionExplorer({
         run. Opening this view records retrospective exposure.
       </p>
       <div className="actions" aria-label="Decision exports">
+        <label className="dev-toggle">
+          <input
+            type="checkbox"
+            checked={devMode}
+            onChange={(event) => setDevMode(event.target.checked)}
+          />
+          Dev mode
+        </label>
         <button
           disabled={!ledger || !rows.length}
           onClick={() => exportDecisions("jsonl")}
@@ -563,6 +576,15 @@ export function DecisionExplorer({
                     <p role="alert" className="error">
                       {detailError}
                     </p>
+                  )}
+                  {devMode && (
+                    <DevTrace
+                      key={`${token}-${active.decision}`}
+                      token={token}
+                      decision={active.decision}
+                      liveUpdates={liveUpdates}
+                      refresh={refresh}
+                    />
                   )}
                   {!view && !detailError && (
                     <p role="status">Loading this decision…</p>

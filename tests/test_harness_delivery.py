@@ -43,7 +43,7 @@ def digest(value):
     return {"bytes": len(value), "sha256": hashlib.sha256(value).hexdigest()}
 
 
-def test_v7_delivery_is_byte_stable(store, config):
+def test_harness_delivery_is_byte_stable(store, config):
     provider = GoldenProvider()
     result = Runner(store, config, FakeGame("HARNESS_GOLDEN"), provider).run()
     rejected = [

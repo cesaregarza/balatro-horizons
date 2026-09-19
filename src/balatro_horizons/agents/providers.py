@@ -42,6 +42,8 @@ def canonical_messages(ctx, exchanges):
         working_memory=ctx["working_memory"],
         notebook_maintenance=ctx["notebook_maintenance"],
     )
+    if "previous_action_outcome" in ctx:
+        content["previous_action_outcome"] = ctx["previous_action_outcome"]
     messages = [
         {
             "role": "user",

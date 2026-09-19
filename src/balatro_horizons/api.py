@@ -277,6 +277,12 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
     def decision_detail(decision: int, token=Depends(session)):
         return review.decision(token, decision)
 
+    @app.get("/api/review/decisions/{decision}/trace")
+    def dev_trace(decision: int, token=Depends(session)):
+        from balatro_horizons.review.dev_trace import decision_trace
+
+        return decision_trace(review, token, decision)
+
     @app.post("/api/review/seek")
     def seek(data: SeekReview, token=Depends(session)):
         return review.seek(token, data.decision)

@@ -31,7 +31,10 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         if skills
         else KERNEL
     )
-    tools = notebook_tools(focused_tools(stable_tools(skills=skills)), action_notes=True)
+    from balatro_horizons.agents.outcomes import VERSION as outcome_version
+    tools = notebook_tools(
+        focused_tools(stable_tools(skills=skills, target_guidance=True)), action_notes=True
+    )
     from balatro_horizons.agents.working_memory import policy as working_memory_policy
     model = getattr(policy, "model", None)
     return {
@@ -50,7 +53,7 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         "knowledge_hash": digest(rules),
         "skills_preset": config.skills,
         "memory_policy": {
-            "across_actions": "run-notebook-v1-and-working-memory-v1",
+            "across_actions": "run-notebook-v1-and-" + working_memory_policy()["version"],
             "recent_public_events": RECENT_PUBLIC_EVENT_LIMIT,
             "retained_results": RETAINED_RESULTS,
             "page_bytes": PAGE_BYTES,
@@ -59,8 +62,9 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
             "notebook_characters": "sum_unicode_key_and_text_lengths",
             "branch_boundary": "pre_decision",
             "helper_exhaustion": "bounded_invalid_feedback",
+            "action_outcome": outcome_version,
             "working_memory": working_memory_policy(),
-            "notebook_guidance": "maintain_on_change_with_pre_eviction_notice",
+            "notebook_guidance": "evidence_backed_corrections_with_pre_eviction_notice",
             "note_writes": "journaled_helpers_or_validated_action_attachment",
         },
         "public_export_policy": "public-schema-v1-opaque-continuations-omitted",

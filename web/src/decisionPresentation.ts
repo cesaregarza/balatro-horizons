@@ -16,6 +16,8 @@ export function number(value: string | number | null | undefined) {
 export function actionTitle(row: DecisionRow) {
   const item = cardLabel(row.item || "item", row.effects);
   switch (row.type) {
+    case "model_turn":
+      return "Model calls before game action";
     case "play_hand":
       return `Play ${row.hand_types?.join(" / ") || "hand"}`;
     case "discard":
@@ -53,6 +55,10 @@ export function jokerChanges(row: DecisionRow, change: "added" | "removed") {
 }
 
 export function actionResult(row: DecisionRow) {
+  if (row.status === "awaiting_model")
+    return "Model decision in progress · no game action yet";
+  if (row.status === "no_game_action")
+    return "Decision ended without a game action";
   if (row.status === "awaiting_transition")
     return "Action committed · waiting for settled state";
   if (row.status === "in_progress") return "Action in progress";
