@@ -183,7 +183,7 @@ def context(
     if interface in NAMED_INTERFACES:
         result["interface_version"] = interface
         result["tools"] = (
-            stable_tools(skills=skills)
+            stable_tools(skills=skills, target_guidance=interface == WORKING_MEMORY_INTERFACE)
             if interface in STABLE_TOOL_INTERFACES
             else tools_for(observation, skills=skills)
         )
@@ -213,10 +213,14 @@ def context(
                 result["observation"].pop("memory", None)
                 result["run_notebook"] = deepcopy(notebook if notebook is not None else RunNotebook().view())
                 if interface == WORKING_MEMORY_INTERFACE:
+                    from balatro_horizons.agents.outcomes import previous_action_outcome
                     from balatro_horizons.agents.working_memory import WorkingMemory
 
                     result["working_memory"] = deepcopy(
                         working_memory if working_memory is not None else WorkingMemory().view()
+                    )
+                    result["previous_action_outcome"] = previous_action_outcome(
+                        original_observation, result["working_memory"]
                     )
             if frozen is None:
                 result["prompt"] = (

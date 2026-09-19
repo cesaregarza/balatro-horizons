@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Explicitly accept a tested harness over byte-identical certified native components.
+"""Explicitly accept a tested harness over certified native components.
 
 No Windows reads, game launches, paid calls, or checkpoint recertification.
 Historical artifacts keep their original implementation identity and provenance.
+By default native bytes must match; --startup-report permits a narrowly checked
+connection/startup patch with fresh unpaid native evidence for the changed layer.
 """
 
 import argparse
@@ -50,7 +52,7 @@ def revision_sources(root, revision):
     return commit, sources
 
 
-def prepare(root, candidate, baseline, offline_report):
+def prepare(root, candidate, baseline, offline_report, startup_report=None):
     root, candidate = native_path(root), native_path(candidate)
     old = json.loads((root/'private/capability-certificate.json').read_text())
     require(old.get('status') == 'passed', 'NATIVE_EVIDENCE_NOT_PASSED')
@@ -65,7 +67,26 @@ def prepare(root, candidate, baseline, offline_report):
             'BASELINE_NOT_CERTIFIED')
     before_native = native_components(before)
     after = source_files(candidate)
-    require(native_components(after) == before_native, 'NATIVE_COMPONENTS_CHANGED')
+    startup = None
+    if startup_report is None:
+        require(native_components(after) == before_native, 'NATIVE_COMPONENTS_CHANGED')
+    else:
+        from startup_scope import require_startup_scope
+
+        require_startup_scope(before, after)
+        startup = json.loads(native_path(startup_report).read_text())
+        require(startup.get('suite') == 'startup_lifecycle' and startup.get('status') == 'passed'
+                and startup.get('implementation_hash') == fingerprint_sources(after)
+                and startup.get('native_implementation_hash') == digest(native_components(after))
+                and startup.get('parent_certificate_hash') == digest(old)
+                and startup.get('environment_hash') == old['environment_hash']
+                and startup.get('profile_matches') is True and startup.get('native_launches') == 1
+                and startup.get('provider_calls') == 0 and startup.get('cost_usd') == 0,
+                'MATCHING_STARTUP_VERIFICATION_REQUIRED')
+        require(set(startup.get('runs', {})) == {'smoke', 'pilot'} and all(
+            run.get('outcome') in ('WIN', 'GAME_LOSS') and run.get('committed_actions', 0) > 0
+            and run.get('provider_calls') == 0 and run.get('cost_usd') == 0
+            for run in startup['runs'].values()), 'MATCHING_STARTUP_RUNS_REQUIRED')
     native_hash = digest(before_native)
     require(old.get('native_implementation_hash', native_hash) == native_hash,
             'BASELINE_NATIVE_MANIFEST_MISMATCH')
@@ -88,10 +109,14 @@ def prepare(root, candidate, baseline, offline_report):
         'offline_report_hash': digest(report), 'native_component_manifest': before_native,
         'native_launches': 0, 'checkpoint_certificates_migrated': False,
     }
+    if startup:
+        native_hash = digest(native_components(after))
+        reuse.update(kind='startup_connection_only', native_launches=1,
+                     startup_verification=startup, startup_report_hash=digest(startup))
     cert = {
         **old, 'schema_version': 2, 'certificate_id': uuid.uuid4().hex, 'created_at': now(),
         'accepted_implementation_hash': source, 'native_implementation_hash': native_hash,
-        'validation_kind': 'harness_compatibility', 'reuse': reuse,
+        'validation_kind': 'startup_compatibility' if startup else 'harness_compatibility', 'reuse': reuse,
         'native_validation_created_at': old.get('native_validation_created_at', old['created_at']),
     }
     return cert, {**evidence, 'accepted_implementation_hash': source,
@@ -123,10 +148,12 @@ def main():
     parser.add_argument('--candidate', required=True, type=Path, help='Tested Linux source')
     parser.add_argument('--baseline', required=True, help='Previously accepted Git revision')
     parser.add_argument('--offline-report', required=True, type=Path)
+    parser.add_argument('--startup-report', type=Path,
+                        help='Explicit startup-only scope: requires fresh native startup/transport evidence')
     parser.add_argument('--apply', action='store_true', help='Activate only after installing the candidate while idle')
     args = parser.parse_args()
     try:
-        cert, evidence = prepare(args.root, args.candidate, args.baseline, args.offline_report)
+        cert, evidence = prepare(args.root, args.candidate, args.baseline, args.offline_report, args.startup_report)
         if args.apply:
             activate(args.root, args.candidate, cert, evidence)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
@@ -135,7 +162,7 @@ def main():
                       'accepted_implementation_hash': cert['accepted_implementation_hash'],
                       'native_implementation_hash': cert['native_implementation_hash'],
                       'reused_certificate': cert['reuse']['parent_certificate_id'],
-                      'native_launches': 0, 'checkpoint_certificates_migrated': False}, sort_keys=True))
+                      'native_launches': cert['reuse']['native_launches'], 'checkpoint_certificates_migrated': False}, sort_keys=True))
 
 
 if __name__ == '__main__':

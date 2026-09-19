@@ -42,12 +42,87 @@ Calling `inspect_state` again reads the current state, not the old inspection.
 There is no replay of provider-private reasoning, signatures, or executable tool
 messages across game actions. Within-decision provider continuation is unchanged.
 
+## Explicit previous-action outcome
+
+The outcome-feedback revision adds `previous_action_outcome` to the dynamic v7
+request for both providers. It highlights the latest observed action's phase and
+cash before/after, with blind status, displayed chip totals, the prior target,
+and remaining hands/discards for a played hand. Existing transaction receipts
+preserve their distinction between quotes, balance changes, and unmeasured actual
+charges. This is a deterministic presentation of already-public evidence.
+
+The prior decision note is copied alongside the outcome only when the retained
+frame matches the decision, action, and complete public delta. It is labelled a
+pre-action model claim. Missing or trimmed notes stay null; an absent or mismatched
+last-action boundary produces no summary. Counter resets never become a fabricated
+hand score or scoring breakdown. The full `last_action` evidence stays available.
+
+The fixed prompt asks the agent to compare its expectation with the observed
+outcome and correct contradicted notebook entries. Action-attached notes should
+state intentions or predictions until success has actually been observed. The
+harness does not grade the move, classify the model's prose, supply strategy, or
+rewrite the notebook. No additional model call or helper operation is required.
+
+The receipt is assembled before request-history pruning and remains available
+when older frames are removed. It counts against the ordinary request bound.
+The frozen memory policy records the outcome and working-memory versions; prompt
+and source hashes distinguish each condition from the original v7 runs. Rollout
+requires an idle worker and explicit reuse of unchanged native evidence.
+
+### Linking action-attached notebook edits
+
+`previous-action-outcome-v2` also includes `recorded_note_update` when the last
+action carried a saved notebook edit. It preserves the original key, text (null
+for a deletion), notebook revision, and journal references, with explicit
+`before_action_execution` timing. The same record is retained in the bounded
+`working-memory-v2` frame. Both providers receive it in dynamic context beside
+the observed result; tool schemas and the instruction prefix remain static.
+
+Linking requires three matching events in the same episode and decision: the
+submitted action with its edit, the saved notebook mutation, and that exact
+committed action. Outcome pairing additionally checks the following public
+observation. Proposals without saves, standalone note helpers, rejected actions,
+execution failures, and mismatched records cannot produce a linked edit. A saved
+edit can survive failure without claiming that a game action succeeded.
+
+The edit is historical, not the current value of its key: a later helper may
+already have revised or deleted that entry. The prompt asks the model to compare
+the pre-action claim with the observed outcome and reconcile its own notebook.
+No automatic note rewrite, extra model call, or scoring judgment occurs. A
+missing or pruned edit stays null; after request-history pruning, the already
+assembled latest outcome and edit remain within the ordinary context bound.
+Old checkpoint identities remain unchanged and are not migrated to v2.
+
+The linked-edit revision passed 476 offline Python tests (nine native gates
+skipped), Ruff, and diff checks. Tests cover pre-action timing, set/delete edits,
+standalone helpers, invalid actions, execution failure, later notebook rewrites,
+branch inheritance, provider parity, and pruning. There were zero native launches
+and zero paid calls.
+
+The initial outcome revision, including target semantics and notebook guidance, passed 464
+offline Python tests (nine native gates skipped), Ruff, and diff checks. Coverage
+includes outcome isolation, fixed provider prefixes, target-selection preservation,
+and unchanged legacy tools. Saved Luna and Terra requests reproduced the 300/600
+unfinished blind and the quoted-$5 reroll with cash falling from $23 to $18.
+The read-only native-evidence reuse check passed against `cb77743`. These checks
+made zero native launches and zero paid calls; they do not establish better play.
+
 ## Notebook guidance and clearing notice
 
 The fixed prompt instructs the agent to maintain its plan, useful conclusions,
 and unresolved questions; update changed notes, remove obsolete entries, and
-avoid duplicating the current board. It reminds the agent to preserve useful
-conclusions before their supporting context disappears.
+avoid duplicating current cash, prices, counters, or the board. It asks the agent
+to keep evidence-backed corrections separate from its current plan, using another
+key when useful, and mark untested explanations as hypotheses. It reminds the
+agent to preserve useful conclusions before their supporting context disappears.
+Keys remain model-chosen; no `learned/build/economy/threats` template is imposed.
+
+V7's fixed tool descriptions and prompt also clarify target semantics:
+`target_ids` selects cards without moving them. Position-dependent effects use
+the physical hand-array order; Death converts the left selected card into the
+right selected card. The model may reorder first when legal and then use the new
+observation. The harness never rearranges targets or repairs an action for it.
+This adds static guidance only, preserving caching and native action semantics.
 
 The dynamic `notebook_maintenance` block identifies the oldest frame that will
 leave after the next action when the decision count is full. It also signals

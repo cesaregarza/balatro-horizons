@@ -50,6 +50,10 @@ def summary_input(store, eid):
             payload = {"operation": payload["operation"]}
         elif kind == "action_rejected":
             payload = {"code": payload["code"]}
+        elif kind == "agent_context":
+            # A decision may be waiting on helpers before any gameplay intent.
+            # The ledger needs only its presence, never the large context body.
+            payload = {}
         else:
             continue
         events.append(
@@ -348,11 +352,26 @@ def summarize(public):
         "uncommitted_actions": uncommitted_actions(
             events, by_id, settling=settling, live=public["summary"] is None
         ),
+        "pending_decisions": pending_decisions(events, by_id, public["summary"] is None),
     }
     if summary and len(ledger) != summary.get("committed_actions"):
         raise ValueError("ACTION_TOTAL_MISMATCH")
     scan(result)
     return result
+
+
+def pending_decisions(events, observations, live):
+    """Navigation only: never count helper-only decisions as game actions."""
+    intents = {e["observation_id"] for e in events if e["type"] in ("action_intent", "action_commit")}
+    started = {e["observation_id"] for e in events if e["type"] in ("agent_context", "provider_request")}
+    return [
+        {"event_id": event["event_id"], "decision": event["observation_id"],
+         "ante": event["payload"]["state"]["progress"]["ante"], "phase": event["payload"]["phase"],
+         "type": "model_turn", "note": None, "status": "awaiting_model" if live else "no_game_action"}
+        for event in events if event["type"] == "observation"
+        and event["observation_id"] in started - intents
+        and event["observation_id"] in observations
+    ]
 
 
 def build_summary(store, eid):

@@ -140,6 +140,7 @@ def test_direct_human_runs_cannot_be_scored_as_autonomous(store, config, monkeyp
     from balatro_horizons.service import RunService
 
     service = RunService(store, ReviewService(store))
+    monkeypatch.setattr("balatro_horizons.service.load_session", lambda: {})
     monkeypatch.setattr(service, "_launch", lambda task: None)
     eid = service.start(config, "human", "TEST_PANEL_SEED", offline=False)
     assert store.manifest(eid)["evaluation_eligible"] is False

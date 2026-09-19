@@ -169,3 +169,38 @@ def test_old_checkpoint_source_identity_still_fails_closed(migration, monkeypatc
     checkpoint = {'agent_protocol': {'episode_id': eid, 'hash': digest(deepcopy(bundle))}}
     with pytest.raises(ValueError, match='AGENT_PROTOCOL_IMPLEMENTATION_CHANGED'):
         restore_protocol(store, checkpoint)
+
+
+@pytest.mark.parametrize('invalid', [None, 'source', 'parent', 'paid', 'runs', 'profile'])
+def test_startup_acceptance_requires_matching_native_evidence(migration, monkeypatch, invalid):
+    root, candidate, offline, old = migration
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    report = {
+        'suite': 'startup_lifecycle', 'status': 'passed',
+        'implementation_hash': provenance.fingerprint_sources(provenance.source_files(candidate)),
+        'native_implementation_hash': digest(provenance.native_components(provenance.source_files(candidate))),
+        'parent_certificate_hash': digest(old), 'environment_hash': old['environment_hash'],
+        'profile_matches': True, 'native_launches': 1, 'provider_calls': 0, 'cost_usd': 0,
+        'runs': {name: {'outcome': 'GAME_LOSS', 'committed_actions': 5,
+                        'provider_calls': 0, 'cost_usd': 0} for name in ('smoke', 'pilot')},
+    }
+    if invalid == 'source':
+        report['implementation_hash'] = 'changed'
+    elif invalid == 'parent':
+        report['parent_certificate_hash'] = 'stale'
+    elif invalid == 'paid':
+        report['cost_usd'] = 1
+    elif invalid == 'runs':
+        report['runs'].pop('pilot')
+    elif invalid == 'profile':
+        report['profile_matches'] = False
+    path = offline.with_name('startup.json')
+    path.write_text(json.dumps(report))
+    if invalid:
+        with pytest.raises(ValueError, match='MATCHING_STARTUP'):
+            reuse.prepare(root, candidate, 'baseline', offline, path)
+    else:
+        cert, _ = reuse.prepare(root, candidate, 'baseline', offline, path)
+        assert cert['validation_kind'] == 'startup_compatibility'
+        assert cert['reuse']['native_launches'] == 1
+        assert cert['reuse']['checkpoint_certificates_migrated'] is False

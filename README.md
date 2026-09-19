@@ -132,6 +132,11 @@ filter or search choices, inspect before/after state, and jump into annotation.
 The explorer explicitly reveals the whole run; **Review →** retains prospective
 staged reveals. See [decision exploration and summaries](docs/decision-summaries.md).
 
+Enable **Dev mode** in the explorer to inspect every recorded model request,
+tool call, helper result, rejection, and notebook edit for a selected decision,
+including live decisions with no game action yet. Request/response JSON and the
+actual delivered context expand on demand. See [the dev inspector](docs/dev-inspector.md).
+
 ## Providers and spending
 
 The [skill-enabled harness](docs/harness-skills.md) gives new runs a compact catalog of twelve Balatro skills and on-demand chapter reads. The default is the canonical guide; **Models & budgets → Game knowledge** offers a native-rules-only comparison. Knowledge is frozen per run and inherited by branches.

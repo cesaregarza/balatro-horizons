@@ -13,6 +13,7 @@ from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import ROOT
 from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.engine.native import NativeGame
+from balatro_horizons.engine.windows_context import load_session
 from balatro_horizons.evaluation.scheduling import batch_attempts, reconcile_stop, record_stop
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.runner import OperatorAbort, Runner
@@ -158,6 +159,8 @@ class RunService:
         # NativeGame's constructor launches the game. Validate and capture prompt
         # bytes before constructing it; ordinary branches use their original snapshot.
         prompt_bytes = None if resume else load_prompt(ROOT, getattr(policy, "interface", "operate_v1"))
+        if not offline and eid is None:
+            load_session()
         if operations:
             policy = InterventionPolicy(operations, policy)
         if human_steps:
@@ -236,6 +239,8 @@ class RunService:
             interface = (config.models[agent].settings.get("harness_interface", "operate_v1")
                          if agent in config.models else "operate_v1")
             load_prompt(ROOT, interface)
+            if not offline:
+                load_session()
             eid = self.store.create(
                 {
                     "evidence_kind": "SYNTHETIC_TEST" if offline else "NATIVE",
@@ -282,6 +287,8 @@ class RunService:
             if chosen not in ("human", manifest["agent"]):
                 raise ValueError("PROTOCOL_CHANGE_INTERVENTION_NOT_SUPPORTED")
             self.validate_policy(config, chosen)  # Validate before immutable child records.
+            if manifest["evidence_kind"] != "SYNTHETIC_TEST":
+                load_session()
             eid, checkpoint, prefix = prepare_branch(self.store, config, parent, decision, mode)
             self.stop.clear()
             seed = self.store.manifest(parent, True)["seed"]
@@ -300,6 +307,36 @@ class RunService:
                     else 0,
                 )
             )
+            return eid
+
+    def continue_budget(self, parent, combined_cap, *, expected_head):
+        from balatro_horizons.review.budget_continuation import prepare_budget_continuation
+
+        with self._guard:
+            if self.thread and self.thread.is_alive():
+                raise ValueError("WORKER_BUSY")
+            plan = prepare_budget_continuation(
+                self.store, parent, combined_cap, expected_head=expected_head
+            )
+            config, manifest = plan["config"], plan["manifest"]
+            amount = self.validate_policy(config, manifest["agent"])
+            if amount is None:
+                raise ValueError("BUDGET_EXTENSION_REQUIRES_PAID_MODEL")
+            if not plan["spending"].affordability(amount)[0]:
+                raise ValueError("BUDGET_EXTENSION_BELOW_RESERVATION")
+            if plan["resume"]["calls"] >= config.budgets.max_provider_calls:
+                raise ValueError("PROVIDER_CALL_LIMIT")
+            offline = manifest["evidence_kind"] == "SYNTHETIC_TEST"
+            if not offline:
+                load_session()
+            eid = self.store.create(manifest, plan["private"])
+            self.stop.clear()
+            self.error = None
+            self.review.expose(eid, "operator_budget_extension", model_identity_seen=True)
+            self._launch(lambda: self.execute(
+                config, manifest["agent"], plan["private"]["seed"], offline=offline,
+                eid=eid, resume=plan["resume"], prefix=plan["prefix"], spending=plan["spending"],
+            ))
             return eid
 
     def run_batch(self, config, bid, *, offline=False):

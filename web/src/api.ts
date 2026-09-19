@@ -117,6 +117,7 @@ export type DecisionLedger = {
   summary: { outcome?: string; reason?: string; cost_usd?: number } | null;
   actions: DecisionRow[];
   uncommitted_actions: DecisionRow[] | null;
+  pending_decisions?: DecisionRow[];
   rounds:
     | {
         ante: number;
@@ -152,6 +153,7 @@ export async function api<T = any>(
   method = "GET",
   body?: unknown,
   reviewToken?: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -162,10 +164,15 @@ export async function api<T = any>(
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
   const data = await response.json();
   if (!response.ok)
-    throw new Error(data.error || data.detail || "Request failed");
+    throw new Error(
+      String(data.error || data.detail || "Request failed").startsWith("WINDOWS_SESSION_")
+        ? "Windows runtime connection needs refreshing. Run scripts/configure_workbench_session.py --apply from a Windows-connected WSL terminal. No episode was started."
+        : data.error || data.detail || "Request failed",
+    );
   return data;
 }
 

@@ -17,6 +17,7 @@ from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.config import ROOT, Config, load_config
 from balatro_horizons.contracts import AnnotationInput
 from balatro_horizons.engine.certification import require_checkpoint_certificate, verify_checkpoint
+from balatro_horizons.engine.windows_context import connection_status, load_session
 from balatro_horizons.evaluation.batches import plan_batch, seed_panel
 from balatro_horizons.evaluation.reports import export_batch, report_batch
 from balatro_horizons.review.operator_status import OperatorStatus
@@ -71,9 +72,15 @@ class BatchRun(Input):
 
 
 class VerifyInput(Input):
-    mode: Literal["checkpoint", "seed_prefix"] = "checkpoint"
+    mode: Literal["checkpoint", "seed_prefix", "checkpoint_probe", "seed_prefix_probe"] = "checkpoint"
     episode_id: str
     decision: int = Field(ge=0)
+    probe_action: dict | None = None
+
+
+class BudgetContinuationInput(Input):
+    combined_cap_usd: float = Field(gt=0, allow_inf_nan=False, strict=True)
+    parent_terminal_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class SettingsInput(Input):
@@ -228,7 +235,12 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
             "active_episode": runs.active_id,
             "error": runs.error,
             "episodes": result,
+            "runtime_connection": connection_status(),
         }
+
+    @app.get("/api/operator/runtime", dependencies=[Depends(operator)])
+    def runtime_connection():
+        return connection_status()
 
     @app.get("/api/operator/human", dependencies=[Depends(operator)])
     def human():
@@ -277,6 +289,12 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
     def decision_detail(decision: int, token=Depends(session)):
         return review.decision(token, decision)
 
+    @app.get("/api/review/decisions/{decision}/trace")
+    def dev_trace(decision: int, token=Depends(session)):
+        from balatro_horizons.review.dev_trace import decision_trace
+
+        return decision_trace(review, token, decision)
+
     @app.post("/api/review/seek")
     def seek(data: SeekReview, token=Depends(session)):
         return review.seek(token, data.decision)
@@ -312,9 +330,27 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
 
     @app.post("/api/verify", dependencies=[Depends(operator)])
     def verify(data: VerifyInput):
-        if runs.thread and runs.thread.is_alive():
-            raise ValueError("WORKER_BUSY")
+        # Serialize verification admission with starts and branches, including
+        # the full synchronous check; a new game must not enter mid-proof.
+        with runs._guard:
+            if runs.thread and runs.thread.is_alive():
+                raise ValueError("WORKER_BUSY")
+            return verify_idle(data)
+
+    def verify_idle(data: VerifyInput):
         parent = store.manifest(data.episode_id, True)
+        if data.mode in ("checkpoint_probe", "seed_prefix_probe"):
+            from balatro_horizons.engine.continuation_probe import verify_continuation_probe
+
+            if data.probe_action is None:
+                raise ValueError("PROBE_ACTION_REQUIRED")
+            return verify_continuation_probe(
+                store, Config.model_validate(parent["config"]), data.episode_id,
+                data.decision, data.probe_action,
+                restoration="seed_prefix" if data.mode == "seed_prefix_probe" else "checkpoint",
+            )
+        if data.probe_action is not None:
+            raise ValueError("PROBE_ACTION_REQUIRES_PROBE_MODE")
         return verify_checkpoint(
             store,
             Config.model_validate(parent.get("config", cfg.model_dump())),
@@ -322,6 +358,12 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
             data.decision,
             mode=data.mode,
         )
+
+    @app.post("/api/operator/episodes/{eid}/continue-budget", dependencies=[Depends(operator)])
+    def continue_budget(eid: str, data: BudgetContinuationInput):
+        return {"episode_id": runs.continue_budget(
+            eid, data.combined_cap_usd, expected_head=data.parent_terminal_hash,
+        )}
 
     @app.post("/api/branches", dependencies=[Depends(operator)])
     def branch(data: BranchInput):
@@ -404,6 +446,8 @@ def create_app(data_dir=None, config=None, *, public_origin=None):
         with runs._guard:
             if runs.thread and runs.thread.is_alive():
                 raise ValueError("WORKER_BUSY")
+            if not data.offline:
+                load_session()
             runs.stop.clear()
             runs._launch(lambda: runs.run_batch(cfg, bid, offline=data.offline))
         return {"batch_id": bid, "queued": True}

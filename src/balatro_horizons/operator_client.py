@@ -3,8 +3,8 @@
 import httpx
 
 
-def operator_request(path, method="GET", payload=None):
-    with httpx.Client(base_url="http://127.0.0.1:8765", trust_env=False, timeout=30) as client:
+def operator_request(path, method="GET", payload=None, *, timeout=30):
+    with httpx.Client(base_url="http://127.0.0.1:8765", trust_env=False, timeout=timeout) as client:
         try:
             bootstrap = client.get("/api/bootstrap")
             bootstrap.raise_for_status()

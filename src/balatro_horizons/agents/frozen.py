@@ -35,13 +35,14 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         if skills
         else KERNEL
     )
-    tools = stable_tools(skills=skills)
+    tools = stable_tools(skills=skills, target_guidance=interface == WORKING_MEMORY_INTERFACE)
     if interface in FOCUSED_INTERFACES:
         tools = focused_tools(tools)
     if interface in NOTEBOOK_INTERFACES:
         from balatro_horizons.agents.notebook import notebook_tools
 
         tools = notebook_tools(tools, action_notes=interface == WORKING_MEMORY_INTERFACE)
+    from balatro_horizons.agents.outcomes import VERSION as outcome_version
     from balatro_horizons.agents.working_memory import policy as working_memory_policy
     model = getattr(policy, "model", None)
     return {
@@ -76,9 +77,10 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
                 "branch_boundary": "pre_decision",
                 "helper_exhaustion": "bounded_invalid_feedback"}
                if interface in NOTEBOOK_INTERFACES else {}),
-            **({"across_actions": "run-notebook-v1-and-working-memory-v1",
+            **({"across_actions": "run-notebook-v1-and-" + working_memory_policy()["version"],
+                "action_outcome": outcome_version,
                 "working_memory": working_memory_policy(),
-                "notebook_guidance": "maintain_on_change_with_pre_eviction_notice",
+                "notebook_guidance": "evidence_backed_corrections_with_pre_eviction_notice",
                 "note_writes": "journaled_helpers_or_validated_action_attachment"}
                if interface == WORKING_MEMORY_INTERFACE else {}),
         },
@@ -87,7 +89,8 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     }
 
 
-def restore_protocol(store, checkpoint):
+def read_protocol(store, checkpoint):
+    """Read hash-checked frozen data without accepting it for execution."""
     reference = checkpoint.get("agent_protocol")
     if not isinstance(reference, dict):
         raise ValueError("AGENT_PROTOCOL_SNAPSHOT_MISSING")
@@ -99,6 +102,30 @@ def restore_protocol(store, checkpoint):
         raise ValueError("AGENT_PROTOCOL_SNAPSHOT_MISSING") from None
     if digest(bundle) != reference.get("hash") or bundle.get("version") != "agent-protocol-v1":
         raise ValueError("AGENT_PROTOCOL_SNAPSHOT_MISMATCH")
+    return bundle
+
+
+def restore_protocol(store, checkpoint):
+    bundle = read_protocol(store, checkpoint)
+    reference = checkpoint["agent_protocol"]
+    extension = checkpoint.get("budget_extension")
+    if extension is not None:
+        from balatro_horizons.agents.budget import validate_caps
+
+        cap = extension.get("combined_cap_usd")
+        validate_caps(cap, cap)
+        if (extension.get("version") != "budget-extension-v1"
+                or extension.get("parent_protocol") != reference
+                or extension.get("recorded_implementation_hash") != bundle["implementation_hash"]
+                or extension.get("implementation_hash") != implementation_fingerprint()
+                or cap <= bundle["episode_limits"]["max_episode_cost_usd"]):
+            raise ValueError("BUDGET_EXTENSION_PROTOCOL_MISMATCH")
+        # A deliberate intervention creates a new protocol. Original snapshots,
+        # prompts, tools and model settings remain immutable. Source transitions
+        # are explicit; ordinary branches still reject changed implementations.
+        bundle["episode_limits"]["max_episode_cost_usd"] = cap
+        bundle["implementation_hash"] = implementation_fingerprint()
+        bundle["budget_extension"] = deepcopy(extension)
     if bundle["implementation_hash"] != implementation_fingerprint():
         raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")
     return bundle
