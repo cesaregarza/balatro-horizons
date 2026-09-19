@@ -16,10 +16,10 @@ Actual cache reads and writes come from `usage.input_tokens_details.cached_token
 For a retrospective report, use a fresh output filename:
 
 ```sh
-uv --offline --directory /root/dev/balatro-horizons run python scripts/audit_transcript_efficiency.py \
-  --root /root/dev/balatro-horizons/data \
+uv run --offline python scripts/audit_transcript_efficiency.py \
+  --root data \
   --episode-id EPISODE_ID \
-  --output /root/dev/balatro-horizons/reports/verification/cache-diagnostics-EPISODE_ID.json \
+  --output reports/verification/cache-diagnostics-EPISODE_ID.json \
   --record-exposure
 ```
 

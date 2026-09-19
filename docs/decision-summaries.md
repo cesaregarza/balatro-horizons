@@ -74,9 +74,9 @@ three frontend-publisher regression cases.
 Frontend-only updates can be published without restarting an active worker:
 
 ```sh
-.venv/bin/python scripts/deploy_frontend.py \
+uv run python scripts/deploy_frontend.py \
   --build /tmp/completed-vite-build \
-  --dist /root/dev/balatro-horizons/web/dist \
+  --dist web/dist \
   --backup /tmp/previous-workbench-index.html
 ```
 
@@ -89,7 +89,7 @@ frontend-only publish procedure.
 Generate an ante-grouped Markdown ledger and structured JSON from one recorded run:
 
 ```sh
-uv --offline --directory /root/dev/balatro-horizons run ./scripts/summarize_run.py \
+uv run --offline ./scripts/summarize_run.py \
   --episode-id EPISODE_ID \
   --output reports/run-overviews/EPISODE_ID-decisions.json \
   --markdown-output reports/run-overviews/EPISODE_ID-decisions.md

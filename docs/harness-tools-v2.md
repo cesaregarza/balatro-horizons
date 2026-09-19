@@ -75,11 +75,11 @@ Luna model, reasoning settings, and Red/White plumbing configuration.
 
 ```bash
 # Read-only reconstruction of candidate requests against the recorded native run.
-uv --directory /root/dev/balatro-horizons run python scripts/audit_harness.py \
+uv run python scripts/audit_harness.py \
   --episode-id c0ed932043be429d972806833b4bb145 --compare-tools-v2
 
 # Uses the existing campaign ledger and a separately frozen configuration revision.
-uv --directory /root/dev/balatro-horizons run --env-file /path/to/openai.env \
+uv run --env-file /path/to/openai.env \
   python scripts/smoke_openai.py --config configs/luna-tools-smoke.yaml \
   --revision tools-v2-retrieval --allow-paid
 ```

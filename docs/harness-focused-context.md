@@ -98,7 +98,7 @@ Artifacts: `reports/verification/focused-context-audit.json` and
 `reports/verification/focused-context-v2-comparison.json`. Reproduce with:
 
 ```bash
-uv --directory /root/dev/balatro-horizons run python scripts/audit_harness.py \
+uv run python scripts/audit_harness.py \
   --episode-id 3fff6e2f4f3c489aa6dc69d5214444b4 \
   --candidate-interface tools_v3 --with-skills --check-contexts --probe-guide-reads
 ```
