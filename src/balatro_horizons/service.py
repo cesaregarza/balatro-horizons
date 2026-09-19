@@ -324,7 +324,7 @@ class RunService:
         if execution_path.exists():
             if json.loads(execution_path.read_text())["evidence_kind"] != evidence:
                 raise ValueError("BATCH_EVIDENCE_KIND_CHANGED")
-        elif offline:
+        else:
             atomic_json(execution_path, {"evidence_kind": evidence}, immutable=True)
         spending = Spending(
             self.store.root / "batches" / bid / "spending.json", config.budgets.max_batch_cost_usd
@@ -360,11 +360,7 @@ class RunService:
                         )
                         return bid
                 if not offline:
-                    # Unavailable WSL is not a native result. Do not freeze an
-                    # unstarted campaign's evidence kind before this preflight.
                     load_session()
-                    if not execution_path.exists():
-                        atomic_json(execution_path, {"evidence_kind": evidence}, immutable=True)
                 try:
                     self.execute(
                         config,

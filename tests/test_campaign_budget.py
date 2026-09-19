@@ -532,7 +532,7 @@ def test_native_dispatch_rejects_unfunded_slot_before_any_game_constructor(harne
     assert read_stop(h.store, plan)["stage"] == "preflight"
 
 
-def test_native_dispatch_missing_session_does_not_freeze_campaign(harness, monkeypatch):
+def test_native_dispatch_missing_session_preserves_native_campaign_kind(harness, monkeypatch):
     h = harness
     h.config.budgets.max_batch_cost_usd = 2
     plan = h.plan()
@@ -540,7 +540,10 @@ def test_native_dispatch_missing_session_does_not_freeze_campaign(harness, monke
     monkeypatch.setattr(service_module, "load_session", session)
     with pytest.raises(ValueError, match="WINDOWS_SESSION_NOT_CONFIGURED"):
         h.service().run_batch(h.config, plan["batch_id"], offline=False)
-    assert not (h.store.root / "batches" / plan["batch_id"] / "execution.json").exists()
+    execution_path = h.store.root / "batches" / plan["batch_id"] / "execution.json"
+    assert json.loads(execution_path.read_text())["evidence_kind"] == "NATIVE"
+    with pytest.raises(ValueError, match="BATCH_EVIDENCE_KIND_CHANGED"):
+        h.service().run_batch(h.config, plan["batch_id"], offline=True)
     assert not h.store.list_episodes() and not h.games and not h.calls
     h.native.assert_not_called()
 
