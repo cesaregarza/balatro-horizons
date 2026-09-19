@@ -11,9 +11,98 @@ from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.agents.tool_interface import NOTEBOOK_INTERFACES, WORKING_MEMORY_INTERFACE
 from balatro_horizons.agents.working_memory import restore_working_memory
 from balatro_horizons.config import Config
-from balatro_horizons.engine.certification import require_checkpoint_certificate
+from balatro_horizons.engine.certification import require_continuation_probe_certificate
 from balatro_horizons.engine.provenance import implementation_fingerprint
 from balatro_horizons.storage.journal import digest, locked
+
+
+def _matching_spend(rows, calls, cost):
+    return (
+        type(calls) is int
+        and calls >= 0
+        and type(cost) in (int, float)
+        and math.isfinite(cost)
+        and cost >= 0
+        and len(rows) == calls
+        and math.isclose(sum(row["cost"] for row in rows), cost, rel_tol=0, abs_tol=1e-9)
+    )
+
+
+def _reconcile_shared_ledger(store, parent_id, terminal, entries):
+    """Match one locked ledger snapshot to every terminal that spent from it."""
+    if not isinstance(entries, dict) or not entries:
+        raise ValueError("BUDGET_EXTENSION_INVALID_LEDGER")
+    for row in entries.values():
+        if (
+            not isinstance(row, dict)
+            or not isinstance(row.get("episode_id"), str)
+            or type(row.get("settled")) is not bool
+            or type(row.get("cost")) not in (int, float)
+            or not math.isfinite(row["cost"])
+            or row["cost"] < 0
+        ):
+            raise ValueError("BUDGET_EXTENSION_INVALID_LEDGER")
+
+    parent_rows = [row for row in entries.values() if row["episode_id"] == parent_id]
+    if not _matching_spend(parent_rows, terminal["provider_calls"], terminal["cost_usd"]):
+        raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
+    if any(not row["settled"] for row in parent_rows):
+        raise ValueError("BUDGET_EXTENSION_UNSETTLED_SPENDING")
+
+    accounted = {parent_id}
+    # SQLite row order can change when an episode is reindexed. Reconstruct the
+    # admission chain from each immutable child's preceding-ledger hash instead.
+    pending = [item for item in store.list_episodes()
+               if item["manifest"].get("parent_episode_id") == parent_id
+               and item["manifest"].get("assistance") == "budget_extension"]
+    while pending:
+        preceding = {key: row for key, row in entries.items()
+                     if row["episode_id"] in accounted}
+        prior_hash = digest(preceding)
+        match = next((item for item in pending if (
+            item["manifest"].get("budget_extension", {}).get("ledger_hash_at_admission") == prior_hash
+            and _matching_spend(
+                list(preceding.values()),
+                item["manifest"]["budget_extension"].get("prior_provider_calls"),
+                item["manifest"]["budget_extension"].get("prior_cost_usd"),
+            )
+        )), None)
+        if match is None:
+            raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
+        pending.remove(match)
+        item = match
+        manifest = item["manifest"]
+        child_id = item["episode_id"]
+        extension = manifest.get("budget_extension") or {}
+        prior_calls = extension["prior_provider_calls"]
+        if extension.get("spending_owner_episode_id") != parent_id:
+            raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
+        child = store.summary(child_id)
+        if child is None:
+            raise ValueError("BUDGET_EXTENSION_CHILD_UNRESOLVED")
+        child_rows = [row for row in entries.values() if row["episode_id"] == child_id]
+        child_events = store.events(child_id)
+        started = any(event["type"] == "episode_start" for event in child_events)
+        recovered = (
+            child.get("outcome") == "INFRASTRUCTURE_FAILURE"
+            and child.get("reason") in ("PROCESS_INTERRUPTED", "AMBIGUOUS_ACTION_AFTER_CRASH")
+        )
+        # Runner terminals count inherited calls; service pre-run failures and
+        # Store.recover terminals count only this child's journal requests.
+        child_calls = child["provider_calls"] if not started or recovered else child["provider_calls"] - prior_calls
+        if not started and child_calls != 0:
+            raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
+        if not _matching_spend(
+            child_rows, child_calls, child["cost_usd"]
+        ):
+            raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
+        # A retained unknown-usage reservation is still money spent when the
+        # immutable child terminal includes that row in its count and cost.
+        accounted.add(child_id)
+
+    if any(row["episode_id"] not in accounted for row in entries.values()):
+        raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
+    return sum(row["cost"] for row in entries.values()), len(entries)
 
 
 def prepare_budget_continuation(store, parent_id, combined_cap, *, expected_head):
@@ -39,7 +128,7 @@ def prepare_budget_continuation(store, parent_id, combined_cap, *, expected_head
         raise ValueError("PARENT_NOT_COST_EXHAUSTED")
     boundary = next(e for e in reversed(events) if e["type"] == "observation")
     decision = boundary["observation_id"]
-    checkpoint, cert = require_checkpoint_certificate(store, parent_id, decision)
+    checkpoint, cert = require_continuation_probe_certificate(store, parent_id, decision)
     if (checkpoint["public_prefix_hash"] != boundary["hash"]
             or checkpoint["committed"] != terminal["committed_actions"]):
         raise ValueError("BUDGET_EXTENSION_CHECKPOINT_MISMATCH")
@@ -77,25 +166,14 @@ def prepare_budget_continuation(store, parent_id, combined_cap, *, expected_head
     path = store.episode_path(parent_id, True) / "spending.json"
     with locked(path.with_suffix(".lock")):
         entries = json.loads(path.read_text())
-        if not entries or any(not e["settled"] for e in entries.values()):
-            raise ValueError("BUDGET_EXTENSION_UNSETTLED_SPENDING")
-        costs = [e["cost"] for e in entries.values()]
-        if any(isinstance(v, bool) or not isinstance(v, (int, float))
-               or not math.isfinite(v) or v < 0 for v in costs):
-            raise ValueError("BUDGET_EXTENSION_INVALID_LEDGER")
-        parent_entries = [e for e in entries.values() if e["episode_id"] == parent_id]
-        if (len(parent_entries) != terminal["provider_calls"]
-                or not math.isclose(sum(e["cost"] for e in parent_entries), terminal["cost_usd"],
-                                    rel_tol=0, abs_tol=1e-9)):
-            raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
-        prior_cost = sum(costs)
+        prior_cost, prior_calls = _reconcile_shared_ledger(store, parent_id, terminal, entries)
         if prior_cost >= combined_cap:
             raise ValueError("BUDGET_EXTENSION_CAP_ALREADY_SPENT")
         # Include helper calls made after the pre-decision checkpoint and failed
         # paid attempts; neither cost nor provider-call allowance is reset.
-        resume["cost"], resume["calls"] = prior_cost, len(entries)
+        resume["cost"], resume["calls"] = prior_cost, prior_calls
         extension["prior_cost_usd"] = prior_cost
-        extension["prior_provider_calls"] = len(entries)
+        extension["prior_provider_calls"] = prior_calls
         extension["ledger_hash_at_admission"] = digest(entries)
     remaining = resume["observation"]["remaining_budget"]
     remaining["provider_calls"] = max(0, config.budgets.max_provider_calls - resume["calls"])

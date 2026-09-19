@@ -5,7 +5,11 @@ import uuid
 from balatro_horizons.actions.validation import validate_action
 from balatro_horizons.config import ROOT
 from balatro_horizons.contracts import ActionEnvelope, Observation
-from balatro_horizons.engine.certification import certificate_path, read_checkpoint
+from balatro_horizons.engine.certification import (
+    PROBE_SCOPE,
+    continuation_probe_path,
+    read_checkpoint,
+)
 from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.engine.native import NativeGame
 from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
@@ -79,7 +83,7 @@ def verify_continuation_probe(store, config, eid, decision, action, *, repetitio
         "certificate_id": uuid.uuid4().hex,
         "episode_id": eid, "decision": decision,
         "mode": "checkpoint_probe",
-        "scope": "original_state_and_generated_same_action_probe",
+        "scope": PROBE_SCOPE,
         "evidence_kind": store.manifest(eid)["evidence_kind"],
         "status": "failed" if failures else "passed",
         "repetitions": repetitions, "completed_repetitions": len(after_hashes),
@@ -92,7 +96,7 @@ def verify_continuation_probe(store, config, eid, decision, action, *, repetitio
         "after_hashes": after_hashes,
         "created_at": now(), "failures": failures,
     }
-    path = certificate_path(store, eid, decision)
+    path = continuation_probe_path(store, eid, decision)
     atomic_json(path.with_name("certificate-record-" + cert["certificate_id"] + ".json"),
                 cert, immutable=True)
     # Any failed original-state restoration disables this boundary, regardless

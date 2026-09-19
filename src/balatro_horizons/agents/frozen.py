@@ -94,6 +94,10 @@ def restore_protocol(store, checkpoint):
     bundle = read_protocol(store, checkpoint)
     reference = checkpoint["agent_protocol"]
     extension = checkpoint.get("budget_extension")
+    current_implementation = implementation_fingerprint()
+    if bundle["implementation_hash"] != current_implementation:
+        # Raising the money cap is not permission to change the delivered protocol.
+        raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")
     if extension is not None:
         from balatro_horizons.agents.budget import validate_caps
 
@@ -102,17 +106,12 @@ def restore_protocol(store, checkpoint):
         if (extension.get("version") != "budget-extension-v1"
                 or extension.get("parent_protocol") != reference
                 or extension.get("recorded_implementation_hash") != bundle["implementation_hash"]
-                or extension.get("implementation_hash") != implementation_fingerprint()
+                or extension.get("implementation_hash") != current_implementation
                 or cap <= bundle["episode_limits"]["max_episode_cost_usd"]):
             raise ValueError("BUDGET_EXTENSION_PROTOCOL_MISMATCH")
-        # A deliberate intervention creates a new protocol. Original snapshots,
-        # prompts, tools and model settings remain immutable. Source transitions
-        # are explicit; ordinary branches still reject changed implementations.
+        # Only the explicit money limit changes; prompt, tools, and source do not.
         bundle["episode_limits"]["max_episode_cost_usd"] = cap
-        bundle["implementation_hash"] = implementation_fingerprint()
         bundle["budget_extension"] = deepcopy(extension)
-    if bundle["implementation_hash"] != implementation_fingerprint():
-        raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")
     return bundle
 
 

@@ -7,10 +7,17 @@ import pytest
 import test_campaign_budget
 from fastapi.testclient import TestClient
 
+from balatro_horizons import service as service_module
 from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.frozen import restore_protocol
+from balatro_horizons.agents.frozen import read_protocol, restore_protocol
 from balatro_horizons.api import create_app
-from balatro_horizons.engine.certification import read_checkpoint, require_checkpoint_certificate
+from balatro_horizons.engine.certification import (
+    certificate_path,
+    continuation_probe_path,
+    read_checkpoint,
+    require_checkpoint_certificate,
+    require_continuation_probe_certificate,
+)
 from balatro_horizons.engine.continuation_probe import verify_continuation_probe
 from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.review.budget_continuation import prepare_budget_continuation
@@ -100,19 +107,146 @@ def test_extension_rejects_uncertified_changed_or_underfunded_parent(harness):
     assert len(h.store.list_episodes()) == count
 
 
-def test_failed_attempt_costs_and_unsettled_reservations_cannot_be_erased(harness):
+def test_probe_certificate_cannot_authorize_an_ordinary_branch(harness):
+    h = harness
+    eid, _, decision, action = stopped(h)
+    certify(h, eid, decision, action)
+    with pytest.raises(ValueError, match="CHECKPOINT_NOT_CERTIFIED"):
+        require_checkpoint_certificate(h.store, eid, decision)
+    # A copied probe record still fails the mode/scope check at the ordinary path.
+    probe = json.loads(continuation_probe_path(h.store, eid, decision).read_text())
+    atomic_json(certificate_path(h.store, eid, decision), probe)
+    with pytest.raises(ValueError, match="CHECKPOINT_CERTIFICATE_INVALID"):
+        require_checkpoint_certificate(h.store, eid, decision)
+
+
+def test_unowned_spending_rows_are_not_admitted_even_if_settled(harness):
     h = harness
     eid, terminal, decision, action = stopped(h)
     certify(h, eid, decision, action)
     plan = prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
     spending = plan["spending"]
     spending.reserve("failed-attempt", "failed-child", 0.1, 1)
-    with pytest.raises(ValueError, match="UNSETTLED_SPENDING"):
+    with pytest.raises(ValueError, match="LEDGER_MISMATCH"):
         prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
     spending.settle("failed-attempt", 0.03)
+    with pytest.raises(ValueError, match="LEDGER_MISMATCH"):
+        prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
+
+
+def test_failed_child_terminal_reconciles_three_retained_reservations(harness):
+    h = harness
+    eid, terminal, decision, action = stopped(h)
+    certify(h, eid, decision, action)
+    h.fail_transport.append(True)
+    service = h.service()
+    child_id = service.continue_budget(eid, 1, expected_head=terminal["journal_head"])
+    service.thread.join(10)
+    assert not service.thread.is_alive() and service.error is None
+    child = h.store.summary(child_id)
+    assert child["outcome"] == "INFRASTRUCTURE_FAILURE"
+    path = h.store.episode_path(eid, True) / "spending.json"
+    ledger = json.loads(path.read_text())
+    retained = {key: row for key, row in ledger.items() if row["episode_id"] == child_id}
+    assert len(retained) == 3 and all(not row["settled"] for row in retained.values())
+    assert sum(row["cost"] for row in retained.values()) == pytest.approx(0.049152)
+    assert child["cost_usd"] == pytest.approx(0.049152)
+    assert child["provider_calls"] == terminal["provider_calls"] + 3
+
+    # The same locked snapshot supplies both terminal reconciliation and admission.
     retry = prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
-    assert retry["resume"]["cost"] == pytest.approx(terminal["cost_usd"] + 0.03)
+    assert retry["resume"]["cost"] == pytest.approx(terminal["cost_usd"] + 0.049152)
+    assert retry["resume"]["calls"] == terminal["provider_calls"] + 3
+    h.fail_transport.clear()
+    second = h.service()
+    second_id = second.continue_budget(eid, 1, expected_head=terminal["journal_head"])
+    second.thread.join(10)
+    assert not second.thread.is_alive() and second.error is None
+    assert h.store.summary(second_id)["outcome"] == "WIN"
+    assert h.store.manifest(second_id)["budget_extension"]["prior_cost_usd"] == pytest.approx(
+        terminal["cost_usd"] + 0.049152
+    )
+    # Index maintenance must not change the immutable admission chain.
+    h.store.reindex(eid)
+    after_reindex = prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
+    assert after_reindex["resume"]["calls"] == h.store.summary(second_id)["provider_calls"]
+    ledger = json.loads(path.read_text())
+    del ledger[next(iter(retained))]
+    atomic_json(path, ledger)
+    with pytest.raises(ValueError, match="LEDGER_MISMATCH"):
+        prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
+
+
+def test_pre_run_child_failure_with_no_new_calls_allows_reconciliation(harness, monkeypatch):
+    from unittest.mock import Mock
+
+    h = harness
+    eid, terminal, decision, action = stopped(h)
+    certify(h, eid, decision, action)
+    game = Mock(side_effect=RuntimeError("simulated pre-run failure"))
+    monkeypatch.setattr(service_module, "FakeGame", game)
+    service = h.service()
+    child_id = service.continue_budget(eid, 1, expected_head=terminal["journal_head"])
+    service.thread.join(10)
+    assert not service.thread.is_alive()
+    child = h.store.summary(child_id)
+    assert child["outcome"] == "INFRASTRUCTURE_FAILURE"
+    assert child["provider_calls"] == 0 and child["cost_usd"] == 0
+    game.assert_called_once()
+    retry = prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
+    assert retry["resume"]["calls"] == terminal["provider_calls"]
+
+
+def test_recovered_child_terminal_uses_child_only_call_count(harness):
+    h = harness
+    eid, terminal, decision, action = stopped(h)
+    certify(h, eid, decision, action)
+    plan = prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
+    child_id = h.store.create(plan["manifest"], plan["private"])
+    h.store.append(child_id, "episode_start", {"evidence_kind": "SYNTHETIC_TEST"})
+    request_id = "f" * 32
+    amount = 0.02
+    plan["spending"].reserve(request_id, child_id, amount, 1,
+                             prior_cost=plan["resume"]["cost"])
+    h.store.append(child_id, "provider_request", {"reserved_usd": amount},
+                   request_id=request_id)
+    assert h.store.recover() == [child_id]
+    child = h.store.summary(child_id)
+    assert child["provider_calls"] == 1 and child["cost_usd"] == amount
+    retry = prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
     assert retry["resume"]["calls"] == terminal["provider_calls"] + 1
+    assert retry["resume"]["cost"] == pytest.approx(terminal["cost_usd"] + amount)
+
+
+def test_two_service_processes_cannot_admit_siblings_from_same_ledger(harness):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from unittest.mock import Mock
+
+    h = harness
+    eid, terminal, decision, action = stopped(h)
+    certify(h, eid, decision, action)
+    services = [h.service(), h.service()]
+    for service in services:
+        service._launch = Mock()  # Hold the admitted child unresolved without a worker.
+    start = Barrier(3)
+
+    def admit(service):
+        start.wait()
+        try:
+            return service.continue_budget(eid, 1, expected_head=terminal["journal_head"])
+        except ValueError as error:
+            return str(error)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        pending = [pool.submit(admit, service) for service in services]
+        start.wait()
+        results = [future.result() for future in pending]
+    assert results.count("BUDGET_EXTENSION_CHILD_UNRESOLVED") == 1
+    assert len([result for result in results if len(result) == 32]) == 1
+    children = [row for row in h.store.list_episodes()
+                if row["manifest"].get("parent_episode_id") == eid]
+    assert len(children) == 1
 
 
 def test_probe_fails_on_first_divergence_without_relaunch_loop(harness, monkeypatch):
@@ -133,6 +267,8 @@ def test_probe_fails_on_first_divergence_without_relaunch_loop(harness, monkeypa
     assert len(games) == 1 and failed["completed_repetitions"] == 0
     assert failed["failures"][0]["reason"] == "PRIVATE_CONTINUATION_DIVERGENCE"
     with pytest.raises(ValueError, match="CERTIFICATE_INVALID"):
+        require_continuation_probe_certificate(h.store, eid, decision)
+    with pytest.raises(ValueError, match="CHECKPOINT_NOT_CERTIFIED"):
         require_checkpoint_certificate(h.store, eid, decision)
 
 
@@ -153,7 +289,7 @@ def test_probe_checks_the_result_of_the_action_too(harness, monkeypatch):
     assert failed["failures"][0]["reason"] == "PROBE_CONTINUATION_DIVERGENCE"
 
 
-def test_new_source_requires_explicit_intervention_not_ordinary_restore(harness, monkeypatch):
+def test_money_intervention_cannot_bypass_a_changed_frozen_protocol(harness, monkeypatch):
     h = harness
     eid, terminal, decision, action = stopped(h)
     checkpoint = read_checkpoint(h.store, eid, decision)
@@ -164,11 +300,9 @@ def test_new_source_requires_explicit_intervention_not_ordinary_restore(harness,
     with pytest.raises(ValueError, match="IMPLEMENTATION_CHANGED"):
         restore_protocol(h.store, checkpoint)
     certify(h, eid, decision, action)
-    plan = prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
-    new = restore_protocol(h.store, plan["resume"])
-    assert new["implementation_hash"] == "f" * 64
-    assert new["budget_extension"]["recorded_implementation_hash"] == old["implementation_hash"]
-    assert new["prompt_utf8"] == old["prompt_utf8"]
+    with pytest.raises(ValueError, match="IMPLEMENTATION_CHANGED"):
+        prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
+    assert read_protocol(h.store, checkpoint) == old
 
 
 def test_operator_token_and_finite_explicit_cap_required(store, config):
