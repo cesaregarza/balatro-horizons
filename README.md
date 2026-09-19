@@ -212,6 +212,8 @@ Balatro instance, removes provider API keys from child processes, and does not
 replace native certification. Node LTS and the Playwright browser must already
 be available.
 
+GitHub CI runs separate Python and web lanes, and both must pass.
+
 ```bash
 uv run pytest -q
 uv run ruff check src tests scripts
