@@ -1,6 +1,6 @@
 # Balatro Horizons tools
 
-The `tools_v2` interface offers named tools for the current phase. Use their current schemas, observation ID, visible object IDs and selection limits. Submit one game action, then use the returned settled state before making a dependent choice.
+The harness offers named tools for the current phase. Use their current schemas, observation ID, visible object IDs and selection limits. Submit one game action, then use the returned settled state before making a dependent choice.
 
 | Tool | Purpose | Scope |
 | --- | --- | --- |
@@ -21,4 +21,4 @@ Optional decision notes and bounded memory belong only in fields supported by th
 
 Helpers leave the game unchanged and remain subject to the current decision's call and context limits. A rejected action does not authorize changing its targets silently. If execution status is unresolved after a timeout, Horizons ends the episode as an infrastructure failure; the player must not retry a possibly executed action.
 
-The initial context supplies skill names and short descriptions. Read only the needed skill or reference. Pages carry `complete` and `next_key`; follow the latter through `read_rules` when needed. A `REFERENCE_CONTEXT_LIMIT` result means no additional page fits this decision. Existing context is retained. Skill text lasts for the current decision; save concise reminders or chapter keys in explicit memory if needed after the next action. The older `operate_v1` interface uses a `rules` operation with the same `guide/...` keys.
+The initial context supplies skill names and short descriptions. Read only the needed skill or reference. Pages carry `complete` and `next_key`; follow the latter through `read_rules` when needed. A `REFERENCE_CONTEXT_LIMIT` result means no additional page fits this decision. Existing context is retained. Skill text lasts for the current decision; save concise reminders or chapter keys in explicit memory if needed after the next action.

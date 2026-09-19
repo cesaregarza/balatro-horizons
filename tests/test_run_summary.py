@@ -8,8 +8,9 @@ import pytest
 from test_boundary import project
 
 from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.review.decision_ledger import summary_input
 from balatro_horizons.review.service import ReviewService
-from balatro_horizons.storage.journal import Store
+from balatro_horizons.storage.journal import Store, atomic_json, digest
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
@@ -156,6 +157,19 @@ def test_legacy_export_without_request_ids_remains_supported(recorded_run):
     result = summary_script.summarize(public)
     assert result["ledger_action_count"] == 1
     assert result["uncommitted_actions"] == []
+
+
+def test_historical_harness_label_comes_only_from_recorded_bundle(recorded_run):
+    store, eid = recorded_run
+    bundle = {"version": "agent-protocol-v1", "interface": "retired-recording"}
+    path = store.episode_path(eid, True) / "agent-protocol.json"
+    atomic_json(path, bundle)
+    store.append(eid, "episode_start", {"agent_protocol": {"episode_id": eid, "hash": digest(bundle)}})
+    manifest = summary_input(store, eid)["manifest"]
+    assert manifest["recorded_interface"] == "retired-recording"
+    assert manifest["current_harness"] is False
+    atomic_json(path, {**bundle, "interface": "tampered"})
+    assert summary_input(store, eid)["manifest"]["recorded_interface"] is None
 
 
 def test_cleared_round_keeps_the_target_that_was_played_against(tmp_path):

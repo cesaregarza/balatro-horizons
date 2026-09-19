@@ -51,7 +51,8 @@ and escapes all description text as React text nodes.
 New canonical observations declare `schema_version: 1.1`. Compact provider views
 retain that identity as `public_contract_version: 1.1`; last-action feedback is
 separately marked `public_delta_v1` with source `observed_public_states`.
-The existing `operate_v1` and `tools_v2`/`v3`/`v4` operations remain available.
+Existing recorded episodes retain their immutable public observations; new runs
+use the current harness.
 Inspection gains the corresponding public sections, including `last_action`.
 This is an input representation change and must be distinguished in comparisons
 with older runs; it is not evidence of improved gameplay.

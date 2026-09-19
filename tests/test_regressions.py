@@ -46,7 +46,14 @@ def test_direct_http_transport_and_unknown_usage(provider, monkeypatch):
 def test_reported_overage_is_not_hidden(tmp_path):
     policy = DirectProvider(model("openai"), Limits())
     actual = policy.usage_cost(
-        {"usage": {"input_tokens": 1_000_000, "output_tokens": 1_000_000}}, 0.5
+        {
+            "usage": {
+                "input_tokens": 1_000_000,
+                "output_tokens": 1_000_000,
+                "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+            }
+        },
+        0.5,
     )
     assert actual == 3
     spending = Spending(tmp_path / "spending.json", 1)

@@ -4,13 +4,9 @@ import json
 from copy import deepcopy
 
 from balatro_horizons.agents.failures import HarnessFailure
-from balatro_horizons.agents.tool_interface import (
-    CONTINUATION_INTERFACES,
-    INSPECT_SECTIONS,
-    compact_observation,
-    tool,
-)
+from balatro_horizons.agents.tool_interface import INSPECT_SECTIONS, tool
 from balatro_horizons.config import (
+    AUTOMATIC_PUBLIC_EVENT_COUNT,
     CONTEXT_FRAMING_BYTES,
     CONTEXT_SETTINGS_BYTES,
     EVENT_SUMMARY_CHARACTERS,
@@ -18,7 +14,6 @@ from balatro_horizons.config import (
 from balatro_horizons.config import HELPER_PAGE_BYTES as PAGE_BYTES
 from balatro_horizons.config import RETAINED_HELPER_RESULTS as RETAINED_RESULTS
 
-VERSION = "tools_v3"
 CARD_DEFAULTS = {
     "face_down": False,
     "rank": None,
@@ -45,10 +40,22 @@ def encode(value):
 
 
 def focused_observation(observation):
-    view, omitted = compact_observation(observation)
+    view = deepcopy(observation)
+    view["public_contract_version"] = view.pop("schema_version")
+    for key in ("episode_id", "public_state_hash"):
+        view.pop(key)
+    view["state"].pop("public_deck_knowledge")
+    omitted = [
+        event["event_id"]
+        for event in view["recent_public_events"][:-AUTOMATIC_PUBLIC_EVENT_COUNT]
+    ]
+    view["recent_public_events"] = view["recent_public_events"][-AUTOMATIC_PUBLIC_EVENT_COUNT:]
+    view["details_available"] = list(INSPECT_SECTIONS)
+    if view["phase"] == "BLIND_SELECT" and view["state"]["revealed_blinds"]:
+        view["current_blind_id"] = view["state"]["revealed_blinds"][0]["id"]
     state = view["state"]
     view["presentation"] = {
-        "version": VERSION,
+        "version": "harness",
         "card_defaults": deepcopy(CARD_DEFAULTS),
         "counter_defaults": deepcopy(COUNTER_DEFAULTS),
         "empty_effects_and_counters_omitted": True,
@@ -254,9 +261,7 @@ def context_bound(ctx, exchanges):
         max(
             len(
                 json.dumps(
-                    context_payload(
-                        ctx, exchanges, provider, ctx.get("interface_version", VERSION)
-                    ),
+                    context_payload(ctx, exchanges, provider),
                     ensure_ascii=False,
                 ).encode()
             )
@@ -272,7 +277,7 @@ def working_context(ctx, exchanges, byte_limit):
     delivered = deepcopy(exchanges)
     indices = list(range(len(delivered)))
     cleared = []
-    preserve_turns = ctx.get("interface_version") in CONTINUATION_INTERFACES
+    preserve_turns = True
 
     def clear_at(position):
         exchange = delivered[position]

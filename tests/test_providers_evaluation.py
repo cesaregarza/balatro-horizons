@@ -4,7 +4,7 @@ import uuid
 import pytest
 from test_boundary import project
 
-from balatro_horizons.agents.protocol import TOOL, context
+from balatro_horizons.agents.protocol import context
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure
 from balatro_horizons.config import Limits, ModelConfig
 from balatro_horizons.engine.fake import FakeGame
@@ -15,44 +15,69 @@ from balatro_horizons.evaluation.reports import scan
 def model(provider):
     return ModelConfig(
         provider=provider,
-        model="test-fixed-id",
+        model="gpt-5.6-test" if provider == "openai" else "claude-test",
         input_usd_per_million=1,
         output_usd_per_million=2,
+        cached_input_usd_per_million=0.1 if provider == "openai" else None,
+        cache_write_input_usd_per_million=1.25 if provider == "openai" else None,
         pricing_date="2026-09-14",
     )
 
 
 def test_AT15_provider_parity():
     ctx = context(project(FakeGame().observe_private()))
-    a = DirectProvider(model("openai"), Limits()).request(ctx, [])
-    b = DirectProvider(model("anthropic"), Limits()).request(ctx, [])
-    assert a["input"] == b["messages"]
-    assert a["instructions"] == b["system"]
-    assert a["tools"][0]["parameters"] == b["tools"][0]["input_schema"] == TOOL["parameters"]
-    assert a["parallel_tool_calls"] is False
-    assert b["tool_choice"]["disable_parallel_tool_use"] is True
-    assert "api_key" not in json.dumps(a) + json.dumps(b)
+    policies = [DirectProvider(model(provider), Limits()) for provider in ("openai", "anthropic")]
+    try:
+        a, b = [policy.request(ctx, []) for policy in policies]
+        assert a["input"][1:] == b["messages"]
+        assert a["input"][0]["content"][0]["text"] == b["system"]
+        assert [(tool["name"], tool["parameters"]) for tool in a["tools"]] == [
+            (tool["name"], tool["input_schema"]) for tool in b["tools"]
+        ]
+        assert a["parallel_tool_calls"] is False
+        assert b["tool_choice"]["disable_parallel_tool_use"] is True
+        assert "api_key" not in json.dumps(a) + json.dumps(b)
+    finally:
+        for policy in policies:
+            policy.client.close()
 
 
 def test_AT15_provider_rejects_multiple_operations():
+    ctx = context(project(FakeGame().observe_private()))
     p = DirectProvider(model("openai"), Limits())
-    with pytest.raises(ProtocolFailure):
-        p.parse({"output": [{"type": "function_call", "name": "operate", "arguments": "{}"}] * 2})
-    p = DirectProvider(model("anthropic"), Limits())
-    assert (
+    p.request(ctx, [])
+    with pytest.raises(ProtocolFailure, match="MULTIPLE_OPERATIONS"):
         p.parse(
             {
-                "content": [
+                "status": "completed",
+                "output": [
                     {
-                        "type": "tool_use",
-                        "name": "operate",
-                        "input": {"kind": "abort", "reason": "test"},
+                        "type": "function_call",
+                        "call_id": f"call_{index}",
+                        "name": "calculate",
+                        "arguments": '{"expression":"1+1"}',
                     }
-                ]
+                    for index in range(2)
+                ],
             }
-        )["kind"]
-        == "abort"
-    )
+        )
+    p.client.close()
+    p = DirectProvider(model("anthropic"), Limits())
+    p.request(ctx, [])
+    assert p.parse(
+        {
+            "stop_reason": "tool_use",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "tool_abort",
+                    "name": "abort_run",
+                    "input": {"reason": "test"},
+                }
+            ],
+        }
+    )["kind"] == "abort"
+    p.client.close()
 
 
 def attempt(slot, outcome, date, cost=1, branch=False):

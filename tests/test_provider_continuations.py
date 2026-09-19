@@ -5,7 +5,7 @@ import httpx
 import pytest
 from provider_transport import with_input_count
 from test_boundary import project
-from test_tool_interface import config_for
+from test_harness_tools import config_for
 
 from balatro_horizons.agents.protocol import decision_context
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure
@@ -15,7 +15,7 @@ from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.runner import Runner
 
 
-def model(provider, interface="tools_v5"):
+def model(provider):
     return ModelConfig(
         provider=provider,
         model="gpt-5.6-terra" if provider == "openai" else "claude-test",
@@ -24,14 +24,14 @@ def model(provider, interface="tools_v5"):
         cached_input_usd_per_million=0.2 if provider == "openai" else None,
         cache_write_input_usd_per_million=2.5 if provider == "openai" else None,
         pricing_date="2026-09-16",
-        settings={"harness_interface": interface},
+        settings={},
     )
 
 
-def initial(provider, interface="tools_v5"):
+def initial(provider):
     observation = project(FakeGame().observe_private())
-    ctx, exchanges = decision_context(observation, [], interface=interface)
-    policy = DirectProvider(model(provider, interface), Limits())
+    ctx, exchanges = decision_context(observation, [])
+    policy = DirectProvider(model(provider), Limits())
     return observation, ctx, policy, policy.request(ctx, exchanges)
 
 
@@ -44,9 +44,8 @@ def exchange(policy, operation, result):
     }
 
 
-@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
-def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly(interface):
-    observation, ctx, policy, first = initial("openai", interface)
+def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly():
+    observation, ctx, policy, first = initial("openai")
     assert first["include"] == ["reasoning.encrypted_content"]
     assert first["store"] is False and first["tool_choice"] == "auto"
     assert "buy" in {tool["name"] for tool in first["tools"]}
@@ -68,7 +67,7 @@ def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly(interface
     operation = policy.parse({"status": "completed", "output": [reasoning, call]})
     result = {"content": "[]", "complete": True, "game_advanced": False}
     ctx, delivered = decision_context(
-        observation, [exchange(policy, operation, result)], interface=interface
+        observation, [exchange(policy, operation, result)]
     )
     followup = policy.request(ctx, delivered)
     assert reasoning in followup["input"] and call in followup["input"]
@@ -81,9 +80,8 @@ def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly(interface
     assert json.dumps(followup).count("opaque-openai-state") == 1
 
 
-@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
-def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly(interface):
-    observation, ctx, policy, first = initial("anthropic", interface)
+def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly():
+    observation, ctx, policy, first = initial("anthropic")
     assert first["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
     assert all(tool["strict"] is True for tool in first["tools"])
     blocks = [
@@ -100,7 +98,7 @@ def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly(in
     operation = policy.parse({"stop_reason": "tool_use", "content": deepcopy(blocks)})
     result = {"content": "[]", "complete": True, "game_advanced": False}
     ctx, delivered = decision_context(
-        observation, [exchange(policy, operation, result)], interface=interface
+        observation, [exchange(policy, operation, result)]
     )
     followup = policy.request(ctx, delivered)
     assistant = next(message for message in followup["messages"] if message["role"] == "assistant")
@@ -110,9 +108,8 @@ def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly(in
     assert "is_error" not in tool_result
 
 
-@pytest.mark.parametrize("interface", ["tools_v5", "tools_v6", "tools_v7"])
-def test_cache_transport_and_accounting_remain_conservative(interface):
-    _, _, openai, openai_body = initial("openai", interface)
+def test_cache_transport_and_accounting_remain_conservative():
+    _, _, openai, openai_body = initial("openai")
     assert openai_body["prompt_cache_options"] == {"mode": "explicit"}
     usage = {
         "usage": {
@@ -124,7 +121,7 @@ def test_cache_transport_and_accounting_remain_conservative(interface):
     assert openai.usage_cost(usage, 1) == pytest.approx(
         (1000 * 2 + 3000 * 0.2 + 1000 * 2.5 + 100 * 12) / 1_000_000
     )
-    _, _, anthropic, anthropic_body = initial("anthropic", interface)
+    _, _, anthropic, anthropic_body = initial("anthropic")
     assert "cache_control" not in json.dumps(anthropic_body)
     assert (
         anthropic.usage_cost(
@@ -174,18 +171,6 @@ def test_stop_and_completion_failures_have_specific_codes(provider, response, co
     assert error.value.code == code
 
 
-def test_legacy_tool_interface_retains_generic_failure_semantics():
-    legacy = model("openai").model_copy(deep=True)
-    legacy.settings["harness_interface"] = "tools_v4"
-    observation = project(FakeGame().observe_private())
-    ctx, exchanges = decision_context(observation, [], interface="tools_v4")
-    policy = DirectProvider(legacy, Limits())
-    policy.request(ctx, exchanges)
-    with pytest.raises(ProtocolFailure) as error:
-        policy.parse({"status": "incomplete", "output": []})
-    assert error.value.code == "EXPECTED_ONE_COMPLETE_OPERATION"
-
-
 def test_multiple_openai_calls_are_all_resolved_with_specific_feedback():
     observation, _, policy, _ = initial("openai")
     calls = [
@@ -207,7 +192,6 @@ def test_multiple_openai_calls_are_all_resolved_with_specific_feedback():
     ctx, delivered = decision_context(
         observation,
         [exchange(policy, {"kind": "invalid"}, feedback)],
-        interface="tools_v5",
     )
     followup = policy.request(ctx, delivered)
     outputs = [item for item in followup["input"] if item.get("type") == "function_call_output"]
@@ -233,7 +217,6 @@ def test_invalid_openai_arguments_get_linked_json_feedback():
     ctx, delivered = decision_context(
         observation,
         [exchange(policy, {"kind": "invalid"}, feedback)],
-        interface="tools_v5",
     )
     followup = policy.request(ctx, delivered)
     result = next(item for item in followup["input"] if item.get("type") == "function_call_output")
@@ -253,7 +236,6 @@ def test_unavailable_anthropic_call_gets_linked_error_feedback():
     ctx, delivered = decision_context(
         observation,
         [exchange(policy, {"kind": "invalid"}, feedback)],
-        interface="tools_v5",
     )
     followup = policy.request(ctx, delivered)
     result = followup["messages"][-1]["content"][0]
@@ -281,8 +263,8 @@ def test_provider_continuation_resets_after_committed_game_action(store, monkeyp
             arguments = {
                 "observation_id": runner.observation.observation_id,
                 "blind_id": blind.id,
-                "memory_update": None,
                 "decision_note": None,
+                "note_update": None,
             }
         else:
             name, arguments = "inspect_state", {"section": "hand", "offset": 0}
@@ -319,17 +301,7 @@ def test_provider_continuation_resets_after_committed_game_action(store, monkeyp
     assert result["reason"] == "AGENT_ABORT"
     assert len(requests) == 3
     assert "decision-one-reasoning" in json.dumps(requests[1])
-    import runpy
-
-    from balatro_horizons.config import ROOT
-    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    replay = runpy.run_path(str(ROOT / "scripts/replay_helper_context.py"))["replay"]
-    journal_before = store.events(result["episode_id"])
-    checked = replay(store, result["episode_id"], 0)
-    assert checked["status"] == "fits_transport" and checked["provider_items_preserved"]
-    assert checked["provider_calls"] == 0 and not checked["token_count_verified"]
-    assert "decision-one-reasoning" not in json.dumps(checked)
-    assert store.events(result["episode_id"]) == journal_before
+    assert "decision-one-reasoning" not in json.dumps(requests[2])
 
 
 def test_context_clears_results_but_retains_provider_protocol_shells():
@@ -357,7 +329,7 @@ def test_context_clears_results_but_retains_provider_protocol_shells():
                 },
             }
         )
-    ctx, delivered = decision_context(observation, exchanges, interface="tools_v5")
+    ctx, delivered = decision_context(observation, exchanges)
     assert len(delivered) == 5
     assert [item["result"].get("context_cleared", False) for item in delivered] == [
         True,

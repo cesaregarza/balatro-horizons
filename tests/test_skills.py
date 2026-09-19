@@ -8,7 +8,7 @@ import httpx
 import pytest
 from provider_transport import with_input_count
 from test_boundary import project
-from test_tool_interface import config_for
+from test_harness_tools import config_for
 
 from balatro_horizons.agents.baselines import Baseline, ScriptedPolicy
 from balatro_horizons.agents.protocol import Operation, context, decision_context, helper
@@ -27,7 +27,7 @@ def test_catalog_has_descriptions_without_loading_bodies_and_provider_parity():
     guide, skills, fingerprint = load_guide()
     assert len(skills) == 12 and len(guide["entries"]) == 24 and fingerprint
     observation = project(FakeGame().observe_private())
-    ctx = context(observation, interface="tools_v2", skills=skills)
+    ctx = context(observation, skills=skills)
     for item in skills:
         assert item["description"] in ctx["rules_kernel"]
         assert guide["entries"][item["key"]] not in ctx["rules_kernel"]
@@ -37,7 +37,7 @@ def test_catalog_has_descriptions_without_loading_bodies_and_provider_parity():
         policy = DirectProvider(config.models["luna"], config.budgets)
         requests.append(policy.request(ctx, []))
         policy.client.close()
-    assert requests[0]["instructions"] == requests[1]["system"]
+    assert requests[0]["input"][0]["content"][0]["text"] == requests[1]["system"]
     left = next(t["parameters"] for t in requests[0]["tools"] if t["name"] == "read_skill")
     right = next(t["input_schema"] for t in requests[1]["tools"] if t["name"] == "read_skill")
     assert left == right
@@ -45,11 +45,10 @@ def test_catalog_has_descriptions_without_loading_bodies_and_provider_parity():
     followup, _ = decision_context(
         observation,
         [{"operation": {"kind": "arithmetic", "expression": "1+1"}, "result": {"result": "2"}}],
-        interface="tools_v2",
         skills=skills,
     )
-    assert followup["skill_catalog_delivery"] == "names_in_tool_schema"
-    assert skills[0]["description"] not in followup["rules_kernel"]
+    assert followup["skill_catalog_delivery"] == "names_and_descriptions"
+    assert skills[0]["description"] in followup["rules_kernel"]
 
 
 def test_skill_reads_are_frozen_public_and_paginated():
@@ -96,12 +95,10 @@ def test_missing_or_tampered_guide_fails_before_provider_calls(tmp_path):
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
-@pytest.mark.parametrize("interface", ["tools_v2", "tools_v3"])
 def test_model_reads_skill_and_reference_then_completes_synthetic_run(
-    store, monkeypatch, provider, interface
+    store, monkeypatch, provider
 ):
     config = config_for(provider)
-    config.models["luna"].settings["harness_interface"] = interface
     monkeypatch.setenv(
         "OPENAI_API_KEY" if provider == "openai" else "ANTHROPIC_API_KEY", "mock-only"
     )
@@ -127,20 +124,41 @@ def test_model_reads_skill_and_reference_then_completes_synthetic_run(
             args = {
                 **action,
                 "observation_id": envelope["observation_id"],
-                "memory_update": "Consult guide/balatro-scoring when needed.",
                 "decision_note": None,
+                "note_update": {
+                    "key": "guide",
+                    "text": "Consult guide/balatro-scoring when needed.",
+                },
             }
         if provider == "openai":
             payload = {
                 "status": "completed",
-                "output": [{"type": "function_call", "name": name, "arguments": json.dumps(args)}],
+                "output": [
+                    {
+                        "type": "function_call",
+                        "call_id": f"call_{len(requests)}",
+                        "name": name,
+                        "arguments": json.dumps(args),
+                    }
+                ],
             }
         else:
             payload = {
                 "stop_reason": "tool_use",
-                "content": [{"type": "tool_use", "name": name, "input": args}],
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": f"tool_{len(requests)}",
+                        "name": name,
+                        "input": args,
+                    }
+                ],
             }
-        payload["usage"] = {"input_tokens": 100, "output_tokens": 20}
+        payload["usage"] = {
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+        }
         return httpx.Response(200, json=payload)
 
     policy = DirectProvider(
@@ -152,8 +170,8 @@ def test_model_reads_skill_and_reference_then_completes_synthetic_run(
     result = runner.run()
     assert result["outcome"] == "WIN"
     assert result["provider_calls"] == result["committed_actions"] + 2
-    # Text is scoped to its decision; the explicit note survives the game action.
-    assert "Estimate a candidate score" not in json.dumps(requests[3])
+    # Public helper results remain in bounded working memory; the note is durable too.
+    assert "Estimate a candidate score" in json.dumps(requests[3])
     assert "Consult guide/balatro-scoring when needed." in json.dumps(requests[3])
     events = store.events(result["episode_id"])
     assert len([e for e in events if e["type"] == "helper_result"]) == 2
@@ -209,11 +227,14 @@ def test_opt_out_and_skill_helper_budget_do_not_advance_game(store):
     cfg.budgets.max_helper_calls_per_decision = 1
     read = {"kind": "skill", "name": "balatro-scoring"}
     game = FakeGame()
-    result = Runner(store, cfg, game, ScriptedPolicy([read, read])).run()
-    assert result["reason"] == "HELPER_CALL_LIMIT" and result["committed_actions"] == 0
+    result = Runner(store, cfg, game, ScriptedPolicy([read] * 4)).run()
+    assert result["reason"] == "AGENT_PROTOCOL_FAILURE" and result["committed_actions"] == 0
+    assert sum(
+        event["type"] == "helper_result" for event in store.events(result["episode_id"])
+    ) == 1
 
 
-def test_legacy_discovery_and_missing_snapshot(store):
+def test_current_discovery_and_missing_snapshot(store):
     _, skills, _ = load_guide()
     observation = project(FakeGame().observe_private())
     ctx, _ = decision_context(
@@ -221,9 +242,9 @@ def test_legacy_discovery_and_missing_snapshot(store):
         [{"operation": {"kind": "arithmetic", "expression": "1+1"}, "result": {"result": "2"}}],
         skills=skills,
     )
-    assert "read_skill(" not in ctx["rules_kernel"]
+    assert "read_skill(" in ctx["rules_kernel"]
     assert all(s["name"] in ctx["rules_kernel"] for s in skills)
-    assert ctx["skill_catalog_delivery"] == "names_in_rules_kernel"
+    assert ctx["skill_catalog_delivery"] == "names_and_descriptions"
     eid = store.create({"evidence_kind": "SYNTHETIC_TEST"}, {})
     with pytest.raises(ValueError, match="KNOWLEDGE_SNAPSHOT_MISSING"):
         restore_knowledge(store, {"knowledge": {"episode_id": eid, "hash": "absent"}})

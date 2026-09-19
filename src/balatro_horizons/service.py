@@ -157,7 +157,7 @@ class RunService:
 
         # NativeGame's constructor launches the game. Validate and capture prompt
         # bytes before constructing it; ordinary branches use their original snapshot.
-        prompt_bytes = None if resume else load_prompt(ROOT, getattr(policy, "interface", "operate_v1"))
+        prompt_bytes = None if resume else load_prompt(ROOT)
         if operations:
             policy = InterventionPolicy(operations, policy)
         if human_steps:
@@ -233,9 +233,7 @@ class RunService:
             self.validate_policy(config, agent)
             from balatro_horizons.agents.instructions import load_prompt
 
-            interface = (config.models[agent].settings.get("harness_interface", "operate_v1")
-                         if agent in config.models else "operate_v1")
-            load_prompt(ROOT, interface)
+            load_prompt(ROOT)
             eid = self.store.create(
                 {
                     "evidence_kind": "SYNTHETIC_TEST" if offline else "NATIVE",

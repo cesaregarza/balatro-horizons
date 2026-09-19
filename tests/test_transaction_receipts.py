@@ -49,7 +49,7 @@ def test_receipt_distinguishes_quote_from_cash_delta_and_unobserved_charge(kind)
         )
         assert receipt.quoted_cash_proceeds is None
     for provider in ("openai", "anthropic"):
-        delivered = delivered_observation(request(after, provider, "tools_v5"), provider)
+        delivered = delivered_observation(request(after, provider), provider)
         assert delivered["last_action"]["transaction"] == receipt.model_dump(mode="json")
     old = after.last_action.model_dump(mode="json")
     old.pop("transaction")

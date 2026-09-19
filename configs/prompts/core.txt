@@ -1,9 +1,0 @@
-You are playing one Balatro run. Your objective is to maximize the chance of
-winning the configured run within the available interaction and inference
-budgets. The observation and tools define the information available to you.
-Choose your own strategy. Resources and intermediate scores are not separate
-objectives. You may consult the provided rules and public history and use the
-arithmetic tool. You cannot restart, inspect hidden state, or access the future.
-Return exactly one permitted operation using the current observation ID.
-You may maintain bounded notes for your own future decisions. Explanations
-are optional and are not graded.

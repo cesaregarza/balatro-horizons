@@ -4,7 +4,6 @@ from copy import deepcopy
 from typing import get_args
 
 from balatro_horizons.config import (
-    AUTOMATIC_PUBLIC_EVENT_COUNT,
     MAX_ABORT_REASON_CHARACTERS,
     MAX_ARITHMETIC_CHARACTERS,
     MAX_DECISION_NOTE_CHARACTERS,
@@ -13,14 +12,6 @@ from balatro_horizons.config import (
 )
 from balatro_horizons.contracts import Action
 
-VERSION = "tools_v2"
-NAMED_INTERFACES = ("tools_v2", "tools_v3", "tools_v4", "tools_v5", "tools_v6", "tools_v7")
-FOCUSED_INTERFACES = ("tools_v3", "tools_v4", "tools_v5", "tools_v6", "tools_v7")
-STABLE_TOOL_INTERFACES = ("tools_v4", "tools_v5", "tools_v6", "tools_v7")
-CONTINUATION_INTERFACES = ("tools_v5", "tools_v6", "tools_v7")
-NOTEBOOK_INTERFACE = "tools_v6"
-WORKING_MEMORY_INTERFACE = "tools_v7"
-NOTEBOOK_INTERFACES = (NOTEBOOK_INTERFACE, WORKING_MEMORY_INTERFACE)
 INSPECT_SECTIONS = (
     "hand",
     "jokers",
@@ -82,60 +73,8 @@ def clean_schema(schema):
     return schema
 
 
-def tools_for(observation, *, skills=()):
+def helper_tools(*, skills=()):
     result = []
-    for name in observation["available_action_types"]:
-        props = clean_schema(ACTION_MODELS[name].model_json_schema()["properties"])
-        props.pop("type")
-        props = {
-            "observation_id": {"type": "integer", "enum": [observation["observation_id"]]},
-            **props,
-        }
-        state = observation["state"]
-        hand_ids = [c["id"] for c in state["hand"]]
-        owned_ids = [c["id"] for c in state["jokers"] + state["consumables"]]
-        for field, ids in (
-            ("card_ids", hand_ids),
-            ("target_ids", hand_ids),
-            ("ordered_ids", hand_ids + owned_ids),
-        ):
-            if field in props and ids:
-                props[field]["items"]["enum"] = ids
-        for field, ids in (
-            ("offer_id", [c["id"] for c in state["offers"]]),
-            ("owned_id", owned_ids),
-            ("consumable_id", [c["id"] for c in state["consumables"]]),
-        ):
-            if field in props and ids:
-                props[field]["enum"] = ids
-        if name in ("select_blind", "skip_blind"):
-            current = observation["state"]["revealed_blinds"][0]
-            props["blind_id"]["enum"] = [current["id"]]
-            props["blind_id"]["description"] = "Current blind: " + current["label"]
-        if name in ("play_hand", "discard"):
-            limits = observation["action_constraints"][name]
-            props["card_ids"].update(minItems=limits["min_cards"], maxItems=limits["max_cards"])
-            props["card_ids"]["description"] = (
-                "Unique IDs from the current hand. Required IDs: "
-                + ", ".join(limits.get("required_ids", []))
-            )
-        if name == "reorder":
-            areas = observation["action_constraints"]["reorder"]["areas"]
-            props["area"]["enum"] = areas
-            props["ordered_ids"]["items"]["enum"] = [
-                card["id"] for area in areas for card in state[area]
-            ]
-        props["memory_update"] = {
-            "type": ["string", "null"],
-            "maxLength": MAX_MEMORY_CHARACTERS,
-            "description": "Replace your notes for later decisions, or null to keep them. No other private memory carries forward.",
-        }
-        props["decision_note"] = {
-            "type": ["string", "null"],
-            "maxLength": MAX_DECISION_NOTE_CHARACTERS,
-            "description": "Optional decision note; null is fine. Not graded.",
-        }
-        result.append(tool(name, DESCRIPTIONS[name], props))
     result.extend(
         [
             tool(
@@ -214,20 +153,18 @@ def stable_tools(*, skills=()):
                 },
             )
         )
-    return actions + tools_for({"available_action_types": []}, skills=skills)
+    return actions + helper_tools(skills=skills)
 
 
-def decode_tool(name, arguments, *, interface="tools_v2"):
+def decode_tool(name, arguments):
     if not isinstance(arguments, dict):
         raise ValueError("TOOL_ARGUMENTS_MUST_BE_OBJECT")
     args = deepcopy(arguments)
-    if interface in NOTEBOOK_INTERFACES and "memory_update" in args:
+    if "memory_update" in args:
         raise ValueError("LEGACY_MEMORY_UPDATE_NOT_ALLOWED")
-    if interface != WORKING_MEMORY_INTERFACE and "note_update" in args:
-        raise ValueError("UNAVAILABLE_TOOL_ARGUMENT")
     if set(args) & {"type", "kind", "envelope"}:
         raise ValueError("UNEXPECTED_TOOL_WRAPPER")
-    if name == "inspect_state" and interface in FOCUSED_INTERFACES:
+    if name == "inspect_state":
         if "section" not in args or "sections" in args:
             raise ValueError("EXPECTED_PAGED_INSPECTION")
         return {**args, "kind": "inspect_page"}
@@ -255,37 +192,3 @@ def decode_tool(name, arguments, *, interface="tools_v2"):
     if name not in kinds:
         raise ValueError("UNKNOWN_TOOL")
     return {**args, "kind": kinds[name]}
-
-
-def compact_observation(observation):
-    result = deepcopy(observation)
-    result["public_contract_version"] = result["schema_version"]
-    # Full canonical observations stay in the journal and inspect_state. Remove
-    # bookkeeping from automatic context, not current effects or boss information.
-    for key in ("schema_version", "episode_id", "public_state_hash"):
-        result.pop(key)
-    result["state"].pop("public_deck_knowledge")
-    omitted = [
-        e["event_id"] for e in result["recent_public_events"][:-AUTOMATIC_PUBLIC_EVENT_COUNT]
-    ]
-    result["recent_public_events"] = result["recent_public_events"][-AUTOMATIC_PUBLIC_EVENT_COUNT:]
-    result["details_available"] = list(INSPECT_SECTIONS)
-    if result["phase"] == "BLIND_SELECT" and result["state"]["revealed_blinds"]:
-        result["current_blind_id"] = result["state"]["revealed_blinds"][0]["id"]
-    return result, omitted
-
-
-def inspect_state(operation, observation):
-    public = observation.model_dump(mode="json")
-    return {
-        "observation_id": observation.observation_id,
-        "sections": {
-            section: deepcopy(
-                public[section]
-                if section in ("recent_public_events", "action_constraints", "last_action")
-                else public["state"][section]
-            )
-            for section in operation.sections
-        },
-        "game_advanced": False,
-    }

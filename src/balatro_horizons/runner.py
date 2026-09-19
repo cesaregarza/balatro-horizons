@@ -21,19 +21,9 @@ from balatro_horizons.agents.notebook import RunNotebook, restore_notebook
 from balatro_horizons.agents.protocol import KERNEL, Operation, decision_context, helper
 from balatro_horizons.agents.providers import ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import prepare_rules, read_guide, restore_knowledge
-from balatro_horizons.agents.tool_interface import (
-    CONTINUATION_INTERFACES,
-    FOCUSED_INTERFACES,
-    NAMED_INTERFACES,
-    NOTEBOOK_INTERFACES,
-    WORKING_MEMORY_INTERFACE,
-)
+from balatro_horizons.agents.tool_interface import ACTION_MODELS
 from balatro_horizons.agents.working_memory import WorkingMemory, restore_working_memory
-from balatro_horizons.config import (
-    CONTEXT_FRAMING_BYTES,
-    LEGACY_GUIDE_PAGE_SIZES,
-    RECENT_PUBLIC_EVENT_LIMIT,
-)
+from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT
 from balatro_horizons.contracts import Observation, RecentPublicEvent, RemainingBudget
 from balatro_horizons.engine.native import NativeFailure, NativeRejected
 from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
@@ -57,7 +47,6 @@ class Runner:
         )
         self.stop = stop or threading.Event()
         self.limits = self.config.budgets
-        self.interface = getattr(policy, "interface", "operate_v1")
         self.spending = spending
         self.rules = rules or {"core": KERNEL}
         self.committed = self.calls = self.attempted = 0
@@ -74,8 +63,7 @@ class Runner:
 
     def log(self, kind, payload, **kwargs):
         event = self.store.append(self.eid, kind, payload, **kwargs)
-        if self.interface == WORKING_MEMORY_INTERFACE:
-            self.working_memory.consume(event)
+        self.working_memory.consume(event)
         return event
 
     def _record_failure(self, error):
@@ -164,23 +152,21 @@ class Runner:
                 observation,
                 exchanges,
                 byte_limit=self.limits.max_request_bytes,
-                interface=self.interface,
                 skills=self.rules.get("skills", []),
                 frozen=self.protocol,
-                **({"notebook": self.notebook.view(),
-                    "helper_remaining": max(0, self.limits.max_helper_calls_per_decision - helper_count)}
-                   if self.interface in NOTEBOOK_INTERFACES else {}),
-                **({"working_memory": self.working_memory.view()}
-                   if self.interface == WORKING_MEMORY_INTERFACE else {}),
+                notebook=self.notebook.view(),
+                helper_remaining=max(
+                    0, self.limits.max_helper_calls_per_decision - helper_count
+                ),
+                working_memory=self.working_memory.view(),
             )
             ctx["observation"]["remaining_budget"]["provider_calls"] = (
                 self.limits.max_provider_calls - self.calls
             )
             ctx["observation"]["remaining_budget"]["helper_calls_this_decision"] = helper_count
-            if self.interface in FOCUSED_INTERFACES:
-                ctx["observation"]["remaining_budget"]["helper_calls_remaining"] = max(
-                    0, self.limits.max_helper_calls_per_decision - helper_count
-                )
+            ctx["observation"]["remaining_budget"]["helper_calls_remaining"] = max(
+                0, self.limits.max_helper_calls_per_decision - helper_count
+            )
             self.log(
                 "agent_context",
                 {"context": ctx, "exchanges": delivered_exchanges},
@@ -202,19 +188,11 @@ class Runner:
                     observation_id=observation.observation_id,
                 )
                 operation = Operation.validate_python(raw)
-                if (self.interface != WORKING_MEMORY_INTERFACE
-                        and operation.kind == "action" and "note_update" in raw):
-                    raise ProtocolFailure("UNAVAILABLE_TOOL_ARGUMENT")
-                if (self.interface not in NOTEBOOK_INTERFACES
-                        and operation.kind in ("set_run_note", "delete_run_note", "action_result")):
-                    raise ProtocolFailure("UNAVAILABLE_TOOL")
                 if operation.kind == "abort":
                     return None, "AGENT_ABORT"
                 if operation.kind != "action":
                     if helper_count >= self.limits.max_helper_calls_per_decision:
-                        if self.interface in NOTEBOOK_INTERFACES:
-                            raise ProtocolFailure("HELPER_LIMIT_REACHED")
-                        raise BudgetExhausted("HELPER_CALL_LIMIT")
+                        raise ProtocolFailure("HELPER_LIMIT_REACHED")
                     helper_count += 1
                     if operation.kind in ("set_run_note", "delete_run_note"):
                         mutation, result = self.notebook.propose(
@@ -232,7 +210,6 @@ class Runner:
                                 self.history_prefix + self.store.events(self.eid),
                                 self.rules,
                                 observation=observation,
-                                interface=self.interface,
                             )
                         except (ValueError, ArithmeticError, SyntaxError):
                             result = {"error": "INVALID_HELPER_REQUEST"}
@@ -246,7 +223,7 @@ class Runner:
                     exchanges.append(self._exchange(raw, result))
                     continue
                 self.attempted += 1
-                if self.interface in NOTEBOOK_INTERFACES and operation.envelope.memory_update is not None:
+                if operation.envelope.memory_update is not None:
                     raise ProtocolFailure("LEGACY_MEMORY_UPDATE_NOT_ALLOWED")
                 validate_action(
                     operation.envelope, observation, memory_limit=self.limits.memory_max_characters
@@ -267,21 +244,27 @@ class Runner:
                 return operation.envelope, None
             except (ValidationError, InvalidAction, ProtocolFailure) as error:
                 invalid += 1
-                continuation_protocol = self.interface in CONTINUATION_INTERFACES
+                if (
+                    isinstance(error, ProtocolFailure)
+                    and error.code == "UNAVAILABLE_TOOL"
+                    and helper_count >= self.limits.max_helper_calls_per_decision
+                    and error.details.get("attempted_tool") in {
+                        tool["name"] for tool in ctx["tools"]
+                        if tool["name"] not in ACTION_MODELS and tool["name"] != "abort_run"
+                    }
+                ):
+                    error = ProtocolFailure(
+                        "HELPER_LIMIT_REACHED",
+                        attempted_tool=error.details["attempted_tool"],
+                    )
                 code = (
                     error.code
                     if isinstance(error, InvalidAction)
-                    or (isinstance(error, ProtocolFailure) and continuation_protocol)
+                    or isinstance(error, ProtocolFailure)
                     else "INVALID_OPERATION_SCHEMA"
                 )
-                feedback = {"error": code}
-                if self.interface in NAMED_INTERFACES:
-                    feedback = self._tool_feedback(error, code, observation)
-                if self.interface in NOTEBOOK_INTERFACES and (
-                    code == "HELPER_LIMIT_REACHED"
-                    or (code == "UNAVAILABLE_TOOL"
-                        and helper_count >= self.limits.max_helper_calls_per_decision)
-                ):
+                feedback = self._tool_feedback(error, code, observation)
+                if code == "HELPER_LIMIT_REACHED":
                     feedback.update(helper_calls_remaining=0,
                                     message="Helper allowance exhausted. Choose a permitted gameplay action or abort_run.")
                 self.log(
@@ -297,42 +280,16 @@ class Runner:
     def _fit_guide_result(self, observation, exchanges, raw, result):
         # A shared conservative byte bound keeps paging independent of provider transport.
         key = result["key"] + "#offset=" + str(result["offset"])
-        if self.interface in FOCUSED_INTERFACES:
-            from balatro_horizons.agents.focused import PAGE_BYTES
+        from balatro_horizons.agents.focused import PAGE_BYTES
 
-            return read_guide(self.rules, key, PAGE_BYTES)
-        for page_bytes in LEGACY_GUIDE_PAGE_SIZES:
-            page = read_guide(self.rules, key, page_bytes)
-            proposed = exchanges + [self._exchange(raw, page)]
-            ctx, delivered = decision_context(
-                observation,
-                proposed,
-                byte_limit=self.limits.max_request_bytes,
-                interface=self.interface,
-                skills=self.rules.get("skills", []),
-                frozen=self.protocol,
-            )
-            encoded = json.dumps({"context": ctx, "exchanges": delivered}, ensure_ascii=False)
-            if (
-                len(json.dumps(encoded, ensure_ascii=False).encode()) + CONTEXT_FRAMING_BYTES
-                <= self.limits.max_request_bytes
-            ):
-                return page
-        return {
-            "error": "REFERENCE_CONTEXT_LIMIT",
-            "key": result["key"],
-            "game_advanced": False,
-            "message": "This decision has no room for another reference page; existing context is retained.",
-        }
+        return read_guide(self.rules, key, PAGE_BYTES)
 
     def _exchange(self, raw, result):
         exchange = {"operation": raw if raw is not None else {"kind": "invalid"}, "result": result}
-        if self.interface in NAMED_INTERFACES:
-            exchange["tool_call"] = getattr(self.policy, "last_tool_call", None)
-        if self.interface in CONTINUATION_INTERFACES:
-            turn = getattr(self.policy, "last_provider_turn", None)
-            if turn is not None:
-                exchange["provider_turn"] = turn
+        exchange["tool_call"] = getattr(self.policy, "last_tool_call", None)
+        turn = getattr(self.policy, "last_provider_turn", None)
+        if turn is not None:
+            exchange["provider_turn"] = turn
         return exchange
 
     def _tool_feedback(self, error, code, observation):
@@ -395,7 +352,6 @@ class Runner:
             if resume
             else freeze_protocol(self.config, self.policy, self.rules, prompt_bytes=self.prompt_bytes)
         )
-        self.interface = self.protocol["interface"]
         if resume:
             from balatro_horizons.agents.frozen import episode_limits
 
@@ -423,11 +379,10 @@ class Runner:
         self.protocol_reference = {"episode_id": self.eid, "hash": digest(self.protocol)}
         self.knowledge_reference = {"episode_id": self.eid, "hash": digest(self.rules)}
         self.history_prefix = history_prefix or []
-        if self.interface in NOTEBOOK_INTERFACES and resume:
+        if resume:
             self.notebook = restore_notebook(
                 resume.get("run_notebook"), self.history_prefix, self.limits.memory_max_characters
             )
-        if self.interface == WORKING_MEMORY_INTERFACE and resume:
             self.working_memory = restore_working_memory(
                 resume.get("working_memory"), self.history_prefix, resume["observation"]
             )
@@ -514,10 +469,8 @@ class Runner:
                         "continuation_hash": continuation_fingerprint(raw),
                         "recent": [e.model_dump() for e in self.recent],
                         "public_prefix_hash": obs_event["hash"],
-                        **({"run_notebook": self.notebook.snapshot()}
-                           if self.interface in NOTEBOOK_INTERFACES else {}),
-                        **({"working_memory": self.working_memory.view()}
-                           if self.interface == WORKING_MEMORY_INTERFACE else {}),
+                        "run_notebook": self.notebook.snapshot(),
+                        "working_memory": self.working_memory.view(),
                     }
                     self.store.private_json(self.eid, f"checkpoint-{decision}.json", checkpoint)
                     self.log(
@@ -565,8 +518,6 @@ class Runner:
                 )
                 if hasattr(self.policy, "on_commit"):
                     self.policy.on_commit()
-                if self.interface not in NOTEBOOK_INTERFACES and envelope.memory_update is not None:
-                    self.memory = envelope.memory_update
                 self.recent.append(
                     RecentPublicEvent(
                         event_id=obs_event["event_id"],

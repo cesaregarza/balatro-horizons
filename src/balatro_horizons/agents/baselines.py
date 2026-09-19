@@ -1,6 +1,7 @@
 """Transparent baselines: public facts only, no engine scoring or lookahead."""
 
 import random
+from copy import deepcopy
 from itertools import combinations
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
@@ -62,6 +63,33 @@ def candidates(obs):
             yield envelope
 
 
+def baseline_observation(presented):
+    """Restore only omitted public fields so the canonical action validator can run."""
+    if "schema_version" in presented:
+        return Observation.model_validate(presented)
+    state = deepcopy(presented["state"])
+    state["public_deck_knowledge"] = {}
+    for area in ("hand", "jokers", "consumables"):
+        for card in state[area]:
+            card.pop("counter_defaults_apply", None)
+    return Observation.model_validate(
+        {
+            "schema_version": presented["public_contract_version"],
+            "episode_id": "baseline-public-view",
+            "observation_id": presented["observation_id"],
+            "public_state_hash": "baseline-public-view",
+            "objective": presented["objective"],
+            "phase": presented["phase"],
+            "state": state,
+            "available_action_types": presented["available_action_types"],
+            "action_constraints": presented["action_constraints"],
+            "recent_public_events": [],
+            "memory": "",
+            "remaining_budget": {"game_actions": 0, "provider_calls": 0},
+        }
+    )
+
+
 class Baseline:
     paid = False
 
@@ -72,7 +100,7 @@ class Baseline:
         self.rng = random.Random(seed)
 
     def decide(self, ctx, exchanges):
-        obs = Observation.model_validate(ctx["observation"])
+        obs = baseline_observation(ctx["observation"])
         choices = list(candidates(obs))
         if not choices:
             return {"kind": "abort", "reason": "NO_PUBLIC_LEGAL_ACTION_FOUND"}
@@ -80,7 +108,7 @@ class Baseline:
             chosen = self.rng.choice(choices)
         else:
             # Prefer play; maximize repeated visible ranks, then visible ranks' sum.
-            ranks = {c.id: c.rank for c in obs.state.hand}
+            ranks = {card.id: card.rank for card in obs.state.hand}
             values = {str(i): i for i in range(2, 11)} | {
                 "T": 10,
                 "J": 11,

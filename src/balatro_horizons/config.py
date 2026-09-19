@@ -32,7 +32,6 @@ WORKING_MEMORY_DECISIONS = 3
 WORKING_MEMORY_BYTES = 24_576
 WORKING_MEMORY_HELPER_BYTES = 4_096
 DEFAULT_GUIDE_PAGE_BYTES = 4_096
-LEGACY_GUIDE_PAGE_SIZES = (DEFAULT_GUIDE_PAGE_BYTES, 2_048, 1_024, 512, 256, 128)
 DEFAULT_HISTORY_PAGE_EVENTS = 10
 MAX_HISTORY_PAGE_EVENTS = 20
 SKILL_DESCRIPTION_PREVIEW_CHARACTERS = 160
@@ -101,19 +100,8 @@ class ModelConfig(Options):
             if self.provider == "openai"
             else {"temperature", "thinking_budget"}
         )
-        allowed.add("harness_interface")
         if set(self.settings) - allowed:
             raise ValueError("unsupported provider setting")
-        if self.settings.get("harness_interface", "operate_v1") not in (
-            "operate_v1",
-            "tools_v2",
-            "tools_v3",
-            "tools_v4",
-            "tools_v5",
-            "tools_v6",
-            "tools_v7",
-        ):
-            raise ValueError("unsupported harness interface")
         date.fromisoformat(self.pricing_date)
         if self.model != self.model.strip() or not self.model.strip():
             raise ValueError("explicit model identifier required")

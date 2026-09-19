@@ -1,0 +1,63 @@
+{
+  "prompt_utf8": {
+    "bytes": 7737,
+    "sha256": "b686eaa6e918e380e53c61aa3bde0a288e4872390b5cb949ec0e48a4dd0d5ef0"
+  },
+  "tool_catalog_json": {
+    "bytes": 16848,
+    "sha256": "b753453d6bc1fb9b813a2e7d7c7523bec71c425dc38e44bece6e459a804eedcc"
+  },
+  "context_keys": [
+    [
+      "allowed_tools",
+      "context_bytes_upper_bound",
+      "context_delivery",
+      "current_costs",
+      "helper_status",
+      "interface_version",
+      "notebook_maintenance",
+      "observation",
+      "omitted_event_ids",
+      "prompt",
+      "rules_kernel",
+      "run_notebook",
+      "skill_catalog_delivery",
+      "tools",
+      "working_memory"
+    ],
+    [
+      "allowed_tools",
+      "context_bytes_upper_bound",
+      "context_delivery",
+      "current_costs",
+      "helper_status",
+      "interface_version",
+      "notebook_maintenance",
+      "observation",
+      "omitted_event_ids",
+      "prompt",
+      "rules_kernel",
+      "run_notebook",
+      "skill_catalog_delivery",
+      "tools",
+      "working_memory"
+    ],
+    [
+      "allowed_tools",
+      "context_bytes_upper_bound",
+      "context_delivery",
+      "current_costs",
+      "helper_status",
+      "interface_version",
+      "notebook_maintenance",
+      "observation",
+      "omitted_event_ids",
+      "prompt",
+      "rules_kernel",
+      "run_notebook",
+      "skill_catalog_delivery",
+      "tools",
+      "working_memory"
+    ]
+  ]
+}
