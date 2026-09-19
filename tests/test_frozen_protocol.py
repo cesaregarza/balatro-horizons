@@ -5,7 +5,8 @@ from copy import deepcopy
 import pytest
 
 from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.frozen import restore_protocol
+from balatro_horizons.agents.frozen import freeze_protocol, restore_protocol
+from balatro_horizons.agents.outcomes import VERSION as ACTION_OUTCOME_VERSION
 from balatro_horizons.config import ROOT
 from balatro_horizons.engine.certification import read_checkpoint, verify_checkpoint
 from balatro_horizons.engine.fake import FakeGame
@@ -71,6 +72,59 @@ def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
     assert result["agent_protocol"]["hash"] == branched["agent_protocol"]["hash"]
     exported = episode_export(store, child)
     assert exported["agent_protocol"] == branched["agent_protocol"]
+
+
+@pytest.mark.parametrize("older_version", [None, "previous-action-outcome-v1"])
+def test_frozen_outcome_gate_survives_resume_and_branch(store, config, monkeypatch, older_version):
+    class RecordingPolicy:
+        paid = False
+        name = "heuristic"
+
+        def __init__(self):
+            self.contexts = []
+            self.baseline = Baseline("heuristic")
+
+        def decide(self, ctx, exchanges):
+            self.contexts.append(deepcopy(ctx))
+            if ctx["observation"]["observation_id"] >= 2:
+                return {"kind": "abort", "reason": "test complete"}
+            return self.baseline.decide(ctx, exchanges)
+
+    def older_bundle(*args, **kwargs):
+        bundle = freeze_protocol(*args, **kwargs)
+        if older_version is None:
+            bundle["memory_policy"].pop("action_outcome")
+        else:
+            bundle["memory_policy"]["action_outcome"] = older_version
+        return bundle
+
+    old_policy = RecordingPolicy()
+    with monkeypatch.context() as patch:
+        patch.setattr("balatro_horizons.runner.freeze_protocol", older_bundle)
+        old = Runner(store, config, FakeGame(), old_policy).run()
+    assert old["committed_actions"] == 2
+    assert len(old_policy.contexts) == 3
+    assert all("previous_action_outcome" not in ctx for ctx in old_policy.contexts)
+    checkpoint = read_checkpoint(store, old["episode_id"], 1)
+    assert restore_protocol(store, checkpoint)["memory_policy"].get("action_outcome") == older_version
+    assert verify_checkpoint(store, config, old["episode_id"], 1)["status"] == "passed"
+    child, resume, prefix = prepare_branch(store, config, old["episode_id"], 1, "agent_continue")
+    branch_policy = RecordingPolicy()
+    branched = Runner(store, config, FakeGame(), branch_policy).run(
+        eid=child, resume=resume, history_prefix=prefix
+    )
+    assert branched["committed_actions"] == 2
+    assert branch_policy.contexts and all(
+        "previous_action_outcome" not in ctx for ctx in branch_policy.contexts
+    )
+
+    fresh_policy = RecordingPolicy()
+    fresh = Runner(store, config, FakeGame(), fresh_policy).run()
+    assert fresh["committed_actions"] == 2
+    assert fresh_policy.contexts[1]["previous_action_outcome"]["action_type"] == "select_blind"
+    fresh_checkpoint = read_checkpoint(store, fresh["episode_id"], 1)
+    assert (restore_protocol(store, fresh_checkpoint)["memory_policy"]["action_outcome"]
+            == ACTION_OUTCOME_VERSION)
 
 
 def test_protocol_tampering_and_changed_allowance_fail_before_branch(store, config, episode):
