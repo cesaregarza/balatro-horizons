@@ -3,6 +3,7 @@
 import json
 from copy import deepcopy
 
+from balatro_horizons.agents.action_notes import ActionNoteLink
 from balatro_horizons.config import (
     RETAINED_HELPER_RESULTS,
     WORKING_MEMORY_BYTES,
@@ -11,7 +12,7 @@ from balatro_horizons.config import (
 )
 from balatro_horizons.storage.journal import digest
 
-VERSION = "working-memory-v1"
+VERSION = "working-memory-v2"
 
 
 def policy():
@@ -25,7 +26,7 @@ def size(value):
 
 
 class WorkingMemory:
-    """Fold only public observations, committed actions and normalized helper receipts.
+    """Fold public observations, actions, linked notebook edits and helper receipts.
 
     The journal remains authoritative. Frames contain historical handles/prices,
     never executable tool turns, and are explicitly labelled as past information.
@@ -38,6 +39,7 @@ class WorkingMemory:
         self.omitted_helpers = 0
         self.observation = None
         self.pending = None
+        self.action_notes = ActionNoteLink()
 
     def observe(self, observation):
         if self.pending is not None:
@@ -48,6 +50,7 @@ class WorkingMemory:
         self.observation = observation
 
     def consume(self, event):
+        note_update = self.action_notes.consume(event)
         kind, payload = event["type"], event["payload"]
         if kind == "observation":
             self.observe(payload)
@@ -75,6 +78,7 @@ class WorkingMemory:
                 "resources_before": deepcopy(state.get("resources")),
                 "action": deepcopy(payload["action"]),
                 "recorded_decision_note": payload.get("decision_note"),
+                "recorded_note_update": note_update,
                 "helpers": self.helpers, "omitted_helpers": self.omitted_helpers,
             }
             self.helpers, self.omitted_helpers = [], 0

@@ -198,6 +198,7 @@ class ReviewService:
                 "summary",
                 "actions",
                 "uncommitted_actions",
+                "pending_decisions",
                 "rounds",
                 "action_counts",
                 "money_range",

@@ -132,7 +132,9 @@ def context(
     from balatro_horizons.agents.working_memory import WorkingMemory
 
     original_observation = observation.model_dump(mode="json")
-    tools = notebook_tools(focused_tools(stable_tools(skills=skills)), action_notes=True)
+    tools = notebook_tools(
+        focused_tools(stable_tools(skills=skills, target_guidance=True)), action_notes=True
+    )
     result = {
         "prompt": (ROOT / "configs/prompts/harness.txt").read_text().strip(),
         "rules_kernel": (
@@ -159,6 +161,12 @@ def context(
     result["working_memory"] = deepcopy(
         working_memory if working_memory is not None else WorkingMemory().view()
     )
+    from balatro_horizons.agents.outcomes import VERSION, previous_action_outcome
+
+    if frozen is None or frozen.get("memory_policy", {}).get("action_outcome") == VERSION:
+        result["previous_action_outcome"] = previous_action_outcome(
+            original_observation, result["working_memory"]
+        )
     result["allowed_tools"] = [
         tool["name"]
         for tool in result["tools"]

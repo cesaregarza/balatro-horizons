@@ -1,11 +1,11 @@
 {
   "prompt_utf8": {
-    "bytes": 7737,
-    "sha256": "b686eaa6e918e380e53c61aa3bde0a288e4872390b5cb949ec0e48a4dd0d5ef0"
+    "bytes": 9632,
+    "sha256": "403335e614227264b057a0277f7291a8dd56f867500071144b082c681c349109"
   },
   "tool_catalog_json": {
-    "bytes": 16848,
-    "sha256": "b753453d6bc1fb9b813a2e7d7c7523bec71c425dc38e44bece6e459a804eedcc"
+    "bytes": 19989,
+    "sha256": "fe3583f9e955f553e9f802dde34a0c9a79a06f224e05dc4836f9cd68e35b0b6c"
   },
   "context_keys": [
     [
@@ -18,6 +18,7 @@
       "notebook_maintenance",
       "observation",
       "omitted_event_ids",
+      "previous_action_outcome",
       "prompt",
       "rules_kernel",
       "run_notebook",
@@ -35,6 +36,7 @@
       "notebook_maintenance",
       "observation",
       "omitted_event_ids",
+      "previous_action_outcome",
       "prompt",
       "rules_kernel",
       "run_notebook",
@@ -52,6 +54,7 @@
       "notebook_maintenance",
       "observation",
       "omitted_event_ids",
+      "previous_action_outcome",
       "prompt",
       "rules_kernel",
       "run_notebook",
