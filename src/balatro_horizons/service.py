@@ -323,8 +323,6 @@ class RunService:
                 if plan["resume"]["calls"] >= config.budgets.max_provider_calls:
                     raise ValueError("PROVIDER_CALL_LIMIT")
                 offline = manifest["evidence_kind"] == "SYNTHETIC_TEST"
-                if not offline:
-                    load_session()
                 eid = self.store.create(manifest, plan["private"])
                 self.stop.clear()
                 self.error = None

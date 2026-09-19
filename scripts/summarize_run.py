@@ -5,6 +5,9 @@ No game or provider is contacted. Reading a whole run records review exposure.
 """
 
 import argparse
+import json
+import re
+from collections import Counter
 from pathlib import Path
 
 from balatro_horizons.config import ROOT

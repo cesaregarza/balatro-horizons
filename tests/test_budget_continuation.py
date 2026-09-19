@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from balatro_horizons import service as service_module
 from balatro_horizons.agents.baselines import Baseline
+from balatro_horizons.agents.budget import reservation_usd
 from balatro_horizons.agents.frozen import read_protocol, restore_protocol
 from balatro_horizons.api import create_app
 from balatro_horizons.engine.certification import (
@@ -24,10 +25,11 @@ from balatro_horizons.review.budget_continuation import prepare_budget_continuat
 from balatro_horizons.storage.journal import atomic_json
 
 harness = test_campaign_budget.harness
+STOP_CAP_USD = 0.019
 
 
 def stopped(h, *, helpers=False):
-    h.config.budgets.max_episode_cost_usd = 0.017
+    h.config.budgets.max_episode_cost_usd = STOP_CAP_USD
     h.config.budgets.max_batch_cost_usd = 1
     if helpers:
         h.operations.append({"kind": "arithmetic", "expression": "1+1"})
@@ -97,7 +99,7 @@ def test_extension_rejects_uncertified_changed_or_underfunded_parent(harness):
         service.continue_budget(eid, 1, expected_head=terminal["journal_head"])
     certify(h, eid, decision, action)
     for cap, head, error in [
-        (0.017, terminal["journal_head"], "MUST_INCREASE_CAP"),
+        (STOP_CAP_USD, terminal["journal_head"], "MUST_INCREASE_CAP"),
         (1, "0" * 64, "PARENT_CHANGED"),
         (float("inf"), terminal["journal_head"], "NOT_AUTHORIZED"),
         (True, terminal["journal_head"], "NOT_AUTHORIZED"),
@@ -149,13 +151,14 @@ def test_failed_child_terminal_reconciles_three_retained_reservations(harness):
     ledger = json.loads(path.read_text())
     retained = {key: row for key, row in ledger.items() if row["episode_id"] == child_id}
     assert len(retained) == 3 and all(not row["settled"] for row in retained.values())
-    assert sum(row["cost"] for row in retained.values()) == pytest.approx(0.049152)
-    assert child["cost_usd"] == pytest.approx(0.049152)
+    expected_retained = 3 * reservation_usd(h.config.models["luna"], h.config.budgets)
+    assert sum(row["cost"] for row in retained.values()) == pytest.approx(expected_retained)
+    assert child["cost_usd"] == pytest.approx(expected_retained)
     assert child["provider_calls"] == terminal["provider_calls"] + 3
 
     # The same locked snapshot supplies both terminal reconciliation and admission.
     retry = prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
-    assert retry["resume"]["cost"] == pytest.approx(terminal["cost_usd"] + 0.049152)
+    assert retry["resume"]["cost"] == pytest.approx(terminal["cost_usd"] + expected_retained)
     assert retry["resume"]["calls"] == terminal["provider_calls"] + 3
     h.fail_transport.clear()
     second = h.service()
@@ -164,7 +167,7 @@ def test_failed_child_terminal_reconciles_three_retained_reservations(harness):
     assert not second.thread.is_alive() and second.error is None
     assert h.store.summary(second_id)["outcome"] == "WIN"
     assert h.store.manifest(second_id)["budget_extension"]["prior_cost_usd"] == pytest.approx(
-        terminal["cost_usd"] + 0.049152
+        terminal["cost_usd"] + expected_retained
     )
     # Index maintenance must not change the immutable admission chain.
     h.store.reindex(eid)

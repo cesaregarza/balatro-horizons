@@ -8,7 +8,6 @@ from balatro_horizons.agents.budget import Spending, validate_caps
 from balatro_horizons.agents.frozen import read_protocol, restore_protocol, validate_continuation
 from balatro_horizons.agents.notebook import restore_notebook
 from balatro_horizons.agents.skills import restore_knowledge
-from balatro_horizons.agents.tool_interface import NOTEBOOK_INTERFACES, WORKING_MEMORY_INTERFACE
 from balatro_horizons.agents.working_memory import restore_working_memory
 from balatro_horizons.config import Config
 from balatro_horizons.engine.certification import require_continuation_probe_certificate
@@ -158,10 +157,8 @@ def prepare_budget_continuation(store, parent_id, combined_cap, *, expected_head
     validate_continuation(protocol, config, parent["agent"])
     restore_knowledge(store, resume)
     prefix = events[:boundary["sequence"]]
-    if protocol["interface"] in NOTEBOOK_INTERFACES:
-        restore_notebook(resume.get("run_notebook"), prefix, config.budgets.memory_max_characters)
-        if protocol["interface"] == WORKING_MEMORY_INTERFACE:
-            restore_working_memory(resume.get("working_memory"), prefix, resume["observation"])
+    restore_notebook(resume.get("run_notebook"), prefix, config.budgets.memory_max_characters)
+    restore_working_memory(resume.get("working_memory"), prefix, resume["observation"])
 
     path = store.episode_path(parent_id, True) / "spending.json"
     with locked(path.with_suffix(".lock")):
