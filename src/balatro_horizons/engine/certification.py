@@ -17,6 +17,7 @@ from balatro_horizons.engine.replay import (
     replay_steps,
     restore_seed_prefix,
 )
+from balatro_horizons.engine.windows_context import load_session
 from balatro_horizons.observations.projection import HandleIssuer
 from balatro_horizons.storage.journal import atomic_json, digest, locked, now
 
@@ -102,6 +103,8 @@ def verify_checkpoint(store, config, eid, decision, *, repetitions=3, mode="chec
         raise ValueError("NO_REPLAY_SUFFIX")
     source_hash = implementation_fingerprint()
     native = checkpoint["game"]["kind"] == "native"
+    if native:
+        load_session()
     snapshot = (
         prefix_snapshot(store, eid, decision, steps)
         if mode == "seed_prefix"

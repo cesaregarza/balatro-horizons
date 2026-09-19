@@ -12,8 +12,14 @@ from fastapi.testclient import TestClient
 from balatro_horizons.api import create_app
 from balatro_horizons.engine import native
 from balatro_horizons.engine import windows_context as context
+from balatro_horizons.engine.certification import (
+    certificate_path,
+    read_checkpoint,
+    verify_checkpoint,
+)
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService
+from balatro_horizons.storage.journal import atomic_json
 
 
 @pytest.fixture
@@ -100,6 +106,43 @@ def test_browser_preflight_is_operator_only_and_creates_no_episode(store, config
         response = client.post("/api/runs", headers=headers, json={"agent": "human", "offline": False})
         assert response.status_code == 400 and response.json()["error"] == "WINDOWS_SESSION_NOT_CONFIGURED"
         assert store.list_episodes() == [] and app.state.runs.thread is None
+
+
+def test_verify_unavailable_session_preserves_selected_certificate(
+    store, config, episode, monkeypatch
+):
+    checkpoint = read_checkpoint(store, episode, 0)
+    checkpoint["game"]["kind"] = "native"
+    atomic_json(store.episode_path(episode, True) / "checkpoint-0.json", checkpoint)
+    certificate = certificate_path(store, episode, 0)
+    atomic_json(certificate, {"status": "passed", "marker": "retain"})
+    selected = certificate.read_bytes()
+    monkeypatch.setattr("balatro_horizons.api.load_session", Mock(side_effect=ValueError("WINDOWS_SESSION_NOT_CONFIGURED")))
+    verify = Mock(side_effect=AssertionError("verification must not start"))
+    monkeypatch.setattr("balatro_horizons.api.verify_checkpoint", verify)
+    app = create_app(store.root, config)
+    with TestClient(app) as client:
+        headers = {"X-BH-Operator": client.get("/api/bootstrap").json()["operator_token"]}
+        response = client.post("/api/verify", headers=headers, json={
+            "episode_id": episode, "decision": 0, "mode": "checkpoint",
+        })
+    assert response.status_code == 400
+    assert response.json()["error"] == "WINDOWS_SESSION_NOT_CONFIGURED"
+    assert certificate.read_bytes() == selected
+    verify.assert_not_called()
+
+
+def test_direct_native_verify_requires_session_before_replay(store, config, episode, monkeypatch):
+    checkpoint = read_checkpoint(store, episode, 0)
+    checkpoint["game"]["kind"] = "native"
+    atomic_json(store.episode_path(episode, True) / "checkpoint-0.json", checkpoint)
+    certificate = certificate_path(store, episode, 0)
+    atomic_json(certificate, {"status": "passed", "marker": "retain"})
+    selected = certificate.read_bytes()
+    monkeypatch.setattr("balatro_horizons.engine.certification.load_session", Mock(side_effect=ValueError("WINDOWS_SESSION_EXPIRED")))
+    with pytest.raises(ValueError, match="WINDOWS_SESSION_EXPIRED"):
+        verify_checkpoint(store, config, episode, 0)
+    assert certificate.read_bytes() == selected
 
 
 def test_bridge_subprocesses_receive_only_registered_environment(registration, monkeypatch):
