@@ -6,15 +6,18 @@ from copy import deepcopy
 import httpx
 import pytest
 from provider_transport import with_input_count
+from pydantic import ValidationError
 from test_boundary import project
 
 from balatro_horizons.actions.validation import validate_action
 from balatro_horizons.agents.baselines import Baseline, baseline_observation, candidates
-from balatro_horizons.agents.protocol import Operation, context
+from balatro_horizons.agents.focused import PAGE_BYTES
+from balatro_horizons.agents.input_limits import request_size
+from balatro_horizons.agents.protocol import Operation, context, decision_context, helper
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure
 from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.config import ROOT, ModelConfig, load_config
-from balatro_horizons.contracts import ActionEnvelope
+from balatro_horizons.contracts import ActionEnvelope, RecentPublicEvent
 from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
@@ -42,6 +45,10 @@ def test_catalog_is_static_while_allowed_actions_follow_the_observation():
     assert set(ACTION_MODELS) <= catalog.keys()
     assert "select_blind" in blind["allowed_tools"]
     assert "play_hand" not in blind["allowed_tools"]
+    assert (
+        blind["observation"]["current_blind_id"]
+        == project(game.observe_private()).state.revealed_blinds[0].id
+    )
     assert catalog["inspect_state"]["parameters"]["required"] == ["section", "offset"]
     for definition in catalog.values():
         schema = definition["parameters"]
@@ -54,6 +61,111 @@ def test_catalog_is_static_while_allowed_actions_follow_the_observation():
     assert blind["tools"] == hand["tools"]
     assert "select_blind" not in hand["allowed_tools"]
     assert {"play_hand", "discard"} <= set(hand["allowed_tools"])
+    assert "current_blind_id" not in hand["observation"]
+
+
+def test_compact_context_defers_public_history_and_deck_without_mutating_source():
+    observation = project(FakeGame().observe_private())
+    observation.state.public_deck_knowledge.composition = {"Hearts_A": 1}
+    observation.recent_public_events = [
+        RecentPublicEvent(event_id=str(i), event_type="observation", summary="past public event")
+        for i in range(20)
+    ]
+    before = observation.model_dump(mode="json")
+    compact = context(observation)
+    assert [event["event_id"] for event in compact["observation"]["recent_public_events"]] == [
+        "18",
+        "19",
+    ]
+    assert compact["omitted_event_ids"] == [str(i) for i in range(18)]
+    assert "public_deck_knowledge" not in compact["observation"]["state"]
+    for section, expected in (
+        ("public_deck_knowledge", before["state"]["public_deck_knowledge"]),
+        ("recent_public_events", before["recent_public_events"]),
+    ):
+        page = helper(
+            Operation.validate_python({"kind": "inspect_page", "section": section, "offset": 0}),
+            [],
+            {},
+            observation,
+        )
+        assert page["game_advanced"] is False and page["complete"] is True
+        assert json.loads(page["content"]) == expected
+    assert observation.model_dump(mode="json") == before
+    for section in ("seed", "raw_engine", "checkpoint", "future"):
+        with pytest.raises(ValidationError):
+            Operation.validate_python({"kind": "inspect_page", "section": section, "offset": 0})
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+def test_repeated_large_inspection_is_paged_retained_and_within_request_bytes(provider):
+    observation = project(FakeGame().observe_private())
+    observation.recent_public_events = [
+        RecentPublicEvent(
+            event_id=str(i), event_type="observation", summary=f"RETRIEVED_EVENT_{i}_" + "x" * 220
+        )
+        for i in range(20)
+    ]
+    operation = {"kind": "inspect_page", "section": "recent_public_events", "offset": 0}
+    page = helper(Operation.validate_python(operation), [], {}, observation)
+    assert page["total_bytes"] > PAGE_BYTES
+    assert len(page["content"].encode()) <= PAGE_BYTES
+    assert page["game_advanced"] is False
+    exchange = {
+        "operation": operation,
+        "tool_call": {
+            "name": "inspect_state",
+            "arguments": {"section": "recent_public_events", "offset": 0},
+        },
+        "result": page,
+    }
+    exchanges = [deepcopy(exchange) for _ in range(8)]
+    original = deepcopy(exchanges)
+    initial, _ = decision_context(observation, [])
+    byte_limit = initial["context_bytes_upper_bound"] + 6000
+    compact, delivered = decision_context(observation, exchanges, byte_limit=byte_limit)
+    assert len(delivered) == 1
+    assert compact["observation"]["retrieval_context"]["loaded_exchange_indices"] == [7]
+    assert [row["exchange_index"] for row in compact["context_delivery"]["cleared"]] == list(
+        range(7)
+    )
+    assert "RETRIEVED_EVENT_0_" not in json.dumps(compact["observation"])
+    assert delivered[0]["result"]["content"] == page["content"]
+    assert exchanges == original
+    config = config_for(provider)
+    config.budgets.max_request_bytes = byte_limit
+    policy = DirectProvider(config.models["luna"], config.budgets)
+    try:
+        body = policy.request(compact, delivered)
+        assert request_size(body) <= byte_limit
+    finally:
+        policy.client.close()
+
+
+def test_named_tool_schema_and_inspection_ignore_hidden_card_identity():
+    game = FakeGame()
+    game.phase = "SELECTING_HAND"
+    private = game.observe_private()
+    for card in private["visible"]["hand"]:
+        card["face_down"] = True
+    changed = deepcopy(private)
+    for card in changed["visible"]["hand"]:
+        card.update(native_id="hidden-other-id", label="PRIVATE_SENTINEL", rank="K")
+    left, right = project(private), project(changed)
+    first, second = context(left), context(right)
+    assert first == second
+    inspection = Operation.validate_python({"kind": "inspect_page", "section": "hand", "offset": 0})
+    assert helper(inspection, [], {}, left) == helper(inspection, [], {}, right)
+    assert "PRIVATE_SENTINEL" not in json.dumps(helper(inspection, [], {}, right))
+    for provider in ("openai", "anthropic"):
+        config = config_for(provider)
+        policy = DirectProvider(config.models["luna"], config.budgets)
+        try:
+            left_body, right_body = policy.request(first, []), policy.request(second, [])
+            assert left_body["tools"] == right_body["tools"]
+            assert left_body == right_body
+        finally:
+            policy.client.close()
 
 
 def test_baselines_keep_canonical_action_validation_in_compact_shop_view():
@@ -285,3 +397,98 @@ def test_helper_budget_stops_repeated_inspection_without_advancing_game(store, m
     events = store.events(result["episode_id"])
     assert sum(event["type"] == "helper_result" for event in events) == 1
     assert not any(event["type"] == "action_intent" for event in events)
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+def test_oversized_named_note_write_exhausts_helpers_then_allows_model_game_action(
+    store, monkeypatch, provider
+):
+    config = config_for(provider)
+    config.budgets.max_helper_calls_per_decision = 1
+    monkeypatch.setenv(
+        "OPENAI_API_KEY" if provider == "openai" else "ANTHROPIC_API_KEY", "mock-only"
+    )
+    game = FakeGame()
+    before = deepcopy(game.observe_private())
+    calls = []
+    runner = None
+
+    def receive(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        if len(calls) == 1:
+            name, args = "set_run_note", {"key": "plan", "text": "x" * 4096}
+        elif len(calls) == 2:
+            assert "RUN_NOTEBOOK_LIMIT" in json.dumps(body.get("input", body.get("messages"))[-1])
+            name, args = "set_run_note", {"key": "plan", "text": "retry"}
+        elif len(calls) == 3:
+            assert "HELPER_LIMIT_REACHED" in json.dumps(body.get("input", body.get("messages"))[-1])
+            name, args = (
+                "select_blind",
+                {
+                    "observation_id": runner.observation.observation_id,
+                    "blind_id": runner.observation.state.revealed_blinds[0].id,
+                    "decision_note": None,
+                    "note_update": None,
+                },
+            )
+        else:
+            name, args = "abort_run", {"reason": "capacity checked"}
+        usage = {"input_tokens": 100, "output_tokens": 20}
+        if provider == "openai":
+            response = {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "call_id": f"call_{len(calls)}",
+                        "name": name,
+                        "arguments": json.dumps(args),
+                    }
+                ],
+                "usage": usage,
+            }
+        else:
+            response = {
+                "stop_reason": "tool_use",
+                "content": [
+                    {"type": "tool_use", "id": f"tool_{len(calls)}", "name": name, "input": args}
+                ],
+                "usage": usage,
+            }
+        return httpx.Response(200, json=response)
+
+    policy = DirectProvider(
+        config.models["luna"],
+        config.budgets,
+        client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
+    )
+    runner = Runner(store, config, game, policy)
+    result = runner.run()
+    assert result["reason"] == "AGENT_ABORT"
+    assert result["committed_actions"] == 1 and result["provider_calls"] == 4
+    assert game.observe_private() != before
+    events = store.events(result["episode_id"])
+    feedback = [event["payload"]["result"] for event in events if event["type"] == "helper_result"]
+    assert len(feedback) == 1
+    assert feedback[0]["error"] == "RUN_NOTEBOOK_LIMIT"
+    assert feedback[0]["game_advanced"] is False
+    assert len(json.dumps(feedback[0])) < 512
+    contexts = [event["payload"]["context"] for event in events if event["type"] == "agent_context"]
+    assert "set_run_note" in contexts[0]["allowed_tools"]
+    assert "set_run_note" not in contexts[1]["allowed_tools"]
+    assert "set_run_note" not in contexts[2]["allowed_tools"]
+    rejected = [event["payload"] for event in events if event["type"] == "action_rejected"]
+    assert [row["code"] for row in rejected] == ["HELPER_LIMIT_REACHED"]
+    assert rejected[0]["feedback"]["helper_calls_remaining"] == 0
+    committed = [event["payload"] for event in events if event["type"] == "action_commit"]
+    assert len(committed) == 1 and committed[0]["action"]["type"] == "select_blind"
+    assert committed[0]["action"]["blind_id"] == contexts[2]["observation"]["current_blind_id"]
+    submitted = [
+        event["payload"]["operation"]["envelope"]["action"]
+        for event in events
+        if event["type"] == "agent_operation" and event["payload"]["operation"]["kind"] == "action"
+    ]
+    intended = [event["payload"]["action"] for event in events if event["type"] == "action_intent"]
+    assert submitted == intended == [committed[0]["action"]]
+    assert not any(event["type"] == "run_note" for event in events)

@@ -3,12 +3,17 @@
 import json
 from copy import deepcopy
 
+import httpx
 import pytest
+from provider_transport import with_input_count
+from test_boundary import project
+from test_harness_tools import config_for
+from test_provider_continuations import model
 
 from balatro_horizons.agents.focused import context_bound
 from balatro_horizons.agents.notebook import RunNotebook, fold_notebook, restore_notebook
 from balatro_horizons.agents.protocol import ActionResult, decision_context, helper
-from balatro_horizons.agents.providers import context_payload
+from balatro_horizons.agents.providers import DirectProvider, context_payload
 from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.agents.working_memory import (
     WorkingMemory,
@@ -120,6 +125,40 @@ def test_notebook_replay_rejects_missing_revisions_and_malformed_mutations():
         book.apply(change)
 
 
+def test_helper_write_is_visible_immediately_and_survives_pruning_and_actions(store, config):
+    policy = WorkingScript(
+        note("scoring/pair", "one observed result"),
+        *[{"kind": "arithmetic", "expression": "1+1"}] * 4,
+        select,
+        play,
+    )
+    result = Runner(store, config, FakeGame(), policy).run()
+    assert result["committed_actions"] == 2 and result["reason"] == "AGENT_ABORT"
+    assert policy.contexts[0]["run_notebook"]["revision"] == 0
+    for ctx in policy.contexts[1:]:
+        assert ctx["run_notebook"]["entries"] == {"scoring/pair": "one observed result"}
+        assert "memory" not in ctx["observation"]
+    assert policy.contexts[5]["observation"]["retrieval_context"]["cleared"][0]["reload"] == {
+        "source": "run_notebook", "mutation_already_recorded": True,
+    }
+    events = store.events(result["episode_id"])
+    observations = [event for event in events if event["type"] == "observation"]
+    assert observations[0]["payload"]["memory"] == ""
+    assert observations[1]["payload"]["last_action"]["action_type"] == "select_blind"
+    assert observations[2]["payload"]["last_action"]["action_type"] == "play_hand"
+    assert fold_notebook(events).snapshot() == read_checkpoint(
+        store, result["episode_id"], 2
+    )["run_notebook"]
+
+
+def test_repeated_exhausted_helpers_fail_without_substituting_game_action(store, config):
+    config.budgets.max_helper_calls_per_decision = 0
+    policy = WorkingScript(*[{"kind": "arithmetic", "expression": "1+1"}] * 3)
+    result = Runner(store, config, FakeGame(), policy).run()
+    assert result["reason"] == "AGENT_PROTOCOL_FAILURE" and result["committed_actions"] == 0
+    assert len(policy.contexts) == 3
+
+
 def test_recent_actions_results_and_helpers_survive_without_note_writes(store, config):
     policy = WorkingScript({"kind": "arithmetic", "expression": "7*6"}, select,
                            {"kind": "inspect_page", "section": "hand", "offset": 0}, play)
@@ -205,6 +244,23 @@ def test_note_storage_failure_prevents_game_action(store, config, monkeypatch):
     assert result["committed_actions"] == 0 and runner.notebook.entries == {}
 
 
+def test_failed_helper_note_journal_append_does_not_make_note_visible(store, config, monkeypatch):
+    original = store.append
+
+    def append(eid, kind, payload, **kwargs):
+        if kind == "run_note":
+            raise OSError("simulated storage failure")
+        return original(eid, kind, payload, **kwargs)
+
+    monkeypatch.setattr(store, "append", append)
+    runner = Runner(store, config, FakeGame(), WorkingScript(note("x", "y")))
+    result = runner.run()
+    assert result["outcome"] == "INFRASTRUCTURE_FAILURE"
+    assert result["committed_actions"] == 0
+    assert runner.notebook.entries == {}
+    assert fold_notebook(store.events(result["episode_id"])).entries == {}
+
+
 def test_helper_note_stays_durable_when_acknowledgment_write_fails(store, config, monkeypatch):
     original = store.append
 
@@ -283,6 +339,85 @@ def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, con
         decode_tool("cash_out", {"observation_id": 0, "memory_update": "retired"})
 
 
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+def test_provider_parity_dynamic_notes_and_bounded_helper_feedback(store, monkeypatch, provider):
+    config = config_for(provider)
+    config.skills = "none"
+    config.budgets.max_helper_calls_per_decision = 1
+    provider_model = model(provider)
+    config.models["luna"] = provider_model
+    requests = []
+
+    def respond(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        user = next(
+            message for message in body.get("input", body.get("messages", []))
+            if message.get("role") == "user"
+        )
+        view = json.loads(user["content"])
+        index = len(requests)
+        if index == 1:
+            name, args = "set_run_note", {"key": "plan", "text": "keep visible"}
+        elif index == 2:
+            name, args = "calculate", {"expression": "1+1"}
+        elif index == 3:
+            name, args = "select_blind", {
+                "observation_id": 0,
+                "decision_note": None,
+                "blind_id": view["observation"]["state"]["revealed_blinds"][0]["id"],
+                "note_update": {"key": "plan", "text": "updated with action"},
+            }
+        else:
+            name, args = "abort_run", {"reason": "test finished"}
+        usage = {
+            "input_tokens": 10, "output_tokens": 1,
+            "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+        }
+        response = (
+            {"status": "completed", "output": [{
+                "type": "function_call", "call_id": f"call{index}",
+                "name": name, "arguments": json.dumps(args),
+            }], "usage": usage}
+            if provider == "openai" else
+            {"stop_reason": "tool_use", "content": [{
+                "type": "tool_use", "id": f"call{index}", "name": name, "input": args,
+            }], "usage": usage}
+        )
+        return httpx.Response(200, json=response)
+
+    monkeypatch.setenv(
+        "OPENAI_API_KEY" if provider == "openai" else "ANTHROPIC_API_KEY", "test-only"
+    )
+    policy = DirectProvider(
+        provider_model, config.budgets,
+        httpx.Client(transport=httpx.MockTransport(with_input_count(respond))),
+    )
+    result = Runner(store, config, FakeGame(), policy).run()
+    assert result["committed_actions"] == 1 and result["reason"] == "AGENT_ABORT"
+    assert len(requests) == 4
+    assert all(body["tools"] == requests[0]["tools"] for body in requests)
+
+    def stable_prefix(body):
+        return body["input"][0] if provider == "openai" else body["system"]
+
+    assert all(stable_prefix(body) == stable_prefix(requests[0]) for body in requests)
+    for index, body in enumerate(requests[1:], start=1):
+        user = next(
+            message for message in body.get("input", body.get("messages", []))
+            if message.get("role") == "user"
+        )
+        view = json.loads(user["content"])
+        expected = "updated with action" if index == 3 else "keep visible"
+        assert view["run_notebook"]["entries"] == {"plan": expected}
+        if index == 3:
+            assert view["working_memory"]["frames"][0]["action"]["type"] == "select_blind"
+    second = requests[1].get("input", requests[1].get("messages"))
+    view = json.loads(next(message for message in second if message.get("role") == "user")["content"])
+    assert "calculate" not in view["permitted_tools"]
+    assert "Helper allowance exhausted" in json.dumps(requests[2])
+
+
 def test_context_budget_prunes_history_before_live_helpers_and_notebook(store, config):
     result = Runner(store, config, FakeGame(), WorkingScript(select)).run()
     observation = Observation.model_validate(read_checkpoint(store, result["episode_id"], 1)["observation"])
@@ -305,7 +440,8 @@ def test_context_budget_prunes_history_before_live_helpers_and_notebook(store, c
 def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, config):
     root = Runner(store, config, FakeGame(), WorkingScript(
         {"kind": "arithmetic", "expression": "7*6"}, annotated(select),
-        {"kind": "rules", "key": "FUTURE_PARENT"}, play)).run()["episode_id"]
+        {"kind": "rules", "key": "FUTURE_PARENT"},
+        note("plan", "LATER_PARENT"), play)).run()["episode_id"]
     assert verify_checkpoint(store, config, root, 1)["status"] == "passed"
     child, checkpoint, prefix = prepare_branch(store, config, root, 1, "agent_continue")
     child_policy = WorkingScript(play, note("later", "FUTURE_CHILD"))
@@ -318,9 +454,10 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
     }
     assert view["frames"][0]["episode_id"] == root
     assert "FUTURE_PARENT" not in json.dumps(view)
+    assert "LATER_PARENT" not in json.dumps(child_policy.contexts[0])
     assert verify_checkpoint(store, config, child, 1)["status"] == "passed"
     grandchild, snapshot, ancestors = prepare_branch(store, config, child, 1, "agent_continue")
-    grand = WorkingScript()
+    grand = WorkingScript({"kind": "action_result", "decision_id": 0})
     Runner(store, config, FakeGame(), grand).run(eid=grandchild, resume=snapshot, history_prefix=ancestors)
     assert grand.contexts[0]["working_memory"] == view
     assert grand.contexts[0]["run_notebook"]["entries"] == {
@@ -328,6 +465,7 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
     }
     assert grand.contexts[0]["run_notebook"]["revision"] == snapshot["run_notebook"]["revision"]
     assert "FUTURE_CHILD" not in json.dumps(grand.contexts[0])
+    assert grand.exchanges[1][-1]["result"]["references"]["action"]["episode_id"] == root
     corrupt = deepcopy(snapshot["working_memory"])
     corrupt["frames"][0]["helpers"][0]["result"] = {"result": "999"}
     with pytest.raises(ValueError, match="WORKING_MEMORY_SNAPSHOT_MISMATCH"):
@@ -385,6 +523,20 @@ def test_action_result_uses_exact_public_cutoff(store, config):
 
 
 def test_prospective_review_and_export_keep_current_edit_behind_action_reveal(store, config):
+    observation = project(FakeGame().observe_private())
+    book = RunNotebook()
+    change, _ = book.propose("set_run_note", "k", "x" * 4095)
+    book.apply(change)
+    ctx, exchanges = decision_context(
+        observation, [], notebook=book.view(), helper_remaining=24
+    )
+    body = context_payload(ctx, exchanges, "openai")
+    assert "x" * 4095 not in body["input"][0]["content"][0]["text"]
+    assert "x" * 4095 in body["input"][1]["content"]
+    assert ctx["context_bytes_upper_bound"] >= len(body["input"][1]["content"].encode())
+    with pytest.raises(ValueError, match="LOCAL_CONTEXT_LIMIT"):
+        decision_context(observation, [], notebook=book.view(), byte_limit=2000)
+
     eid = Runner(store, config, FakeGame(), WorkingScript(annotated(select, text="CURRENT_EDIT_SENTINEL"), play)).run()["episode_id"]
     review = ReviewService(store)
     token = review.open(eid)["review_token"]

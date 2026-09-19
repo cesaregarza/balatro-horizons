@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from test_boundary import project
 from test_harness_tools import config_for
 
+from balatro_horizons.actions.validation import InvalidAction, validate_action
+from balatro_horizons.agents.budget import reservation_usd
 from balatro_horizons.agents.focused import (
     CARD_DEFAULTS,
     COUNTER_DEFAULTS,
@@ -15,15 +17,198 @@ from balatro_horizons.agents.focused import (
     encode,
     text_page,
 )
+from balatro_horizons.agents.notebook import RunNotebook
 from balatro_horizons.agents.protocol import Operation, context, decision_context, helper
-from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure
+from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import load_guide
+from balatro_horizons.config import (
+    CONTEXT_FRAMING_BYTES,
+    CONTEXT_SETTINGS_BYTES,
+    Limits,
+    ModelConfig,
+)
 from balatro_horizons.contracts import Observation
 from balatro_horizons.engine.fake import FakeGame
 
 
 def read(raw, obs, events=(), rules=None):
     return helper(Operation.validate_python(raw), events, rules or {}, obs)
+
+
+def cache_model():
+    return ModelConfig(
+        provider="openai",
+        model="gpt-5.6-terra",
+        input_usd_per_million=2,
+        output_usd_per_million=12,
+        cached_input_usd_per_million=0.2,
+        cache_write_input_usd_per_million=2.5,
+        pricing_date="2026-09-15",
+        settings={},
+    )
+
+
+def cache_request(observation, exchanges=(), *, notebook=None):
+    ctx, delivered = decision_context(
+        observation,
+        exchanges,
+        skills=load_guide()[1],
+        notebook=notebook,
+    )
+    policy = DirectProvider(cache_model(), Limits())
+    try:
+        return policy.request(ctx, delivered)
+    finally:
+        policy.client.close()
+
+
+def test_cache_prefix_stays_identical_across_phases_ids_and_helper_calls():
+    game = FakeGame()
+    first = cache_request(project(game.observe_private()))
+    game.phase = "SELECTING_HAND"
+    other = project(game.observe_private())
+    other.observation_id = 19
+    for card in other.state.hand:
+        card.id = "new-" + card.id
+    book = RunNotebook()
+    change, _ = book.propose("set_run_note", "plan", "changing public memory")
+    book.apply(change)
+    second = cache_request(other, notebook=book.view())
+    def prefix(body):
+        return body["tools"], body["input"][0]
+
+    assert prefix(first) == prefix(second)
+    assert first["tool_choice"] == second["tool_choice"] == "auto"
+    assert "observation_id" in first["input"][1]["content"]
+    assert "changing public memory" in second["input"][1]["content"]
+    args = {"section": "hand", "offset": 0}
+    exchange = {
+        "operation": {"kind": "inspect_page", **args},
+        "tool_call": {"name": "inspect_state", "arguments": args},
+        "result": {"content": "changing helper output", "game_advanced": False},
+    }
+    third = cache_request(other, [exchange], notebook=book.view())
+    assert prefix(second) == prefix(third)
+    assert "changing helper output" in json.dumps(third["input"][2:])
+    assert third["prompt_cache_options"] == {"mode": "explicit"}
+    assert first["input"][0]["content"][0]["prompt_cache_breakpoint"] == {"mode": "explicit"}
+    assert "previous_response_id" not in third
+    assert "instructions" not in third
+    assert json.dumps(third).count('"prompt_cache_breakpoint"') == 1
+    assert (
+        len(json.dumps(third, ensure_ascii=False).encode())
+        + CONTEXT_FRAMING_BYTES
+        + CONTEXT_SETTINGS_BYTES
+        <= Limits().max_request_bytes
+    )
+
+
+def test_static_cache_schemas_keep_current_observation_and_blind_validation():
+    game = FakeGame()
+    observation = project(game.observe_private())
+    before = deepcopy(game.observe_private())
+    ctx, delivered = decision_context(observation, [])
+    policy = DirectProvider(cache_model(), Limits())
+    try:
+        policy.request(ctx, delivered)
+        args = {
+            "observation_id": observation.observation_id + 1,
+            "blind_id": observation.state.revealed_blinds[0].id,
+            "decision_note": None,
+            "note_update": None,
+        }
+
+        def parsed():
+            return Operation.validate_python(policy.parse({
+                "status": "completed",
+                "output": [{
+                    "type": "function_call", "call_id": "cache_validation",
+                    "name": "select_blind", "arguments": json.dumps(args),
+                }],
+            }))
+
+        with pytest.raises(InvalidAction, match="STALE_OBSERVATION"):
+            validate_action(parsed().envelope, observation)
+        args["observation_id"] = observation.observation_id
+        args["blind_id"] = "stale-card-handle"
+        with pytest.raises(InvalidAction, match="UNKNOWN_BLIND"):
+            validate_action(parsed().envelope, observation)
+        assert game.observe_private() == before
+    finally:
+        policy.client.close()
+
+
+def test_hidden_card_noninterference_includes_cache_prefix():
+    game = FakeGame()
+    game.phase = "SELECTING_HAND"
+    left = game.observe_private()
+    for card in left["visible"]["hand"]:
+        card["face_down"] = True
+    right = deepcopy(left)
+    for card in right["visible"]["hand"]:
+        card.update(native_id="hidden-" + card["native_id"], label="PRIVATE_SECRET", rank="K")
+    first, second = cache_request(project(left)), cache_request(project(right))
+    assert first == second
+    assert "PRIVATE_SECRET" not in json.dumps(second)
+
+
+def test_disjoint_cache_input_categories_and_worst_case_reservation():
+    model = cache_model()
+    policy = DirectProvider(model, Limits())
+    try:
+        assert model.maximum_input_usd_per_million == 2.5
+        assert reservation_usd(model, policy.limits) == pytest.approx(
+            (policy.limits.max_input_tokens_per_call * 2.5
+             + policy.limits.max_output_tokens_per_call * 12) / 1_000_000
+        )
+        response = {
+            "usage": {
+                "input_tokens": 5000,
+                "output_tokens": 100,
+                "input_tokens_details": {"cached_tokens": 3000, "cache_write_tokens": 1000},
+            }
+        }
+        assert policy.usage_cost(response, 0.2) == pytest.approx(
+            (1000 * 2 + 3000 * 0.2 + 1000 * 2.5 + 100 * 12) / 1_000_000
+        )
+        for details in (
+            None,
+            {},
+            {"cached_tokens": 3000},
+            {"cached_tokens": 3000, "cache_write_tokens": 3000},
+            {"cached_tokens": True, "cache_write_tokens": 0},
+            {"cached_tokens": 0, "cache_write_tokens": -1},
+        ):
+            response["usage"]["input_tokens_details"] = details
+            assert policy.usage_cost(response, 0.2) == 0.2
+    finally:
+        policy.client.close()
+
+
+@pytest.mark.parametrize("model_changes,limits,error", [
+    ({"cached_input_usd_per_million": None, "cache_write_input_usd_per_million": None},
+     Limits(), "EXPLICIT_CACHE_PRICING_REQUIRED"),
+    ({}, Limits(max_input_tokens_per_call=272_001), "CACHE_LONG_CONTEXT"),
+])
+def test_explicit_cache_requires_pricing_and_supported_context_tier(
+    model_changes, limits, error
+):
+    observation = project(FakeGame().observe_private())
+    ctx, delivered = decision_context(observation, [])
+    model = ModelConfig.model_validate({**cache_model().model_dump(), **model_changes})
+    policy = DirectProvider(model, limits)
+    try:
+        with pytest.raises(ProviderFailure, match=error):
+            policy.request(ctx, delivered)
+    finally:
+        policy.client.close()
+
+
+def test_cache_pricing_requires_both_read_and_write_rates():
+    with pytest.raises(ValidationError, match="configure both cache read and write rates"):
+        ModelConfig.model_validate({
+            **cache_model().model_dump(), "cached_input_usd_per_million": None,
+        })
 
 
 def test_compression_preserves_effects_order_defaults_and_unknown_counters():

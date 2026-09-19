@@ -18,6 +18,7 @@ from balatro_horizons.agents.protocol import Operation
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
 from balatro_horizons.config import load_config
 from balatro_horizons.engine.provenance import implementation_fingerprint
+from balatro_horizons.evaluation.reports import scan
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.storage.journal import atomic_json, digest, locked
 
@@ -78,6 +79,9 @@ def main():
         parser.error("Probe requires four calls, no retries, and caps of at most $1")
     store = readonly_store(args.root)
     rows = select(candidates(store, args.episode_id, config, args.model))
+    private_seed = store.manifest(args.episode_id, True).get("seed")
+    for row in rows:
+        scan(row["body"], [private_seed])
     reserve = (
         limits.max_input_tokens_per_call * model.maximum_input_usd_per_million
         + limits.max_output_tokens_per_call * model.output_usd_per_million
@@ -186,7 +190,7 @@ def main():
             )
             if response.get("status") == "completed":
                 previous_id = response.get("id")
-            policy.available_tools = {t["name"] for t in body["tool_choice"]["tools"]}
+            policy.available_tools = set(row["allowed_tools"])
             operation_status = "valid_helper"
             try:
                 operation = Operation.validate_python(policy.parse(response))

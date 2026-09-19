@@ -1,5 +1,6 @@
 # Native plumbing test; opt in with scripts/smoke_openai.py --allow-paid.
-# Official standard prices verified 2026-09-14. Explicit prompt caching; no fast tier.
+# Standard and cache rates verified 2026-09-18 against the official Luna model page.
+# Explicit prompt caching; no fast tier.
 # Shared limits and disabled paid execution are inherited from config.py.
 environment:
   stake: WHITE
@@ -14,7 +15,7 @@ models:
     cached_input_usd_per_million: 0.02
     cache_write_input_usd_per_million: 0.25
     output_usd_per_million: 1.20
-    pricing_date: "2026-09-14"
+    pricing_date: "2026-09-18"
     settings:
       reasoning_effort: medium
       reasoning_summary: auto

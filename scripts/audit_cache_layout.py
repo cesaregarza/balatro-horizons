@@ -33,14 +33,16 @@ def candidates(store, eid, config, model_name):
                 raise ValueError("MISSING_SOURCE_CONTEXT")
             obs = Observation.model_validate(observations[event["observation_id"]])
             previous = source["payload"]
-            # Preserve exactly the recorded pre-call notes and counters. Only the
-            # request layout changes; this audit never claims gameplay equivalence.
-            obs.memory = previous["context"]["observation"]["memory"]
+            # Preserve the recorded pre-call notebook, working memory, and counters.
+            # Only the request layout changes; this audit never claims gameplay equivalence.
             ctx, delivered = decision_context(
                 obs,
                 previous["exchanges"],
                 skills=skills,
                 byte_limit=config.budgets.max_request_bytes,
+                notebook=previous["context"]["run_notebook"],
+                working_memory=previous["context"]["working_memory"],
+                helper_remaining=previous["context"]["helper_status"]["remaining"],
             )
             ctx["observation"]["remaining_budget"] = previous["context"]["observation"][
                 "remaining_budget"
@@ -53,6 +55,7 @@ def candidates(store, eid, config, model_name):
                     "phase": obs.phase,
                     "source_context_sequence": source["sequence"],
                     "observation": obs,
+                    "allowed_tools": ctx["allowed_tools"],
                     "body": body,
                 }
             )

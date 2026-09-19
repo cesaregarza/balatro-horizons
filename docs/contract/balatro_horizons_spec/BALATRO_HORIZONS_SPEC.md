@@ -575,7 +575,7 @@ agents:
     credentials_env: PROVIDER_B_API_KEY
 
 harness:
-  prompt: configs/prompts/harness.txt
+  prompt: configs/prompts/core.txt
   rules_manifest: private/rules.lock.json
   recent_public_events: 20
   memory_max_characters: 4096
