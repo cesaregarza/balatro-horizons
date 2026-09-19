@@ -35,7 +35,8 @@ def test_harness_only_edits_change_full_identity_but_not_native_components():
 
 
 @pytest.mark.parametrize('path', [
-    'engine/native.py', 'engine/native_state.py', 'engine/replay.py', 'contracts.py',
+    'engine/native.py', 'engine/native_state.py', 'engine/replay.py',
+    'engine/continuation_probe.py', 'contracts.py',
     'observations/projection.py', 'actions/validation.py', 'storage/journal.py',
     'engine/new_native_module.py',
 ])

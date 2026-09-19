@@ -9,18 +9,18 @@ retroactive autonomous win under the original cap.
 The first implementation supports standalone root episodes stopped by a dollar
 cap, at their last recorded checkpoint. It does not extend action/call limits,
 restart batch slots, or automatically roll funding into another continuation.
-Each continuation needs a new explicit combined cap and a fresh decision to start.
+Each continuation needs an explicit combined cap and a fresh decision to start.
 It preserves model settings, frozen prompts/tools, knowledge, public history,
 identity mappings and pre-decision notes. A helper called after the checkpoint
 is charged but its later note changes and tool results are not inherited.
 
 The explicit combined dollar cap includes the original run and every continuation
 attempt, including failures. The original spending ledger is shared; original
-manifests, journals, protocol snapshots and checkpoints stay unchanged. Unsettled
-root reservations or ledger/terminal mismatches prevent admission. A retained
-unknown-usage reservation from a failed child counts as spent only when that
-child's immutable terminal accounts for its call and cost. Admission reconstructs
-the complete child chain from recorded ledger hashes, not index order. A source
+manifests, journals, protocol snapshots and checkpoints stay unchanged. An
+unsettled reservation counts as spent when its owning root or child terminal
+accounts for its call and cost; ledger/terminal mismatches prevent admission.
+Admission reconstructs the complete child chain from recorded ledger hashes,
+not index order. A source
 change invalidates the frozen protocol and blocks continuation; the old/new caps,
 certificate and original protocol hash are recorded in the child. Ordinary
 branches retain their strict source/budget checks.

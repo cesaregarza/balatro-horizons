@@ -11,7 +11,7 @@ from balatro_horizons.engine.certification import (
     read_checkpoint,
 )
 from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.native import NativeGame
+from balatro_horizons.engine.native import NativeFailure, NativeGame
 from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
 from balatro_horizons.engine.replay import ReplayDivergence, check_private
 from balatro_horizons.observations.projection import HandleIssuer
@@ -58,26 +58,39 @@ def verify_continuation_probe(store, config, eid, decision, action, *, repetitio
                 if after_hashes and after != after_hashes[0]:
                     raise ReplayDivergence("PROBE_CONTINUATION_DIVERGENCE", game, decision)
                 after_hashes.append(after)
-            except (ValueError, RuntimeError, OSError) as error:
-                artifact = None
-                if isinstance(error, ReplayDivergence):
-                    artifact = "probe-divergence-" + uuid.uuid4().hex + ".json"
-                    store.private_json(eid, artifact, {"decision": decision,
-                        "actual": error.actual, "expected_start_hash": checkpoint["continuation_hash"],
-                        "expected_after_hash": after_hashes[0] if after_hashes else None})
+            except NativeFailure:
+                # An unavailable native session is not replay counterevidence.
+                # Preserve the previously selected certificate for a later retry.
+                raise
+            except ReplayDivergence as error:
+                artifact = "probe-divergence-" + uuid.uuid4().hex + ".json"
+                store.private_json(eid, artifact, {"decision": decision,
+                    "actual": error.actual, "expected_start_hash": checkpoint["continuation_hash"],
+                    "expected_after_hash": after_hashes[0] if after_hashes else None})
                 failures.append({"repetition": repetition,
                                  "artifact": artifact,
                                  "reason": str(error) if str(error).isupper() else type(error).__name__})
+            except (ValueError, RuntimeError, OSError):
+                # Other failures cannot establish a fidelity mismatch.
+                raise
             finally:
                 if game is not None:
                     try:
                         game.close()
-                    except (ValueError, RuntimeError, OSError):
-                        failures.append({"repetition": repetition, "reason": "NATIVE_CLEANUP_FAILED"})
+                    except NativeFailure:
+                        if failures:
+                            failures.append({"repetition": repetition, "reason": "NATIVE_CLEANUP_FAILED"})
+                        else:
+                            raise
+                    except (ValueError, RuntimeError, OSError) as error:
+                        if failures:
+                            failures.append({"repetition": repetition, "reason": "NATIVE_CLEANUP_FAILED"})
+                        else:
+                            raise NativeFailure("NATIVE_CLEANUP_FAILED") from error
             if failures:
                 break
     if source != implementation_fingerprint():
-        failures.append({"reason": "SOURCE_CHANGED_DURING_VERIFICATION"})
+        raise ValueError("SOURCE_CHANGED_DURING_VERIFICATION")
     cert = {
         "schema_version": 2,
         "certificate_id": uuid.uuid4().hex,
@@ -99,7 +112,7 @@ def verify_continuation_probe(store, config, eid, decision, action, *, repetitio
     path = continuation_probe_path(store, eid, decision)
     atomic_json(path.with_name("certificate-record-" + cert["certificate_id"] + ".json"),
                 cert, immutable=True)
-    # Any failed original-state restoration disables this boundary, regardless
-    # of the mode that previously selected it. Historical records are preserved.
+    # Only replay divergence disables this boundary. Startup and other
+    # operational failures leave a previously selected certificate untouched.
     atomic_json(path, cert)
     return cert

@@ -27,8 +27,7 @@ def _matching_spend(rows, calls, cost):
     )
 
 
-def _reconcile_shared_ledger(store, parent_id, terminal, entries):
-    """Match one locked ledger snapshot to every terminal that spent from it."""
+def _validate_rows(entries):
     if not isinstance(entries, dict) or not entries:
         raise ValueError("BUDGET_EXTENSION_INVALID_LEDGER")
     for row in entries.values():
@@ -42,34 +41,71 @@ def _reconcile_shared_ledger(store, parent_id, terminal, entries):
         ):
             raise ValueError("BUDGET_EXTENSION_INVALID_LEDGER")
 
+
+def _reconcile_parent(parent_id, terminal, entries):
     parent_rows = [row for row in entries.values() if row["episode_id"] == parent_id]
     if not _matching_spend(parent_rows, terminal["provider_calls"], terminal["cost_usd"]):
         raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
-    if any(not row["settled"] for row in parent_rows):
-        raise ValueError("BUDGET_EXTENSION_UNSETTLED_SPENDING")
 
+
+def _ordered_children(store, parent_id, entries):
+    """Use admission hashes, resolving zero-spend ties before spending children."""
     accounted = {parent_id}
     # SQLite row order can change when an episode is reindexed. Reconstruct the
     # admission chain from each immutable child's preceding-ledger hash instead.
     pending = [item for item in store.list_episodes()
                if item["manifest"].get("parent_episode_id") == parent_id
                and item["manifest"].get("assistance") == "budget_extension"]
+    spending_owners = {row["episode_id"] for row in entries.values()}
     while pending:
         preceding = {key: row for key, row in entries.items()
                      if row["episode_id"] in accounted}
         prior_hash = digest(preceding)
-        match = next((item for item in pending if (
+        matches = [item for item in pending if (
             item["manifest"].get("budget_extension", {}).get("ledger_hash_at_admission") == prior_hash
             and _matching_spend(
                 list(preceding.values()),
                 item["manifest"]["budget_extension"].get("prior_provider_calls"),
                 item["manifest"]["budget_extension"].get("prior_cost_usd"),
             )
-        )), None)
-        if match is None:
+        )]
+        if not matches:
             raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
+        # A child with no spending leaves the same admission hash for the next
+        # child. Account for all such children before consuming a spending child.
+        match = next((item for item in matches
+                      if item["episode_id"] not in spending_owners), matches[0])
         pending.remove(match)
-        item = match
+        yield match
+        accounted.add(match["episode_id"])
+
+    if any(row["episode_id"] not in accounted for row in entries.values()):
+        raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
+
+
+def _child_own_spend(child, events, prior_calls):
+    """Runner counts inherited calls; pre-run failure and recovery count own calls.
+
+    All three terminal producers record only the child's own cost, including
+    retained reservations whose usage is unknown.
+    """
+    started = any(event["type"] == "episode_start" for event in events)
+    recovered = (
+        child.get("outcome") == "INFRASTRUCTURE_FAILURE"
+        and child.get("reason") in ("PROCESS_INTERRUPTED", "AMBIGUOUS_ACTION_AFTER_CRASH")
+    )
+    calls = (child["provider_calls"] if not started or recovered
+             else child["provider_calls"] - prior_calls)
+    if not started and calls != 0:
+        raise ValueError("BUDGET_EXTENSION_CHILD_SPEND_MISMATCH")
+    return calls, child["cost_usd"]
+
+
+def _reconcile_shared_ledger(store, parent_id, terminal, entries):
+    """Match one locked ledger snapshot to every terminal that spent from it."""
+    _validate_rows(entries)
+    _reconcile_parent(parent_id, terminal, entries)
+    for item in _ordered_children(store, parent_id, entries):
         manifest = item["manifest"]
         child_id = item["episode_id"]
         extension = manifest.get("budget_extension") or {}
@@ -80,27 +116,11 @@ def _reconcile_shared_ledger(store, parent_id, terminal, entries):
         if child is None:
             raise ValueError("BUDGET_EXTENSION_CHILD_UNRESOLVED")
         child_rows = [row for row in entries.values() if row["episode_id"] == child_id]
-        child_events = store.events(child_id)
-        started = any(event["type"] == "episode_start" for event in child_events)
-        recovered = (
-            child.get("outcome") == "INFRASTRUCTURE_FAILURE"
-            and child.get("reason") in ("PROCESS_INTERRUPTED", "AMBIGUOUS_ACTION_AFTER_CRASH")
-        )
-        # Runner terminals count inherited calls; service pre-run failures and
-        # Store.recover terminals count only this child's journal requests.
-        child_calls = child["provider_calls"] if not started or recovered else child["provider_calls"] - prior_calls
-        if not started and child_calls != 0:
-            raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
+        child_calls, child_cost = _child_own_spend(child, store.events(child_id), prior_calls)
         if not _matching_spend(
-            child_rows, child_calls, child["cost_usd"]
+            child_rows, child_calls, child_cost
         ):
-            raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
-        # A retained unknown-usage reservation is still money spent when the
-        # immutable child terminal includes that row in its count and cost.
-        accounted.add(child_id)
-
-    if any(row["episode_id"] not in accounted for row in entries.values()):
-        raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
+            raise ValueError("BUDGET_EXTENSION_CHILD_SPEND_MISMATCH")
     return sum(row["cost"] for row in entries.values()), len(entries)
 
 

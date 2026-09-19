@@ -215,7 +215,7 @@ def _require_certificate(store, eid, decision, *, probe):
         raise ValueError("CHECKPOINT_NOT_CERTIFIED")
     cert = json.loads(path.read_text())
     checkpoint = read_checkpoint(store, eid, decision)
-    allowed_modes = {"checkpoint_probe", "seed_prefix_probe"} if probe else {
+    allowed_modes = {"checkpoint_probe"} if probe else {
         "checkpoint", "seed_prefix"
     }
     if (
@@ -230,7 +230,7 @@ def _require_certificate(store, eid, decision, *, probe):
         current = json.loads((ROOT / "private/environment.lock.json").read_text())
         if digest(current) != cert["environment_hash"]:
             raise ValueError("CHECKPOINT_ENVIRONMENT_MISMATCH")
-    if cert.get("mode") in ("seed_prefix", "seed_prefix_probe"):
+    if cert.get("mode") == "seed_prefix":
         checkpoint["game"] = prefix_snapshot(store, eid, decision, steps_for(store, eid))
     return checkpoint, cert
 
