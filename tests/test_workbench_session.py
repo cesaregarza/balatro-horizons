@@ -145,6 +145,25 @@ def test_direct_native_verify_requires_session_before_replay(store, config, epis
     assert certificate.read_bytes() == selected
 
 
+def test_native_verify_expiry_after_preflight_keeps_certificate(store, config, episode, monkeypatch):
+    checkpoint = read_checkpoint(store, episode, 0)
+    checkpoint["game"]["kind"] = "native"
+    checkpoint["game"]["seed"] = "SIMULATED"
+    atomic_json(store.episode_path(episode, True) / "checkpoint-0.json", checkpoint)
+    certificate = certificate_path(store, episode, 0)
+    atomic_json(certificate, {"status": "passed", "marker": "retain"})
+    selected = certificate.read_bytes()
+    session = Mock(return_value={})
+    monkeypatch.setattr("balatro_horizons.engine.certification.load_session", session)
+    game = Mock(side_effect=native.NativeFailure("WINDOWS_SESSION_EXPIRED"))
+    monkeypatch.setattr("balatro_horizons.engine.certification.NativeGame", game)
+    with pytest.raises(ValueError, match="WINDOWS_SESSION_EXPIRED"):
+        verify_checkpoint(store, config, episode, 0)
+    assert session.call_count == 2  # Admission and again under native-worker.lock.
+    game.assert_called_once()
+    assert certificate.read_bytes() == selected
+
+
 def test_bridge_subprocesses_receive_only_registered_environment(registration, monkeypatch):
     context.register_session({**registration, "OPENAI_API_KEY": "never-forward"})
     monkeypatch.setenv("OPENAI_API_KEY", "never-forward")

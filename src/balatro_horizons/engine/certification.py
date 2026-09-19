@@ -21,6 +21,19 @@ from balatro_horizons.engine.windows_context import load_session
 from balatro_horizons.observations.projection import HandleIssuer
 from balatro_horizons.storage.journal import atomic_json, digest, locked, now
 
+SESSION_UNAVAILABLE = frozenset({
+    "WINDOWS_SESSION_NOT_CONFIGURED",
+    "WINDOWS_SESSION_REGISTRATION_INVALID",
+    "WINDOWS_SESSION_EXPIRED",
+    "INVALID_SESSION_ENVIRONMENT",
+    "INVALID_WINDOWS_INTEROP_SOCKET",
+})
+
+
+def abort_unavailable_session(error):
+    if str(error) in SESSION_UNAVAILABLE:
+        raise ValueError(str(error)) from None
+
 
 def require_environment_certificate(lock, environment):
     path = ROOT / "private/capability-certificate.json"
@@ -113,6 +126,8 @@ def verify_checkpoint(store, config, eid, decision, *, repetitions=3, mode="chec
     failures = []
     lock_path = ROOT / "private/native-worker.lock" if native else store.root / "verification.lock"
     with locked(lock_path):
+        if native:
+            load_session()
         for repetition in range(repetitions):
             game = None
             try:
@@ -137,6 +152,8 @@ def verify_checkpoint(store, config, eid, decision, *, repetitions=3, mode="chec
                 ):
                     raise ValueError("TERMINAL_MISMATCH")
             except (ValueError, RuntimeError, OSError) as error:
+                if native:
+                    abort_unavailable_session(error)
                 artifact = None
                 if isinstance(error, ReplayDivergence):
                     boundary = error.decision if error.decision is not None else decision
