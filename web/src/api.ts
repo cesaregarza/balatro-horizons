@@ -108,6 +108,8 @@ export type DecisionLedger = {
     evidence_kind: string;
     evaluation_eligible: boolean;
     fixture?: string | null;
+    recorded_interface?: string | null;
+    current_harness?: boolean;
     config?: {
       deck?: string;
       stake?: string;

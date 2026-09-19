@@ -862,7 +862,7 @@ export default function App() {
                   <p key={name}>
                     <b>{modelLabel(value)}</b>
                     {" · "}
-                    {harnessLabel(value)}{" "}
+                    {harnessLabel()}{" "}
                     <button
                       onClick={() => {
                         setProvider(value.provider);

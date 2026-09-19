@@ -64,11 +64,7 @@ test("Sol and Astra expose their supported reasoning choices", () => {
 });
 
 test("model defaults deduplicate aliases without rewriting historical settings", () => {
-  const legacy = {
-    ...terra,
-    interface: "retired-recording",
-    settings: { reasoning_effort: "medium" },
-  };
+  const legacy = { ...terra, settings: { reasoning_effort: "medium" } };
   const savedAlias = { ...terra, settings: { ...terra.settings } };
   const currentAlias = configureModel(terra, "medium");
   const models = {
@@ -84,8 +80,9 @@ test("model defaults deduplicate aliases without rewriting historical settings",
       modelKey(terra)
     ],
   ).toEqual(savedAlias);
-  expect(harnessLabel(currentAlias)).toBe("Current harness");
-  expect(harnessLabel(legacy)).toBe("Legacy harness (retired-recording)");
+  expect(harnessLabel()).toBe("Current harness");
+  expect(harnessLabel("recorded-current", true)).toBe("Current harness");
+  expect(harnessLabel("retired-recording", false)).toBe("Legacy harness (retired-recording)");
   const selected = configureModel(terra, "high");
   expect(
     modelCatalog({ ...models, [modelKey(terra)]: selected })[modelKey(terra)],

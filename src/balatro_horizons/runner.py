@@ -21,6 +21,7 @@ from balatro_horizons.agents.notebook import RunNotebook, restore_notebook
 from balatro_horizons.agents.protocol import KERNEL, Operation, decision_context, helper
 from balatro_horizons.agents.providers import ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import prepare_rules, read_guide, restore_knowledge
+from balatro_horizons.agents.tool_interface import ACTION_MODELS
 from balatro_horizons.agents.working_memory import WorkingMemory, restore_working_memory
 from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT
 from balatro_horizons.contracts import Observation, RecentPublicEvent, RemainingBudget
@@ -243,6 +244,19 @@ class Runner:
                 return operation.envelope, None
             except (ValidationError, InvalidAction, ProtocolFailure) as error:
                 invalid += 1
+                if (
+                    isinstance(error, ProtocolFailure)
+                    and error.code == "UNAVAILABLE_TOOL"
+                    and helper_count >= self.limits.max_helper_calls_per_decision
+                    and error.details.get("attempted_tool") in {
+                        tool["name"] for tool in ctx["tools"]
+                        if tool["name"] not in ACTION_MODELS and tool["name"] != "abort_run"
+                    }
+                ):
+                    error = ProtocolFailure(
+                        "HELPER_LIMIT_REACHED",
+                        attempted_tool=error.details["attempted_tool"],
+                    )
                 code = (
                     error.code
                     if isinstance(error, InvalidAction)
@@ -250,11 +264,7 @@ class Runner:
                     else "INVALID_OPERATION_SCHEMA"
                 )
                 feedback = self._tool_feedback(error, code, observation)
-                if (
-                    code == "HELPER_LIMIT_REACHED"
-                    or (code == "UNAVAILABLE_TOOL"
-                        and helper_count >= self.limits.max_helper_calls_per_decision)
-                ):
+                if code == "HELPER_LIMIT_REACHED":
                     feedback.update(helper_calls_remaining=0,
                                     message="Helper allowance exhausted. Choose a permitted gameplay action or abort_run.")
                 self.log(

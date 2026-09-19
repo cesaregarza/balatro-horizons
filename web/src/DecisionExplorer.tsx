@@ -12,7 +12,7 @@ import {
   number,
 } from "./decisionPresentation";
 import "./decisions.css";
-import { modelLabel } from "./modelSelection";
+import { harnessLabel, modelLabel } from "./modelSelection";
 import { downloadDecisions, type DecisionExportFormat } from "./decisionExport";
 import { modifierDescription, editionClass } from "./cardPresentation";
 import { ModifierLegend } from "./ModifierLegend";
@@ -293,6 +293,11 @@ export function DecisionExplorer({
                   )
                 : ledger.manifest.agent}
             </strong>
+            {ledger.manifest.recorded_interface && (
+              <span className="muted">
+                {harnessLabel(ledger.manifest.recorded_interface, ledger.manifest.current_harness)}
+              </span>
+            )}
             <span
               className={`badge ${ledger.manifest.evidence_kind === "NATIVE" ? "native" : "synthetic"}`}
             >
