@@ -9,11 +9,20 @@ test("synthetic run, progressive reveal, escaped annotation, verified branch", a
   await expect(
     page.getByRole("heading", { name: /Every choice leaves/ }),
   ).toBeVisible();
+  const created = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/runs") &&
+      response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: /Start test episode/ }).click();
-  await expect(page.getByRole("status")).toContainText("Run created");
+  const { episode_id } = await (await created).json();
+  const newRun = page.getByRole("row").filter({
+    has: page.getByText(episode_id.slice(0, 10), { exact: true }),
+  });
+  await expect(newRun).toBeVisible();
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await page.getByRole("button", { name: "Review →" }).first().click();
+    await newRun.getByRole("button", { name: "Review →" }).click();
     await expect(
       page.getByRole("heading", { name: "What was knowable here?" }),
     ).toBeVisible();
