@@ -93,7 +93,7 @@ Memory was small, frequently rewritten, and sometimes wrong. Terra decision 39 /
 
 ## Fairness and validation limits
 
-The older Luna tools_v2 episode used 105 calls for 98 actions, with 424,287 input and 27,765 output tokens, before a harness context-construction failure. It predates the current guide/context condition. Its six inspection results ranged from 7,733 to 11,204 compact bytes, versus Terra's 386–1,140; different sections, states, and helper policies make that an illustration of mechanisms, not a controlled efficiency result. Existing matched offline reconstructions in [focused-context documentation](harness-focused-context.md) establish request construction only.
+The older Luna tools_v2 episode used 105 calls for 98 actions, with 424,287 input and 27,765 output tokens, before a harness context-construction failure. It predates the current guide/context condition. Its six inspection results ranged from 7,733 to 11,204 compact bytes, versus Terra's 386–1,140; different sections, states, and helper policies make that an illustration of mechanisms, not a controlled efficiency result. Existing matched offline reconstructions recorded in the [changelog](../CHANGELOG.md) establish request construction only.
 
 Both primary models used medium reasoning and automatic returned summaries. Summaries are model-generated accounts, not raw reasoning, and their absence does not mean no reasoning occurred. Output totals already include reasoning; it must not be counted again as an extra fee. Reducing reasoning is not established as an improvement by this audit.
 

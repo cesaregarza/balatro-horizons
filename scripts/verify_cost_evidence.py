@@ -47,9 +47,9 @@ def verify(store, eid):
         observation = observation.model_copy(deep=True)
         if decision in receipts:
             observation.last_action = receipts[decision]
-        ctx, exchanges = decision_context(observation, [], interface="tools_v5")
+        ctx, exchanges = decision_context(observation, [])
         for provider in ("openai", "anthropic"):
-            body = context_payload(ctx, exchanges, provider, "tools_v5")
+            body = context_payload(ctx, exchanges, provider)
             messages = body["input" if provider == "openai" else "messages"]
             content = json.loads(next(m for m in messages if m.get("role") == "user")["content"])
             costs = content["current_costs"]

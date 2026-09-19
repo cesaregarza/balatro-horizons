@@ -16,23 +16,16 @@ The equivalent configuration is:
 
 ```yaml
 skills: balatro-guide-v1 # or none
-models:
-  player:
-    # Keep the existing explicit provider, model, prices and spending settings.
-    settings:
-      harness_interface: tools_v2
 ```
 
 This fragment is not a complete paid-run configuration. Enabling skills does not
-enable paid execution or change spending ceilings. The existing
-`configs/luna-tools-smoke.yaml` inherits the default guide setting.
+enable paid execution or change spending ceilings.
 
 The first request at each game decision includes twelve skill names and short
-descriptions, not their full text. With `tools_v2`, both providers receive the same
+descriptions, not their full text. Both providers receive the same
 `read_skill(name)` tool and catalog. A model can read a relevant skill, follow its
 chapter keys with `read_rules(key)`, inspect public state, and then choose one
-legal game action. The older `operate_v1` interface reaches the same entries with
-a `rules` operation, for example `guide/balatro-scoring`.
+legal game action.
 
 Each read consumes one of the existing eight helper calls per decision and leaves
 the game unchanged. Pages contain at most 4,096 UTF-8 bytes; `next_key` identifies

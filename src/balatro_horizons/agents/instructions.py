@@ -24,17 +24,15 @@ def render(prompt: str, instructions: str) -> str:
     return before + block + after
 
 
-def load_prompt(root, interface):
-    filename = "core.txt" if interface == "operate_v1" else interface.replace("_", "-") + ".txt"
-    raw = (root / "configs/prompts" / filename).read_bytes()
-    if interface in ("tools_v5", "tools_v6", "tools_v7"):
-        try:
-            source = (root / "configs/prompts/ALWAYS-LOADED.md").read_text(encoding="utf-8")
-            rendered = render(raw.decode("utf-8"), source).encode("utf-8")
-        except (OSError, ValueError):
-            raise HarnessFailure(
-                "PERSISTENT_INSTRUCTIONS_INVALID", stage="protocol_freeze"
-            ) from None
-        if rendered != raw:
-            raise HarnessFailure("PERSISTENT_INSTRUCTIONS_STALE", stage="protocol_freeze")
+def load_prompt(root):
+    raw = (root / "configs/prompts/harness.txt").read_bytes()
+    try:
+        source = (root / "configs/prompts/ALWAYS-LOADED.md").read_text(encoding="utf-8")
+        rendered = render(raw.decode("utf-8"), source).encode("utf-8")
+    except (OSError, ValueError):
+        raise HarnessFailure(
+            "PERSISTENT_INSTRUCTIONS_INVALID", stage="protocol_freeze"
+        ) from None
+    if rendered != raw:
+        raise HarnessFailure("PERSISTENT_INSTRUCTIONS_STALE", stage="protocol_freeze")
     return raw

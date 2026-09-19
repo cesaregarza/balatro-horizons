@@ -75,44 +75,19 @@ def prepare_rules(rules, preset, path=None):
     return result
 
 
-def discovery(skills, interface, *, descriptions=True):
+def discovery(skills):
     if not skills:
         return ""
-    if not descriptions:
-        if interface in ("tools_v2", "tools_v3", "tools_v4", "tools_v5", "tools_v6", "tools_v7"):
-            return "\n\nRead Balatro skills with read_skill(name); linked chapters use read_rules(key)."
-        names = ", ".join(item["name"] for item in skills)
-        return (
-            "\n\nRead skills with a rules operation using guide/<name>. Available names: " + names
-        )
-    command = (
-        "read_skill(name)"
-        if interface in ("tools_v2", "tools_v3", "tools_v4", "tools_v5", "tools_v6", "tools_v7")
-        else "a rules operation with key guide/<name>"
+    rows = "\n".join(
+        f"- {item['name']}: {item['description'][:SKILL_DESCRIPTION_PREVIEW_CHARACTERS]}"
+        + ("…" if len(item["description"]) > SKILL_DESCRIPTION_PREVIEW_CHARACTERS else "")
+        for item in skills
     )
-    if interface in ("tools_v3", "tools_v4", "tools_v5", "tools_v6", "tools_v7"):
-        rows = "\n".join(
-            f"- {item['name']}: {item['description'][:SKILL_DESCRIPTION_PREVIEW_CHARACTERS]}"
-            + ("…" if len(item["description"]) > SKILL_DESCRIPTION_PREVIEW_CHARACTERS else "")
-            for item in skills
-        )
-        return (
-            "\n\nAvailable skills (description previews):\n"
-            + rows
-            + "\nRead with read_skill(name); follow linked chapters with read_rules(key). "
-            "Save useful facts or keys in your notes for later decisions."
-        )
-    rows = "\n".join(f"- {item['name']}: {item['description']}" for item in skills)
     return (
-        "\n\nAvailable Balatro skills (names and descriptions only):\n"
+        "\n\nAvailable skills (description previews):\n"
         + rows
-        + "\nRead a relevant skill with "
-        + command
-        + " before acting when useful. "
-        "Load only the chapters needed; referenced details use read_rules(key). "
-        "Reading consumes a helper call and does not advance the game. "
-        "Skill text remains in this decision's tool exchanges. At the next game decision, "
-        "only your explicit memory carries forward; save concise notes or chapter keys there."
+        + "\nRead with read_skill(name); follow linked chapters with read_rules(key). "
+        "Save useful facts or keys in your notes for later decisions."
     )
 
 

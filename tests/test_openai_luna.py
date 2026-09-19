@@ -23,6 +23,30 @@ def luna():
 
 
 def response(operation):
+    kind = operation.get("kind")
+    if kind == "action":
+        envelope = operation["envelope"]
+        action = dict(envelope["action"])
+        name = action.pop("type")
+        arguments = {
+            **action,
+            "observation_id": envelope["observation_id"],
+            "decision_note": envelope.get("decision_note"),
+            "note_update": operation.get("note_update"),
+        }
+    elif kind == "arithmetic":
+        name, arguments = "calculate", {"expression": operation["expression"]}
+    elif kind == "abort":
+        name, arguments = "abort_run", {"reason": operation["reason"]}
+    elif kind == "inspect_page":
+        name = "inspect_state"
+        arguments = {key: operation[key] for key in ("section", "offset")}
+    elif kind == "skill":
+        name, arguments = "read_skill", {"name": operation["name"]}
+    elif kind == "rules":
+        name, arguments = "read_rules", {"key": operation["key"]}
+    else:
+        name, arguments = "calculate", {"expression": "0"}
     return {
         "model": "gpt-5.6-luna",
         "status": "completed",
@@ -31,14 +55,16 @@ def response(operation):
             {"type": "reasoning", "summary": [{"type": "summary_text", "text": "MOCK_SUMMARY"}]},
             {
                 "type": "function_call",
-                "name": "operate",
+                "call_id": "mock_call",
+                "name": name,
                 "status": "completed",
-                "arguments": json.dumps(operation),
+                "arguments": json.dumps(arguments),
             },
         ],
         "usage": {
             "input_tokens": 1000,
             "output_tokens": 200,
+            "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
             "output_tokens_details": {"reasoning_tokens": 150},
         },
     }
@@ -53,7 +79,11 @@ def test_luna_request_is_explicit_stateless_standard_and_summary_opted_in():
     assert body["service_tier"] == "default"
     assert body["prompt_cache_options"] == {"mode": "explicit"}
     assert body["truncation"] == "disabled" and body["store"] is False
-    assert len(body["tools"]) == 1 and body["tools"][0]["name"] == "operate"
+    assert {tool["name"] for tool in body["tools"]} >= {
+        "select_blind",
+        "inspect_state",
+        "abort_run",
+    }
     assert "previous_response_id" not in body and "temperature" not in body
     assert not config.budgets.paid_calls_enabled
     assert (config.budgets.max_episode_cost_usd, config.budgets.max_batch_cost_usd) == (1, 5)
@@ -119,14 +149,15 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
     def receive(request):
         body = json.loads(request.content)
         received.append(body)
-        ctx = json.loads(body["input"][0]["content"])
+        message = next(item for item in body["input"] if item.get("role") == "user")
+        ctx = json.loads(message["content"])
         if len(received) == 1:
             op = {"kind": "arithmetic", "expression": "2+2"}
         else:
             op = baseline.decide(ctx, [])
             if op["kind"] == "action":
-                op["envelope"]["memory_update"] = "MOCK_MEMORY"
                 op["envelope"]["decision_note"] = "MOCK_NOTE"
+                op["note_update"] = {"key": "memory", "text": "MOCK_MEMORY"}
         return httpx.Response(200, json=response(op))
 
     policy = DirectProvider(
@@ -138,9 +169,13 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
     assert summary["outcome"] == "WIN" and summary["evidence_kind"] == "SYNTHETIC_TEST"
     assert summary["provider_calls"] > summary["committed_actions"] > 0
     assert summary["cost_usd"] == pytest.approx(len(received) * 0.00044)
-    assert json.loads(received[1]["input"][-1]["content"])["operation_result"]["result"] == "4"
-    assert "MOCK_MEMORY" in received[2]["input"][0]["content"]
-    assert "MOCK_SUMMARY" not in json.dumps(received)  # summaries are not implicit memory
+    helper_output = next(
+        item for item in received[1]["input"] if item.get("type") == "function_call_output"
+    )
+    assert json.loads(helper_output["output"])["result"] == "4"
+    assert "MOCK_MEMORY" in json.dumps(received[2])
+    assert "MOCK_SUMMARY" in json.dumps(received[1])
+    assert "MOCK_SUMMARY" not in json.dumps(received[2])
     events = store.events(summary["episode_id"])
     logged = [e for e in events if e["type"] == "provider_response"]
     assert len(logged) == len(received)
@@ -156,7 +191,7 @@ def test_unknown_http_attempts_consume_budget_before_retry(store, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "mock-only")
     config = luna()
     config.budgets.paid_calls_enabled = True
-    config.budgets.max_episode_cost_usd = 0.02  # one 0.016384 reservation fits
+    config.budgets.max_episode_cost_usd = 0.02  # one 0.0180224 reservation fits
     calls = []
 
     def receive(request):
@@ -171,7 +206,7 @@ def test_unknown_http_attempts_consume_budget_before_retry(store, monkeypatch):
     summary = Runner(store, config, FakeGame(), policy).run()
     assert summary["outcome"] == "BUDGET_EXHAUSTED"
     assert len(calls) == 1 and summary["committed_actions"] == 0
-    assert summary["cost_usd"] == pytest.approx(0.016384)
+    assert summary["cost_usd"] == pytest.approx(0.0180224)
 
 
 @pytest.mark.parametrize("quota_code", ["insufficient_quota", "credit_balance_exhausted"])
@@ -276,6 +311,7 @@ def test_prompt_cache_comparison_uses_only_last_explicitly_completed_response(mo
 def test_prompt_cache_diagnostics_are_optional_metadata(diagnostics):
     config = luna()
     policy = DirectProvider(config.models["luna"], config.budgets)
+    policy.request(context(project(FakeGame().observe_private())), [])
     payload = response({"kind": "abort", "reason": "test"})
     if diagnostics is not None:
         payload["prompt_cache_diagnostics"] = diagnostics
@@ -300,32 +336,31 @@ def test_prompt_cache_comparison_is_episode_local_and_supported_models_only(monk
         client=httpx.Client(transport=httpx.MockTransport(with_input_count(completed))),
     )
     first = terra.request(ctx, [])
-    assert "prompt_cache_options" not in first
+    assert first["prompt_cache_options"] == {"mode": "explicit"}
     terra.send(first)
     assert terra.request(ctx, [])["prompt_cache_options"] == {
+        "mode": "explicit",
         "comparison_response_id": "resp_episode_1"
     }
 
     fresh_episode = DirectProvider(terra_model, config.budgets)
-    assert "prompt_cache_options" not in fresh_episode.request(ctx, [])
+    assert fresh_episode.request(ctx, [])["prompt_cache_options"] == {"mode": "explicit"}
 
     unsupported_model = ModelConfig.model_validate(
         {**config.models["luna"].model_dump(), "model": "gpt-5.5"}
     )
-    unsupported = DirectProvider(
-        unsupported_model,
-        config.budgets,
-        client=httpx.Client(transport=httpx.MockTransport(with_input_count(completed))),
-    )
-    unsupported.send(unsupported.request(ctx, []))
-    assert "prompt_cache_options" not in unsupported.request(ctx, [])
+    unsupported = DirectProvider(unsupported_model, config.budgets)
+    with pytest.raises(ProviderFailure, match="EXPLICIT_CACHE_REQUIRES_GPT_5_6_OR_LATER"):
+        unsupported.request(ctx, [])
 
     anthropic_model = ModelConfig.model_validate(
         {
             **config.models["luna"].model_dump(),
-            "provider": "anthropic",
-            "model": "claude-test",
-            "settings": {},
+                "provider": "anthropic",
+                "model": "claude-test",
+                "cached_input_usd_per_million": None,
+                "cache_write_input_usd_per_million": None,
+                "settings": {},
         }
     )
     anthropic = DirectProvider(

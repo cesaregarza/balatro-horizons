@@ -4,14 +4,37 @@
 No game or provider is contacted. Reading a whole run records review exposure.
 """
 
+import json
 from collections import Counter
 from datetime import datetime
 from decimal import Decimal
 
+from balatro_horizons.agents.frozen import FROZEN_INTERFACE
 from balatro_horizons.contracts import ActionEnvelope, Observation
 from balatro_horizons.evaluation.reports import scan
 from balatro_horizons.review.service import ReviewService
-from balatro_horizons.storage.journal import locked
+from balatro_horizons.storage.journal import digest, locked
+
+
+def recorded_protocol_interface(store, records):
+    """Read only the immutable recorded label, never an executable old protocol."""
+    reference = next(
+        (event["payload"].get("agent_protocol") for event in records
+         if event["type"] == "episode_start"),
+        None,
+    )
+    if not isinstance(reference, dict):
+        return None
+    try:
+        path = store.episode_path(reference["episode_id"], True) / "agent-protocol.json"
+        bundle = json.loads(path.read_text())
+        interface = bundle.get("interface")
+        if (digest(bundle) == reference.get("hash") and isinstance(interface, str)
+                and 0 < len(interface) <= 64 and interface.isprintable()):
+            return interface
+    except (KeyError, OSError, TypeError, ValueError):
+        pass
+    return None
 
 
 def summary_input(store, eid):
@@ -101,6 +124,9 @@ def summary_input(store, eid):
             "annotations",
         ],
     }
+    recorded_interface = recorded_protocol_interface(store, records)
+    public["manifest"]["recorded_interface"] = recorded_interface
+    public["manifest"]["current_harness"] = recorded_interface == FROZEN_INTERFACE
     scan(public, [store.manifest(eid, True).get("seed")])
     ReviewService(store).expose(
         eid,

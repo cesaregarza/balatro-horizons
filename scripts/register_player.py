@@ -38,9 +38,6 @@ def main():
     )
     parser.add_argument("--cached-input-rate", type=float)
     parser.add_argument("--cache-write-rate", type=float)
-    parser.add_argument(
-        "--interface", choices=["operate_v1", "tools_v2", "tools_v3", "tools_v4", "tools_v5", "tools_v6", "tools_v7"]
-    )
     parser.add_argument("--pricing-date", required=True)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
@@ -54,8 +51,6 @@ def main():
         "cached_input_usd_per_million": args.cached_input_rate,
         "cache_write_input_usd_per_million": args.cache_write_rate,
     }
-    if args.interface:
-        model["settings"] = {**model["settings"], "harness_interface": args.interface}
     payload = settings_payload(config, args.alias, model)
     if args.apply:
         operator_request("/settings", method="PUT", payload=payload)

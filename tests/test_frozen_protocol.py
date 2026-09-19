@@ -12,20 +12,17 @@ from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.runner import Runner
+from balatro_horizons.storage.journal import digest
 
 
-@pytest.mark.parametrize(
-    "interface", ["operate_v1", "tools_v2", "tools_v3", "tools_v4", "tools_v5", "tools_v6", "tools_v7"]
-)
 def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
-    store, config, tmp_path, monkeypatch, interface
+    store, config, tmp_path, monkeypatch
 ):
     prompts = tmp_path / "source/configs/prompts"
     shutil.copytree(ROOT / "configs/prompts", prompts)
     monkeypatch.setattr("balatro_horizons.agents.frozen.ROOT", prompts.parents[1])
     monkeypatch.setattr("balatro_horizons.agents.protocol.ROOT", prompts.parents[1])
-    filename = "core.txt" if interface == "operate_v1" else interface.replace("_", "-") + ".txt"
-    path = prompts / filename
+    path = prompts / "harness.txt"
     original = path.read_text()
 
     class Policy:
@@ -33,7 +30,6 @@ def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
         name = "heuristic"
 
         def __init__(self):
-            self.interface = interface
             self.contexts = []
 
         def decide(self, ctx, exchanges):
@@ -94,10 +90,22 @@ def test_protocol_tampering_and_changed_allowance_fail_before_branch(store, conf
         restore_protocol(store, checkpoint)
 
 
-def test_missing_protocol_is_explicit_legacy_limit(store, config, episode):
+def test_missing_protocol_is_an_explicit_restore_limit(store, config, episode):
     checkpoint = read_checkpoint(store, episode, 0)
     checkpoint.pop("agent_protocol")
     with pytest.raises(ValueError, match="AGENT_PROTOCOL_SNAPSHOT_MISSING"):
+        restore_protocol(store, checkpoint)
+
+
+def test_retired_frozen_interface_is_rejected_explicitly(store, config, episode):
+    checkpoint = read_checkpoint(store, episode, 0)
+    reference = checkpoint["agent_protocol"]
+    path = store.episode_path(reference["episode_id"], True) / "agent-protocol.json"
+    bundle = json.loads(path.read_text())
+    bundle["interface"] = "retired-interface"
+    path.write_text(json.dumps(bundle))
+    checkpoint["agent_protocol"] = {**reference, "hash": digest(bundle)}
+    with pytest.raises(ValueError, match="AGENT_PROTOCOL_INTERFACE_RETIRED"):
         restore_protocol(store, checkpoint)
 
 

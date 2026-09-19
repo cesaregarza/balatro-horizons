@@ -3,7 +3,6 @@
 from balatro_horizons.agents.frozen import restore_protocol, validate_continuation
 from balatro_horizons.agents.notebook import restore_notebook
 from balatro_horizons.agents.skills import restore_knowledge
-from balatro_horizons.agents.tool_interface import NOTEBOOK_INTERFACES, WORKING_MEMORY_INTERFACE
 from balatro_horizons.agents.working_memory import restore_working_memory
 from balatro_horizons.engine.certification import require_checkpoint_certificate
 
@@ -46,13 +45,11 @@ def prepare_branch(store, config, eid, decision, mode):
         e for e in events if e["type"] == "observation" and e["observation_id"] == decision
     )
     prefix = [e for e in events if e["sequence"] < boundary["sequence"]]
-    if protocol["interface"] in NOTEBOOK_INTERFACES:
-        prefix = inherited_events(store, eid) + prefix
-        restore_notebook(checkpoint.get("run_notebook"), prefix,
-                         config.budgets.memory_max_characters)
-        if protocol["interface"] == WORKING_MEMORY_INTERFACE:
-            restore_working_memory(checkpoint.get("working_memory"), prefix,
-                                   checkpoint["observation"])
+    prefix = inherited_events(store, eid) + prefix
+    restore_notebook(checkpoint.get("run_notebook"), prefix,
+                     config.budgets.memory_max_characters)
+    restore_working_memory(checkpoint.get("working_memory"), prefix,
+                           checkpoint["observation"])
     manifest = {
         "evidence_kind": parent["evidence_kind"],
         "agent": parent["agent"],

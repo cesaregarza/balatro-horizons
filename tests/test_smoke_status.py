@@ -84,8 +84,8 @@ def test_generic_smoke_enforces_explicit_caps_before_native_or_paid_execution(mo
 @pytest.mark.parametrize(
     "episode_cap,campaign_cap,expected",
     [
-        (1, 0.031344, []),
-        (1, 0.031343, ["CAMPAIGN_COST_CAP"]),
+        (1, 0.0329824, []),
+        (1, 0.0329823, ["CAMPAIGN_COST_CAP"]),
         (0.010, 0.005, ["EPISODE_CAP_BELOW_RESERVATION"]),
     ],
 )
@@ -113,7 +113,7 @@ def test_smoke_preflight_uses_shared_admission_without_paid_execution(
     assert smoke.main() == int(bool(expected))
     report = json.loads(capsys.readouterr().out)
     assert report["blockers"] == expected
-    assert report["per_request_reserve_usd"] == 0.016384
+    assert report["per_request_reserve_usd"] == 0.0180224
     assert report["campaign_accounted_usd"] == 0.01496
     assert report["paid_calls_made"] == 0 and ledger.read_bytes() == before
     assert not config.budgets.paid_calls_enabled

@@ -14,9 +14,9 @@ exports retain their original public values.
 "when scored" effects come from the scoring cards: A-A-A-K-Q scored as Three of a
 Kind scores the Aces; the added King and Queen contribute neither card chips nor
 "when scored" effects. The existing public-effect override caveat applies. The
-file remains within its unchanged 1,024-byte limit, and `tools-v5.txt` embeds the
+file remains within its unchanged 1,024-byte limit, and `harness.txt` embeds the
 same text. Existing episodes keep their frozen
-prompt; the new instruction is used by newly created tools_v5 episodes.
+prompt; the new instruction is used by newly created episodes.
 
 ## Current cost summary
 
@@ -73,7 +73,7 @@ the optional receipt still parse, and existing journals are not rewritten.
 
 ## Context and validation
 
-Only tools_v5 receives this new field. Both providers serialize it after the
+The current harness receives this field. Both providers serialize it after the
 observation in the dynamic user message. Tool definitions and the stable
 developer/system instructions do not contain the prices; OpenAI's existing
 explicit breakpoint remains before the dynamic message. This follows
