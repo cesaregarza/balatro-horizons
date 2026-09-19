@@ -67,6 +67,8 @@ def episode_export(store, eid):
             "batch_id",
             "slot_id",
             "agent_protocol",
+            "certificate_id",
+            "budget_extension",
         )
         if k in manifest
     }

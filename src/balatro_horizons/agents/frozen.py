@@ -72,7 +72,8 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     }
 
 
-def restore_protocol(store, checkpoint):
+def read_protocol(store, checkpoint):
+    """Read hash-checked frozen data without accepting it for execution."""
     reference = checkpoint.get("agent_protocol")
     if not isinstance(reference, dict):
         raise ValueError("AGENT_PROTOCOL_SNAPSHOT_MISSING")
@@ -86,8 +87,31 @@ def restore_protocol(store, checkpoint):
         raise ValueError("AGENT_PROTOCOL_SNAPSHOT_MISMATCH")
     if bundle.get("interface") != FROZEN_INTERFACE:
         raise ValueError("AGENT_PROTOCOL_INTERFACE_RETIRED")
-    if bundle["implementation_hash"] != implementation_fingerprint():
+    return bundle
+
+
+def restore_protocol(store, checkpoint):
+    bundle = read_protocol(store, checkpoint)
+    reference = checkpoint["agent_protocol"]
+    extension = checkpoint.get("budget_extension")
+    current_implementation = implementation_fingerprint()
+    if bundle["implementation_hash"] != current_implementation:
+        # Raising the money cap is not permission to change the delivered protocol.
         raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")
+    if extension is not None:
+        from balatro_horizons.agents.budget import validate_caps
+
+        cap = extension.get("combined_cap_usd")
+        validate_caps(cap, cap)
+        if (extension.get("version") != "budget-extension-v1"
+                or extension.get("parent_protocol") != reference
+                or extension.get("recorded_implementation_hash") != bundle["implementation_hash"]
+                or extension.get("implementation_hash") != current_implementation
+                or cap <= bundle["episode_limits"]["max_episode_cost_usd"]):
+            raise ValueError("BUDGET_EXTENSION_PROTOCOL_MISMATCH")
+        # Only the explicit money limit changes; prompt, tools, and source do not.
+        bundle["episode_limits"]["max_episode_cost_usd"] = cap
+        bundle["budget_extension"] = deepcopy(extension)
     return bundle
 
 

@@ -8,7 +8,7 @@ from balatro_horizons.storage.journal import digest
 
 IMPLEMENTATION_FILES = (
     "config.py", "contracts.py", "runner.py", "service.py", "review/branches.py",
-    "evaluation/scheduling.py",
+    "evaluation/scheduling.py", "review/budget_continuation.py",
 )
 IMPLEMENTATION_DIRECTORIES = ("engine", "observations", "actions", "agents", "storage")
 
