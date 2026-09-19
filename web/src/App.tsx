@@ -59,6 +59,11 @@ export default function App() {
     ]);
   const [priorSeedExposure, setPriorSeedExposure] = useState(false);
   const [modelSettings, setModelSettings] = useState("{}");
+  const [runtimeConnection, setRuntimeConnection] = useState<{
+    ready: boolean;
+    code: string | null;
+    message: string;
+  } | null>(null);
   const [provider, setProvider] = useState("openai"),
     [model, setModel] = useState("");
   const [inputRate, setInputRate] = useState(""),
@@ -146,6 +151,19 @@ export default function App() {
     () => api("/operator/status"),
     setStatus,
     (e) => setError(String(e)),
+  );
+  usePolling(
+    Boolean(config) && tab === "runs" && !offline,
+    5000,
+    () => api("/operator/runtime"),
+    setRuntimeConnection,
+    () =>
+      setRuntimeConnection({
+        ready: false,
+        code: "UNREACHABLE",
+        message:
+          "Cannot check the runtime connection. Check that the backend is available.",
+      }),
   );
   usePolling(
     tab === "human",
@@ -350,7 +368,10 @@ export default function App() {
                   <input
                     type="checkbox"
                     checked={offline}
-                    onChange={(e) => setOffline(e.target.checked)}
+                    onChange={(e) => {
+                      setOffline(e.target.checked);
+                      setRuntimeConnection(null);
+                    }}
                   />
                   Synthetic pipeline test
                 </label>
@@ -362,7 +383,7 @@ export default function App() {
                 <div className="actions">
                   <button
                     className="primary"
-                    disabled={busy || !selectedModelSupported}
+                    disabled={busy || !selectedModelSupported || (!offline && runtimeConnection?.ready !== true)}
                     onClick={() =>
                       run(async () => {
                         const chosenAgent = selectedModel
@@ -396,6 +417,14 @@ export default function App() {
                     Stop worker
                   </button>
                 </div>
+                {!offline && runtimeConnection && (
+                  <p
+                    role="status"
+                    className={runtimeConnection.ready ? "muted" : "error"}
+                  >
+                    {runtimeConnection.message}
+                  </p>
+                )}
               </section>
               <section className="panel live">
                 <p className="eyebrow">OPERATOR VIEW</p>

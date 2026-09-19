@@ -73,6 +73,9 @@ Visible speed-1 execution is supported. Headless and accelerated execution are d
 
 ## Startup diagnostics
 
+For the current connection registration and recovery workflow, see
+[Windows runtime connection](runtime-connection.md).
+
 For an idle runtime with a handshake timeout, use:
 
 ```bash
