@@ -104,9 +104,9 @@ Review advances through available information, agent action, and consequences. Y
 ## Native setup and checks
 
 ```bash
-uv --directory /root/dev/balatro-horizons run python scripts/bootstrap_native.py
-uv --directory /root/dev/balatro-horizons run python scripts/audit_runtime.py
-uv --directory /root/dev/balatro-horizons run bh doctor --json
+uv run python scripts/bootstrap_native.py
+uv run python scripts/audit_runtime.py
+uv run bh doctor --json
 ```
 
 The installer reads the licensed installation at `D:\SteamLibrary\steamapps\common\Balatro` and only writes the dedicated runtime. Keep the game closed during instrumentation refreshes. The runtime pins LÖVE's save identity to `BalatroHorizons`, prevents personal Steam integration, and initializes each process from native default profile data with all content unlocked. It checks the loaded instrumentation manifest against disk. A copied executable alone is insufficient to pass isolation.
@@ -115,12 +115,12 @@ The backend uses the fixed `native/bridge.ps1` script through Windows PowerShell
 
 ```bash
 # Ordinary-mechanics native baseline, recorded as calibration rather than benchmark evidence
-uv --directory /root/dev/balatro-horizons run bh run --config configs/smoke.yaml --agent heuristic --calibration
+uv run bh run --config configs/smoke.yaml --agent heuristic --calibration
 # A synthetic episode
-uv --directory /root/dev/balatro-horizons run bh run --offline --agent heuristic
+uv run bh run --offline --agent heuristic
 # Check one recorded decision; the episode's private configuration is reused
-uv --directory /root/dev/balatro-horizons run bh replay verify --episode-id EPISODE_ID --decision 0
-uv --directory /root/dev/balatro-horizons run bh replay verify --episode-id EPISODE_ID --decision 0 --mode seed_prefix
+uv run bh replay verify --episode-id EPISODE_ID --decision 0
+uv run bh replay verify --episode-id EPISODE_ID --decision 0 --mode seed_prefix
 ```
 
 Certificates require three fresh-process repetitions and compare public states, private continuation fingerprints, ordering, and terminal results. The evidence is tied to execution/restoration source and the native environment. API, report, and presentation changes have separate tests and do not invalidate native replay certificates. Failed rechecks disable that restoration path and preserve a private first-divergence artifact. Native saves do not establish fidelity merely by succeeding. Seed-prefix restoration re-executes recorded actions, checks every intermediate state, and is enabled only by a passing certificate. Only previously certified decisions can branch.
@@ -159,7 +159,7 @@ and strategy reference for the harness. Its modular chapters compile into
 `docs/balatro-guide/rules.json` for frozen topic lookup. Rebuild and validate it with:
 
 ```bash
-uv --directory /root/dev/balatro-horizons run python scripts/package_balatro_guide.py \
+uv run python scripts/package_balatro_guide.py \
   --guide docs/balatro-guide --output docs/balatro-guide.zip \
   --report reports/verification/balatro-guide.json
 ```
@@ -217,14 +217,16 @@ Balatro instance, removes provider API keys from child processes, and does not
 replace native certification. Node LTS and the Playwright browser must already
 be available.
 
+GitHub CI runs separate Python and web lanes, and both must pass.
+
 ```bash
-uv --directory /root/dev/balatro-horizons run pytest -q
-uv --directory /root/dev/balatro-horizons run ruff check src tests scripts
-npm --prefix /root/dev/balatro-horizons/web test
+uv run pytest -q
+uv run ruff check src tests scripts
+npm --prefix web test
 # These launch and control the dedicated Windows runtime; run serially:
-uv --directory /root/dev/balatro-horizons run python scripts/native_acceptance.py --case all
-uv --directory /root/dev/balatro-horizons run python scripts/native_faults.py
-uv --directory /root/dev/balatro-horizons run python scripts/certify_prefix.py EPISODE_ID
+uv run python scripts/native_acceptance.py --case all
+uv run python scripts/native_faults.py
+uv run python scripts/certify_prefix.py EPISODE_ID
 ```
 
 `native_acceptance.py` uses named evaluator fixtures to reach edge cases. Their manifests have `evaluation_eligible: false`; the easy-blind and win-setup fixtures alter test setup and are never benchmark performance evidence. The default native run path does not enable these fixtures.
@@ -233,7 +235,7 @@ See [native audit](docs/native-audit.md), [third-party notices](docs/THIRD_PARTY
 
 The private calibration panel contains fixed regression seeds selected for short diagnostic runs. It is excluded from study performance estimates and is separate from generated development panels and any held-out panel. Native regression cases share one owned process and start new games between cases. Inspect `scripts/verify_release.py --gameplay-only --plan` for the focused collection, or `--plan` for full startup/restoration certification, before executing a native suite. Its named fixtures and baseline calibration runs make no provider calls. See [native test lifecycle](docs/native-test-lifecycle.md) for expected launch counts and the staged validation boundary.
 
-After `verify_release.py` passes, run `uv --directory /root/dev/balatro-horizons run python scripts/finalize_evidence.py` to validate the collected evidence, activate matching native capabilities, and write the sanitized diagnostic report. `verify_release.py --resume-certification` reuses completed collection for the same pinned runtime and repeats certification plus the branch test.
+After `verify_release.py` passes, run `uv run python scripts/finalize_evidence.py` to validate the collected evidence, activate matching native capabilities, and write the sanitized diagnostic report. `verify_release.py --resume-certification` reuses completed collection for the same pinned runtime and repeats certification plus the branch test.
 
 ## Configure shared defaults
 

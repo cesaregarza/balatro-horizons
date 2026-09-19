@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -288,32 +287,6 @@ class ActionEnvelope(StrictModel):
     decision_note: str | None = None
 
 
-class Outcome(StrEnum):
-    WIN = "WIN"
-    GAME_LOSS = "GAME_LOSS"
-    AGENT_PROTOCOL_FAILURE = "AGENT_PROTOCOL_FAILURE"
-    AGENT_ABORT = "AGENT_ABORT"
-    BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
-    CAMPAIGN_INTERRUPTED = "CAMPAIGN_INTERRUPTED"
-    INFRASTRUCTURE_FAILURE = "INFRASTRUCTURE_FAILURE"
-    OPERATOR_ABORT = "OPERATOR_ABORT"
-    INVALID_EVALUATION = "INVALID_EVALUATION"
-
-
-class EpisodeSummary(StrictModel):
-    schema_version: Literal["1.0"] = "1.0"
-    episode_id: str
-    evidence_kind: Literal["SYNTHETIC_TEST", "NATIVE"]
-    outcome: Outcome
-    reason: str
-    attempted_actions: int
-    committed_actions: int
-    provider_calls: int
-    last_verified_observation_id: int | None
-    terminal_event_id: str
-    journal_head: str
-
-
 Judgment = Literal["acceptable", "concern", "likely_error", "unclear"]
 Confidence = Literal["low", "medium", "high"]
 
@@ -332,20 +305,3 @@ class AnnotationInput(StrictModel):
     evidence_event_ids: list[str] = Field(default_factory=list)
     intervention_refs: list[str] = Field(default_factory=list)
     annotation_id: str | None = None
-
-
-class Exposure(StrictModel):
-    max_event_seen: int
-    outcome_seen: bool = False
-    model_identity_seen: bool = False
-    prior_seed_exposure: bool = False
-
-
-class AnnotationRecord(AnnotationInput):
-    annotation_id: str
-    episode_id: str
-    reviewer_id: str
-    revision: int
-    created_at: str
-    review_mode: Literal["prospective", "retrospective", "mixed"]
-    exposure: Exposure

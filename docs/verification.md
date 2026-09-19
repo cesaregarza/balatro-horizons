@@ -135,14 +135,14 @@ Execution/restoration source is fingerprinted separately from presentation, API 
 Run the following from the Linux repository using its locked environment:
 
 ```bash
-uv --directory /root/dev/balatro-horizons run pytest -q --junitxml=reports/verification/pytest.xml
-uv --directory /root/dev/balatro-horizons run ruff check src tests scripts
-npm --prefix /root/dev/balatro-horizons/web run build
-npm --prefix /root/dev/balatro-horizons/web test
+uv run pytest -q --junitxml=reports/verification/pytest.xml
+uv run ruff check src tests scripts
+npm --prefix web run build
+npm --prefix web test
 # Serial native checks; no paid requests:
-uv --directory /root/dev/balatro-horizons run python scripts/verify_release.py
-uv --directory /root/dev/balatro-horizons run python scripts/finalize_evidence.py
-uv --directory /root/dev/balatro-horizons run bh doctor --json
+uv run python scripts/verify_release.py
+uv run python scripts/finalize_evidence.py
+uv run bh doctor --json
 ```
 
 After activation, `scripts/verify_gated_run.py` exercises certified startup with calibration hooks disabled, while keeping the reused regression seed excluded from scores. With the workbench on port 8765, `node scripts/verify_browser_native.mjs --release` verifies the actual native review and branch comparison in Chromium.

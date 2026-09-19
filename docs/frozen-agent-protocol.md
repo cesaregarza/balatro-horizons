@@ -61,13 +61,14 @@ durable ledger; configuration revisions within it share that ledger and retain
 unknown-usage reservations. Ceiling arguments must reflect explicit operator
 permission; choosing an argument does not establish authorization.
 
-Example after authorization and native release gates:
+Example after authorization and native release gates, using a credential file
+readable only by the backend:
 
 ```bash
-.venv/bin/python scripts/smoke_openai.py --config private/release-smoke.json \
+uv run python scripts/smoke_openai.py --config private/release-smoke.json \
   --agent terra --campaign protocol-release-20260916 \
   --authorized-episode-cap 5 --authorized-total-cap 10 \
-  --env-file /tmp/tmpkey --dry-run
+  --env-file /path/to/backend-readable-credentials.env --dry-run
 ```
 
 Replace `--dry-run` with `--allow-paid` only within that authorized task.

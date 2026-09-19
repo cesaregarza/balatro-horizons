@@ -65,7 +65,7 @@ invent the missing historical knowledge.
 To revise the guide, edit its Markdown and regenerate its bundle:
 
 ```bash
-uv --directory /root/dev/balatro-horizons run python scripts/package_balatro_guide.py \
+uv run python scripts/package_balatro_guide.py \
   --guide docs/balatro-guide --output docs/balatro-guide.zip \
   --report reports/verification/balatro-guide.json
 ```

@@ -81,8 +81,8 @@ drop-in repair below is retained as incident context.
 For an idle runtime with a handshake timeout, use:
 
 ```bash
-uv --directory /root/dev/balatro-horizons run scripts/diagnose_native_startup.py
-uv --directory /root/dev/balatro-horizons run scripts/diagnose_native_startup.py --restart
+uv run scripts/diagnose_native_startup.py
+uv run scripts/diagnose_native_startup.py --restart
 ```
 
 The first command probes RPC and reports allowlisted launch/log metadata; it emits
@@ -98,7 +98,7 @@ capabilities. A successful handshake is startup evidence only, not replay or
 restoration certification.
 
 The live workbench can be checked separately with
-`uv --directory /root/dev/balatro-horizons run scripts/diagnose_native_startup.py --workbench --preset smoke`.
+`uv run scripts/diagnose_native_startup.py --workbench --preset smoke`.
 This starts a human-control diagnostic through the actual browser API, waits for
 a native decision, then aborts it without committing a move or calling a model.
 The episode remains in the journal and is excluded from evaluation.
@@ -116,8 +116,8 @@ Earlier failed attempts retain their original infrastructure-failure journals.
 From a working Windows-connected WSL shell, after starting the idle service:
 
 ```bash
-uv --directory /root/dev/balatro-horizons run scripts/configure_workbench_session.py
-uv --directory /root/dev/balatro-horizons run scripts/configure_workbench_session.py --apply
+uv run scripts/configure_workbench_session.py
+uv run scripts/configure_workbench_session.py --apply
 ```
 
 The first command previews variable names only. The second writes a service-only
