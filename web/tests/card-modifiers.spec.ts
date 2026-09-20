@@ -5,6 +5,7 @@ import {
   visualModifiers,
 } from "../src/cardPresentation";
 import { jokerChanges } from "../src/decisionPresentation";
+import { awaitIdleWorker } from "./runHelpers";
 
 test("modifier labels distinguish editions, sticker counts, false flags and concealment", () => {
   expect(cardLabel("Drunkard", ["edition: POLYCHROME", "eternal: True"])).toBe(
@@ -71,11 +72,12 @@ test("explorer shows pickup modifiers in live rows, details and the board on a p
     await page.request.get("/api/bootstrap")
   ).json();
   const headers = { "X-BH-Operator": operator_token };
+  await awaitIdleWorker(page, operator_token);
   const created = await page.request.post("/api/runs", {
     headers,
     data: { agent: "heuristic", offline: true },
   });
-  expect(created.ok()).toBe(true);
+  expect(created.ok(), await created.text()).toBe(true);
   const { episode_id } = await created.json();
   await expect
     .poll(async () => {

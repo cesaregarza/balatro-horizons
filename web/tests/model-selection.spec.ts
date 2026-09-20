@@ -8,6 +8,7 @@ import {
   modelKey,
   type ModelConfig,
 } from "../src/modelSelection";
+import { awaitIdleWorker } from "./runHelpers";
 
 const terra: ModelConfig = {
   provider: "openai",
@@ -82,7 +83,9 @@ test("model defaults deduplicate aliases without rewriting historical settings",
   ).toEqual(savedAlias);
   expect(harnessLabel()).toBe("Current harness");
   expect(harnessLabel("recorded-current", true)).toBe("Current harness");
-  expect(harnessLabel("retired-recording", false)).toBe("Legacy harness (retired-recording)");
+  expect(harnessLabel("retired-recording", false)).toBe(
+    "Legacy harness (retired-recording)",
+  );
   const selected = configureModel(terra, "high");
   expect(
     modelCatalog({ ...models, [modelKey(terra)]: selected })[modelKey(terra)],
@@ -107,6 +110,7 @@ test("model and effort persist; launching preserves fresh budgets and exact sett
 }) => {
   const bootstrap = await (await page.request.get("/api/bootstrap")).json();
   const headers = { "X-BH-Operator": bootstrap.operator_token };
+  await awaitIdleWorker(page, bootstrap.operator_token);
   const original = bootstrap.config;
   const models = {
     sol,
@@ -181,7 +185,15 @@ test("model and effort persist; launching preserves fresh budgets and exact sett
     await page
       .getByLabel("Reasoning effort", { exact: true })
       .selectOption("max");
+    await awaitIdleWorker(page, bootstrap.operator_token);
+    const created = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/runs") &&
+        response.request().method() === "POST",
+    );
     await page.getByRole("button", { name: /Start test episode/ }).click();
+    const response = await created;
+    expect(response.ok(), await response.text()).toBe(true);
     await expect(page.getByRole("status")).toContainText("Run created");
     expect(launches).toEqual([
       { agent: modelKey(terra), offline: true, preset: "pilot", seed: null },
