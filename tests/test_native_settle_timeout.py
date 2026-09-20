@@ -11,7 +11,7 @@ def test_settle_timeout_records_unknown_and_releases_writer(method):
     assert harness.request(method, params, request_id=1) is None
     harness.execute("G.STATE_COMPLETE=false")
 
-    harness.advance(899)
+    harness.advance(1799)
     assert harness.status(1).status == "pending"
     assert harness.request("select", {"blind": "Big"}, request_id=2).message == "BUSY"
 
@@ -39,9 +39,51 @@ def test_tenth_ready_frame_at_age_cap_still_commits():
     harness = NativeHarness()
     assert harness.request("bh_action", {"action": "skip_pack"}, request_id=1) is None
     harness.execute("G.STATE_COMPLETE=false")
-    harness.advance(890)
+    harness.advance(1790)
     harness.execute("G.STATE_COMPLETE=true")
     harness.advance(9)
     assert harness.status(1).status == "pending"
     harness.advance(1)
     assert harness.status(1).status == "committed"
+
+
+def test_slow_write_can_commit_after_previous_900_frame_limit():
+    harness = NativeHarness()
+    assert harness.request("select", {"blind": "Small"}, request_id=1) is None
+    harness.execute("G.STATE_COMPLETE=false")
+    harness.advance(1200)
+    assert harness.status(1).status == "pending"
+
+    harness.execute("G.STATE_COMPLETE=true")
+    harness.advance(40)
+    assert harness.status(1).status == "committed"
+
+
+def test_elapsed_deadline_works_when_update_rate_is_low():
+    harness = NativeHarness()
+    assert harness.request("select", {"blind": "Small"}, request_id=1) is None
+    harness.execute("G.STATE_COMPLETE=false")
+    harness.execute("for _=1,59 do love.update(1) end")
+    assert harness.status(1).status == "pending"
+    harness.execute("love.update(1)")
+    assert harness.status(1).status == "unknown"
+    assert harness.request("bh_inspect", request_id=2).bh.busy is False
+
+
+def test_menu_acknowledgment_does_not_wait_for_gameplay_readiness():
+    harness = NativeHarness()
+    harness.execute("G.STATE=G.STATES.MENU; G.STATE_COMPLETE=false")
+
+    # The real upstream endpoint sends this response only after its menu-UI
+    # barrier; generic gameplay readiness does not hold while at the menu.
+    menu = harness.request("menu", request_id=1)
+    assert menu.method == "menu"
+    assert harness.status(1).status == "committed"
+    assert harness.request("bh_inspect", request_id=2).bh.busy is False
+
+    # A following game start still uses the normal 30+10 settling barrier.
+    assert harness.request("start", {"deck": "RED", "stake": "WHITE"}, request_id=3) is None
+    assert harness.status(3).status == "pending"
+    harness.execute("G.STATE=G.STATES.BLIND_SELECT; G.STATE_COMPLETE=true")
+    harness.advance(40)
+    assert harness.status(3).status == "committed"

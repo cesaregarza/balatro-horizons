@@ -5,9 +5,10 @@
 local settle = {}
   local TRANSITION_FRAMES = 30
   local STABLE_READY_FRAMES = 10
-  -- The pinned bridge runs at 60 FPS: 15 seconds is well below its 90-second
-  -- HTTP deadline, while leaving ample room for the normal 30+10 frames.
-  local MAX_SETTLE_FRAMES = 900
+  -- A prior native play_hand took 15.7 seconds. Allow about 30 seconds at
+  -- 60 FPS, with an elapsed-time fallback below the bridge's 90-second cap.
+  local MAX_SETTLE_FRAMES = 1800
+  local MAX_SETTLE_SECONDS = 60
   local pending
   local original_update
   local running = false
@@ -18,6 +19,7 @@ local settle = {}
       original_update(dt)
       if not pending then return end
       pending.age = pending.age + 1
+      pending.elapsed = pending.elapsed + math.max(dt or 0, 0)
       if pending.age > TRANSITION_FRAMES and ready() then
         pending.stable = pending.stable + 1
       else
@@ -29,7 +31,7 @@ local settle = {}
         running = true
         callback()
         running = false
-      elseif pending.age >= MAX_SETTLE_FRAMES then
+      elseif pending.age >= MAX_SETTLE_FRAMES or pending.elapsed >= MAX_SETTLE_SECONDS then
         pending = nil
         on_timeout()
       end
@@ -38,7 +40,7 @@ local settle = {}
 
   function settle.defer(callback)
     assert(not pending, 'settlement already pending')
-    pending = {callback=callback, age=0, stable=0}
+    pending = {callback=callback, age=0, stable=0, elapsed=0}
   end
 
   function settle.pending() return pending ~= nil end
