@@ -5,8 +5,8 @@ from test_boundary import project
 from test_public_information import delivered_observation, native_state, request
 
 from balatro_horizons.contracts import ActionEnvelope, LastAction, Observation, PublicCard
-from balatro_horizons.engine.native_state import normalize
 from balatro_horizons.evaluation.reports import episode_export
+from balatro_horizons.game.state import normalize
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.review.service import ReviewService
 

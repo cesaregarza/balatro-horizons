@@ -16,9 +16,12 @@ from balatro_horizons.agents.frozen import restore_protocol
 from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.config import ROOT, Config, load_config
 from balatro_horizons.contracts import AnnotationInput
-from balatro_horizons.engine.certification import require_checkpoint_certificate, verify_checkpoint
 from balatro_horizons.evaluation.batches import plan_batch, seed_panel
 from balatro_horizons.evaluation.reports import export_batch, report_batch
+from balatro_horizons.evidence.certification import (
+    require_checkpoint_certificate,
+    verify_checkpoint,
+)
 from balatro_horizons.review.operator_status import OperatorStatus
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService

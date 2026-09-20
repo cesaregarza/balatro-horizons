@@ -15,9 +15,9 @@ from native_runs import collect as ordinary_runs
 
 from balatro_horizons.config import ROOT, Config, load_config
 from balatro_horizons.contracts import AnnotationInput
-from balatro_horizons.engine.certification import verify_checkpoint
-from balatro_horizons.engine.native import NativeSession
-from balatro_horizons.engine.provenance import implementation_fingerprint
+from balatro_horizons.evidence.certification import verify_checkpoint
+from balatro_horizons.evidence.provenance import implementation_fingerprint
+from balatro_horizons.game.session import NativeSession
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService
 from balatro_horizons.storage.journal import Store, atomic_json, digest

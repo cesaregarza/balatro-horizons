@@ -5,7 +5,7 @@ import json
 from copy import deepcopy
 
 from balatro_horizons.config import ROOT
-from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.runner import Runner
 
 

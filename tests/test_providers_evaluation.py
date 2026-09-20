@@ -7,9 +7,9 @@ from test_boundary import project
 from balatro_horizons.agents.protocol import context
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure
 from balatro_horizons.config import Limits, ModelConfig
-from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.evaluation.batches import cluster_interval, summarize
 from balatro_horizons.evaluation.reports import scan
+from balatro_horizons.game.fake import FakeGame
 
 
 def model(provider):

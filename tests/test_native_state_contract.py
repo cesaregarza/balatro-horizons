@@ -5,7 +5,7 @@ from copy import deepcopy
 import pytest
 from test_public_information import native_state
 
-from balatro_horizons.engine.native_state import normalize
+from balatro_horizons.game.state import normalize
 
 PACK_PHASES = [
     "SMODS_BOOSTER_OPENED",

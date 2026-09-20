@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import pytest
 
 from balatro_horizons.config import Environment
-from balatro_horizons.engine import native
+from balatro_horizons.game import session as native
 
 
 @pytest.fixture

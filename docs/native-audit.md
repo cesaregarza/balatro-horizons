@@ -22,6 +22,35 @@ Narrow project patches address the optional `viewed_back` removed by newer Steam
 
 Every operation has a persisted intent before execution and a unique request ID. A known committed request can be acknowledged without replaying its mutation. Reusing an ID for different parameters is rejected. Unknown status after transport loss terminates the episode as infrastructure failure. Before a consumable use callback, the adapter checks the native availability predicate with the explicitly requested targets and restores the temporary validation selection; a rejected target queues no effects. The per-process game ledger is not claimed to provide cross-process exactly-once execution; crash recovery never silently resumes an ambiguous action.
 
+## Game/transport hops and error names
+
+`game/contract.py` declares the runner-facing session and evaluator-only methods.
+One action follows this chain; no bridge method is exposed as an agent tool:
+
+| Hop | Owner | Boundary |
+| --- | --- | --- |
+| 1 | `runner.py` | Persist validated public action intent and request ID |
+| 2 | `game/actions.py` | Resolve handles and select one allowlisted RPC |
+| 3 | `game/session.py` | Own the process/lease and await a settled observation |
+| 4 | `game/transport.py` | Send authenticated JSON-RPC through PowerShell |
+| 5 | `native/bridge.ps1` | Forward only 17 permitted methods over loopback HTTP |
+| 6 | `native/patches/dispatch.lua` | Authenticate, serialize writes, and retain request status |
+| 7 | `native/patches/action.lua` | Apply a validated native action callback |
+| 8 | `native/patches/settle.lua` | Complete after 30 transitions and 10 ready frames |
+| 9 | `native/patches/inspect.lua` | Return the next private native inspection |
+| 10 | `game/state` → `observations` | Normalize, then strictly project public information |
+
+| Lua error class | Examples | Python/runner outcome |
+| --- | --- | --- |
+| `NOT_ALLOWED` | `UNAFFORDABLE`, `UNKNOWN_CARD` | `NativeRejected` / `INVALID_EVALUATION` |
+| `INFRASTRUCTURE` | `BUSY`, `NOT_READY`, `ACTION_STATUS_UNKNOWN` | `NativeFailure` / `INFRASTRUCTURE_FAILURE` |
+| `HARNESS_FAULT` | `UNAUTHORIZED`, `METHOD_FORBIDDEN`, `PATH_FORBIDDEN` | `NativeFailure` / `INFRASTRUCTURE_FAILURE` |
+
+The sanitized Lua `message` code and `name` are recorded only in private episode
+error evidence; the terminal reason carries the specific code. This taxonomy
+is an executable change. Existing native certificates do not authorize runs
+with this source/runtime fingerprint; desktop re-certification follows in #9.
+
 ## Reorder phase regression — 2026-09-15
 
 Terra's recorded run `a0cfdd88d48d4453821e67ae1ee5f2c2` requested a legal Joker

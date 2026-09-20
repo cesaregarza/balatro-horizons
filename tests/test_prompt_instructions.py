@@ -10,7 +10,7 @@ from balatro_horizons.agents.protocol import decision_context
 from balatro_horizons.agents.providers import context_payload
 from balatro_horizons.agents.skills import prepare_rules
 from balatro_horizons.config import ROOT
-from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.game.fake import FakeGame
 
 SPEC = importlib.util.spec_from_file_location(
     "sync_prompt_instructions", ROOT / "scripts/sync_prompt_instructions.py"

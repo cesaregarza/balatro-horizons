@@ -6,13 +6,13 @@ import json
 import uuid
 
 from balatro_horizons.config import ROOT, load_config
-from balatro_horizons.engine.certification import require_checkpoint_certificate
-from balatro_horizons.engine.native import WindowsBridge
-from balatro_horizons.engine.provenance import (
+from balatro_horizons.evaluation.reports import episode_export, scan
+from balatro_horizons.evidence.certification import require_checkpoint_certificate
+from balatro_horizons.evidence.provenance import (
     implementation_fingerprint,
     native_implementation_fingerprint,
 )
-from balatro_horizons.evaluation.reports import episode_export, scan
+from balatro_horizons.game.session import WindowsBridge
 from balatro_horizons.storage.journal import Store, atomic_json, digest, now
 
 

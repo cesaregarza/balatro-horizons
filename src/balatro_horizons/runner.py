@@ -1,6 +1,7 @@
 """One in-flight native action, explicit agent operations, immutable evidence."""
 
 import json
+import re
 import threading
 import traceback
 import uuid
@@ -25,8 +26,11 @@ from balatro_horizons.agents.tool_interface import ACTION_MODELS
 from balatro_horizons.agents.working_memory import WorkingMemory, restore_working_memory
 from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT
 from balatro_horizons.contracts import Observation, RecentPublicEvent, RemainingBudget
-from balatro_horizons.engine.native import NativeFailure, NativeRejected
-from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
+from balatro_horizons.evidence.provenance import (
+    continuation_fingerprint,
+    implementation_fingerprint,
+)
+from balatro_horizons.game.contract import NativeFailure, NativeRejected
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 from balatro_horizons.storage.journal import digest
@@ -79,6 +83,24 @@ class Runner:
             })
         except OSError:
             pass  # A diagnostic-write failure must not prevent the terminal record.
+
+    @staticmethod
+    def _native_code(error, fallback):
+        code = getattr(error, "code", None)
+        return code if isinstance(code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", code) else fallback
+
+    def _record_native_error(self, error, phase):
+        """Retain the Lua envelope privately without exposing its message in the journal."""
+        name = getattr(error, "name", None)
+        self.store.private_json(
+            self.eid,
+            f"engine-error-{uuid.uuid4().hex}.json",
+            {
+                "phase": phase,
+                "code": self._native_code(error, "NATIVE_BRIDGE_FAILURE"),
+                "name": name if isinstance(name, str) and re.fullmatch(r"[A-Z_]{1,64}", name) else None,
+            },
+        )
 
     def _provider(self, ctx, exchanges):
         body = self.policy.request(ctx, exchanges)
@@ -396,7 +418,7 @@ class Runner:
         self.prior_cost = 0.0
         if resume:
             self.game.restore(resume["game"])
-            from balatro_horizons.engine.replay import check_private
+            from balatro_horizons.game.replay import check_private
 
             check_private(self.game, resume.get("continuation_hash"))
             self.issuer = HandleIssuer.restore(resume["issuer"])
@@ -478,7 +500,9 @@ class Runner:
                         {"decision": decision, "saved": True, "certified": False},
                         observation_id=decision,
                     )
-                except (NativeFailure, NativeRejected, OSError, ValueError):
+                except (NativeFailure, NativeRejected, OSError, ValueError) as error:
+                    if isinstance(error, (NativeFailure, NativeRejected)):
+                        self._record_native_error(error, "checkpoint")
                     self.log(
                         "checkpoint_result",
                         {"decision": decision, "saved": False, "certified": False},
@@ -498,14 +522,17 @@ class Runner:
                 )
                 try:
                     self.game.apply_public_action(envelope.action, self.issuer, request_id)
-                except NativeRejected:
+                except NativeRejected as error:
+                    self._record_native_error(error, "action")
                     self.log(
                         "action_rejected",
                         {"code": "NATIVE_PUBLIC_LEGALITY_MISMATCH"},
                         observation_id=decision,
                         request_id=request_id,
                     )
-                    outcome, reason = "INVALID_EVALUATION", "NATIVE_PUBLIC_LEGALITY_MISMATCH"
+                    outcome, reason = "INVALID_EVALUATION", self._native_code(
+                        error, "NATIVE_PUBLIC_LEGALITY_MISMATCH"
+                    )
                     break
                 self.committed += 1
                 previous_action = (self.observation, envelope.action)
@@ -545,7 +572,13 @@ class Runner:
         except BudgetExhausted as error:
             outcome, reason = error.outcome, str(error)
             cost_context = error.cost_context
-        except (NativeFailure, ProviderFailure) as error:
+        except NativeFailure as error:
+            self._record_native_error(error, "runtime")
+            outcome, reason = "INFRASTRUCTURE_FAILURE", self._native_code(
+                error, "NATIVE_BRIDGE_FAILURE"
+            )
+            self.log("action_status_unknown", {"code": reason})
+        except ProviderFailure as error:
             outcome, reason = "INFRASTRUCTURE_FAILURE", str(error)
             self.log("action_status_unknown", {"code": reason})
         except HarnessFailure as error:
@@ -577,7 +610,9 @@ class Runner:
             )
             try:
                 self.game.close()
-            except (NativeFailure, OSError):
+            except (NativeFailure, OSError) as error:
+                if isinstance(error, NativeFailure):
+                    self._record_native_error(error, "cleanup")
                 self.store.private_json(
                     self.eid, "cleanup-error.json", {"code": "NATIVE_CLEANUP_FAILED"}
                 )

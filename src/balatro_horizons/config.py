@@ -13,6 +13,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from balatro_horizons.game.environment import Environment
+
 ROOT = Path(__file__).resolve().parents[2]
 
 # Transport bytes, model tokens, and dollar reservations have independent units.
@@ -140,19 +142,6 @@ class ModelConfig(Options):
             if "temperature" in self.settings:
                 raise ValueError("temperature is incompatible with manual thinking")
         return self
-
-
-class Environment(Options):
-    adapter: str = "balatrobot"
-    deck: str = "RED"
-    stake: str = "GOLD"
-    unlock_profile: str = "dedicated_fully_unlocked"
-    resolved_manifest: str = "private/environment.lock.json"
-    require_live_certification: Literal[True] = True
-    runtime: str = "/mnt/d/BalatroHorizonsRuntime"
-    powershell: str = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
-    port: int = Field(default=12346, ge=1024, le=65535)
-    timeout_seconds: int = Field(default=90, ge=1, le=300)
 
 
 class Config(Options):

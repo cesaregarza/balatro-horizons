@@ -5,7 +5,7 @@ import argparse
 import uuid
 
 from balatro_horizons.config import ROOT, load_config
-from balatro_horizons.engine.native import NativeSession
+from balatro_horizons.game.session import NativeSession
 from balatro_horizons.storage.journal import atomic_json, digest
 
 
@@ -17,8 +17,8 @@ def audit_session(configs, game_factory, *, persist_rules=True):
         game = game_factory(config.environment, seed)
         try:
             game.wait_ready()
-            profile_hash = digest(game.raw["bh"]["profile"])
-            entries = game.bridge.rpc("bh_rules")["rules"]
+            profile_hash = digest(game.inspect_raw()["bh"]["profile"])
+            entries = game.rules()["rules"]
             aliases = {}
             for key, entry in entries.items():
                 name = entry.get("name")

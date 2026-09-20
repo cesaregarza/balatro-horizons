@@ -13,7 +13,7 @@ from balatro_horizons.storage.journal import Store
 
 
 def doctor(config, live=False):
-    from balatro_horizons.engine.native import NativeFailure, WindowsBridge
+    from balatro_horizons.game.session import NativeFailure, WindowsBridge
 
     checks = {
         "python": sys.version.split()[0],
@@ -42,7 +42,7 @@ def doctor(config, live=False):
         lock = bridge.verify_files()
         checks["native_runtime"] = "installed"
         checks["game_version"] = lock["game_version"]
-        from balatro_horizons.engine.certification import require_environment_certificate
+        from balatro_horizons.evidence.certification import require_environment_certificate
 
         try:
             certificate = require_environment_certificate(lock, config.environment)
@@ -133,7 +133,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == "native":
-            from balatro_horizons.engine.native import WindowsBridge
+            from balatro_horizons.game.session import WindowsBridge
 
             bridge = WindowsBridge(load_config().environment)
             if args.operation == "stop":
@@ -223,7 +223,7 @@ def main(argv=None):
                     "batch_id": service.run_batch(cfg, plan["batch_id"], offline=args.offline)
                 }
         elif args.command == "replay":
-            from balatro_horizons.engine.certification import verify_checkpoint
+            from balatro_horizons.evidence.certification import verify_checkpoint
 
             cfg = Config.model_validate(store.manifest(args.episode_id, True)["config"])
             result = verify_checkpoint(store, cfg, args.episode_id, args.decision, mode=args.mode)

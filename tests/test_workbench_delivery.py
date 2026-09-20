@@ -5,8 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from balatro_horizons.api import create_app
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.replay import restore_seed_prefix
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.game.replay import restore_seed_prefix
 from balatro_horizons.observations.projection import HandleIssuer
 from balatro_horizons.storage.journal import digest
 
@@ -87,7 +87,7 @@ def test_fixture_labels_and_export_download_are_separate_from_review(
 def test_intervention_modes_use_shared_human_api(store, config, episode, mode):
     """Drive synthetic human operations through the same endpoint as the browser/CLI."""
     from balatro_horizons.agents.baselines import Baseline
-    from balatro_horizons.engine.certification import verify_checkpoint
+    from balatro_horizons.evidence.certification import verify_checkpoint
 
     assert verify_checkpoint(store, config, episode, 0)["status"] == "passed"
     parent_head = store.summary(episode)["journal_head"]

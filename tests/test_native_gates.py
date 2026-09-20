@@ -5,14 +5,14 @@ import json
 import pytest
 
 from balatro_horizons.config import ROOT, Environment
-from balatro_horizons.engine.certification import require_environment_certificate
-from balatro_horizons.engine.native import NativeFailure
-from balatro_horizons.engine.provenance import accepted_source_matches
+from balatro_horizons.evidence.certification import require_environment_certificate
+from balatro_horizons.evidence.provenance import accepted_source_matches
+from balatro_horizons.game.session import NativeFailure
 from balatro_horizons.storage.journal import digest
 
 
 def test_batch_scheduling_source_invalidates_native_fingerprint(tmp_path, monkeypatch):
-    from balatro_horizons.engine import provenance
+    from balatro_horizons.evidence import provenance
 
     monkeypatch.setattr(provenance, "ROOT", tmp_path)
     source = tmp_path / "src/balatro_horizons/evaluation/scheduling.py"

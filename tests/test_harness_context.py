@@ -28,7 +28,7 @@ from balatro_horizons.config import (
     ModelConfig,
 )
 from balatro_horizons.contracts import Observation
-from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.game.fake import FakeGame
 
 
 def read(raw, obs, events=(), rules=None):

@@ -1,6 +1,7 @@
 import importlib
 import json
 import sys
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -29,6 +30,12 @@ class FakeGame:
     def rpc(self, method, params=None):
         assert method == "bh_rules"
         return {"rules": {"one": {"name": "One rule"}}}
+
+    def inspect_raw(self):
+        return self.raw
+
+    def rules(self):
+        return self.rpc("bh_rules")
 
     def wait_ready(self):
         return None
@@ -345,6 +352,15 @@ def test_fault_collection_restores_transport_and_ends_on_unknown_status(monkeypa
 
         def observe_private(self):
             return {"same": True}
+
+        @contextmanager
+        def intercept_rpc_for_calibration(self, wrapper):
+            original = self.bridge.rpc
+            self.bridge.rpc = wrapper(original)
+            try:
+                yield
+            finally:
+                self.bridge.rpc = original
 
         def close(self):
             self.closed = True

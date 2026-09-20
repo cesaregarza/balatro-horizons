@@ -4,9 +4,9 @@ import pytest
 
 from balatro_horizons.agents.baselines import Baseline, ScriptedPolicy
 from balatro_horizons.agents.budget import BudgetExhausted, Spending
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.native import NativeFailure
 from balatro_horizons.evaluation.reports import episode_export
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.game.session import NativeFailure
 from balatro_horizons.runner import Runner
 
 

@@ -130,8 +130,7 @@ def test_send_response_records_outcome_persists_and_releases_writer(harness):
 
 
 def test_current_error_name_classification_is_pinned_for_issue_8():
-    # Issue #8 deliberately changes these infrastructure/harness errors away
-    # from the current NOT_ALLOWED name; this is the one characterization pin.
+    # Issue #8 changes definite infrastructure errors away from NOT_ALLOWED.
     pending = NativeHarness()
     pending.globals.auto_respond = False
     pending.request("select", request_id=1)
@@ -149,4 +148,4 @@ def test_current_error_name_classification_is_pinned_for_issue_8():
     assert unknown.message == "ACTION_STATUS_UNKNOWN"
     assert busy_response.message == "BUSY"
     assert unavailable.message == "NOT_READY"
-    assert {unknown.name, busy_response.name, unavailable.name} == {"NOT_ALLOWED_NAME"}
+    assert {unknown.name, busy_response.name, unavailable.name} == {"INFRASTRUCTURE_NAME"}

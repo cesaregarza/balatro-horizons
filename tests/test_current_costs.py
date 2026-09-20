@@ -9,7 +9,7 @@ from balatro_horizons.agents.costs import current_costs
 from balatro_horizons.agents.protocol import decision_context
 from balatro_horizons.agents.providers import context_payload
 from balatro_horizons.contracts import PublicCard
-from balatro_horizons.engine.native_state import normalize
+from balatro_horizons.game.state import normalize
 
 
 def prices(body, provider):

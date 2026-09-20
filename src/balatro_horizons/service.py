@@ -11,9 +11,9 @@ from balatro_horizons.agents.budget import Spending, validate_paid_configuration
 from balatro_horizons.agents.frozen import restore_protocol, validate_continuation
 from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import ROOT
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.native import NativeGame
 from balatro_horizons.evaluation.scheduling import batch_attempts, reconcile_stop, record_stop
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.game.session import NativeGame
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.runner import OperatorAbort, Runner
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked

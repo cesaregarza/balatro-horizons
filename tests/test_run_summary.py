@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from test_boundary import project
 
-from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.review.decision_ledger import summary_input
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.storage.journal import Store, atomic_json, digest

@@ -9,8 +9,11 @@ import uuid
 from balatro_horizons.actions.validation import validate_action
 from balatro_horizons.config import ROOT, load_config
 from balatro_horizons.contracts import ActionEnvelope, RemainingBudget
-from balatro_horizons.engine.native import NativeGame, NativeSession
-from balatro_horizons.engine.provenance import continuation_fingerprint, implementation_fingerprint
+from balatro_horizons.evidence.provenance import (
+    continuation_fingerprint,
+    implementation_fingerprint,
+)
+from balatro_horizons.game.session import NativeGame, NativeSession
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 from balatro_horizons.storage.journal import Store, atomic_json
 
@@ -103,7 +106,7 @@ class Audit:
 
     def fixture(self, case):
         self.store.append(self.eid, "evaluator_fixture", {"case": case}, actor="evaluator_fixture")
-        self.game.bridge.rpc("bh_fixture", {"case": case})
+        self.game.fixture(case)
         self.decision += 1
         self.observe()
 
@@ -294,7 +297,7 @@ def exercise_reorder(config, *, game_factory=None):
             checks.append(phase + ":" + area)
             if duplicate:
                 expected = continuation_fingerprint(a.raw)
-                a.game.bridge.rpc("rearrange", {area: indices}, rid)
+                a.game.replay_request("rearrange", {area: indices}, rid)
                 a.game.wait_ready()
                 assert continuation_fingerprint(a.game.observe_private()) == expected
                 checks.append("duplicate_request_unchanged")

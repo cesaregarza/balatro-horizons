@@ -7,7 +7,7 @@ import uuid
 
 from balatro_horizons.agents.baselines import Baseline
 from balatro_horizons.config import ROOT, load_config
-from balatro_horizons.engine.native import NativeSession
+from balatro_horizons.game.session import NativeSession
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService
 from balatro_horizons.storage.journal import Store, atomic_json

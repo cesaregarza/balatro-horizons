@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--root must contain the project and an installed .venv")
     try:
         if args.report:
-            from balatro_horizons.engine.provenance import fingerprint_sources, source_files
+            from balatro_horizons.evidence.provenance import fingerprint_sources, source_files
             from balatro_horizons.storage.journal import atomic_json, now
 
             before = fingerprint_sources(source_files(root))

@@ -13,7 +13,7 @@ import tarfile
 import uuid
 from pathlib import Path
 
-from balatro_horizons.engine.provenance import (
+from balatro_horizons.evidence.provenance import (
     fingerprint_sources,
     native_components,
     source_files,
