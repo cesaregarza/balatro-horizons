@@ -58,9 +58,23 @@ local dispatch = {}
       }
       persist_ledger(state)
       state.active_id = nil
+      state.active_method = nil
       state.busy = false
     end
     return state.original_send(response)
+  end
+
+  local function expire(state)
+    local id = state.active_id
+    if not id then return end
+    -- A timed-out mutation may have changed the game. Never turn it into a
+    -- committed or rejected result, even if it becomes ready later.
+    state.ledger[id] = {status='unknown', intent=state.ledger[id].intent}
+    persist_ledger(state)
+    state.active_id = nil
+    state.active_method = nil
+    state.busy = false
+    respond_error(state.original_send, 'ACTION_STATUS_UNKNOWN')
   end
 
   local function install_inspection(state)
@@ -71,7 +85,7 @@ local dispatch = {}
       settlement_visible=function() return state.context.native_settlement_visible and
         state.context.native_settlement_visible() or nil end,
     })
-    state.context.settle.install(inspect.ready)
+    state.context.settle.install(inspect.ready, function() expire(state) end)
   end
 
   local function register_endpoints(state)
@@ -106,7 +120,9 @@ local dispatch = {}
     state.original_send = BB_SERVER.send_response
     BB_SERVER.send_response = function(response)
       if state.active_id and not state.servicing_read then
-        if response.message or state.context.settle.running() then
+        -- Upstream menu responds only after its own menu-UI barrier. The
+        -- gameplay ready predicate is false at the menu, so do not defer it.
+        if response.message or state.context.settle.running() or state.active_method == 'menu' then
           return complete(state, response)
         end
         -- Hold upstream successes on the same pending queue as bh_action.
@@ -135,6 +151,7 @@ local dispatch = {}
     unlock()
     state.busy = true
     state.active_id = id
+    state.active_method = request.method
     state.ledger[id] = {status='pending', intent=intent}
     persist_ledger(state)
     return true
