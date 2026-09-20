@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { awaitIdleWorker } from "./runHelpers";
 
 test("synthetic run, progressive reveal, escaped annotation, verified branch", async ({
   page,
@@ -9,13 +10,16 @@ test("synthetic run, progressive reveal, escaped annotation, verified branch", a
   await expect(
     page.getByRole("heading", { name: /Every choice leaves/ }),
   ).toBeVisible();
+  await awaitIdleWorker(page);
   const created = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/runs") &&
       response.request().method() === "POST",
   );
   await page.getByRole("button", { name: /Start test episode/ }).click();
-  const { episode_id } = await (await created).json();
+  const response = await created;
+  expect(response.ok(), await response.text()).toBe(true);
+  const { episode_id } = await response.json();
   const newRun = page.getByRole("row").filter({
     has: page.getByText(episode_id.slice(0, 10), { exact: true }),
   });
@@ -108,6 +112,7 @@ test("mobile control center remains usable", async ({ page }) => {
 
 test("skill access persists for new runs", async ({ page }) => {
   await page.goto("/");
+  await awaitIdleWorker(page);
   await page
     .getByRole("button", { name: "Models & budgets", exact: true })
     .click();

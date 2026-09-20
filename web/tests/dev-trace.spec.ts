@@ -7,18 +7,20 @@ import {
   toolTitle,
   type Trace,
 } from "../src/devTracePresentation";
+import { awaitIdleWorker } from "./runHelpers";
 
 async function setup(page: Page) {
   const { operator_token } = await (
     await page.request.get("/api/bootstrap")
   ).json();
   const headers = { "X-BH-Operator": operator_token };
-  const { episode_id } = await (
-    await page.request.post("/api/runs", {
-      headers,
-      data: { agent: "heuristic", offline: true },
-    })
-  ).json();
+  await awaitIdleWorker(page, operator_token);
+  const created = await page.request.post("/api/runs", {
+    headers,
+    data: { agent: "heuristic", offline: true },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  const { episode_id } = await created.json();
   await expect
     .poll(async () => {
       const status = await (

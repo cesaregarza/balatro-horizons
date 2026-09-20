@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { awaitIdleWorker } from "./runHelpers";
 
 test("review distinguishes skip offers from owned effects and escapes descriptions", async ({
   page,
@@ -31,7 +32,15 @@ test("review distinguishes skip offers from owned effects and escapes descriptio
     await route.fulfill({ response, json: data });
   });
   await page.goto("/");
+  await awaitIdleWorker(page);
+  const created = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/runs") &&
+      response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: /Start test episode/ }).click();
+  const response = await created;
+  expect(response.ok(), await response.text()).toBe(true);
   await expect(page.getByRole("status")).toContainText("Run created");
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
