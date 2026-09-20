@@ -8,8 +8,8 @@ from copy import deepcopy
 import pytest
 
 from balatro_horizons.config import ROOT, Environment
-from balatro_horizons.engine import certification, provenance
-from balatro_horizons.engine.native import NativeFailure
+from balatro_horizons.evidence import certification, provenance
+from balatro_horizons.game.session import NativeFailure
 from balatro_horizons.storage.journal import digest
 
 SPEC = importlib.util.spec_from_file_location('reuse_native_evidence', ROOT/'scripts/reuse_native_evidence.py')
@@ -18,10 +18,10 @@ SPEC.loader.exec_module(reuse)
 
 
 def test_archived_full_fingerprint_matches_working_tree_identity():
-    # The old proof must be verified from bytes, without importing old Python.
+    # A committed proof must be verified from bytes, without importing Python.
     revision, old = reuse.revision_sources(ROOT, 'HEAD')
     assert len(revision) == 40
-    assert 'src/balatro_horizons/engine/native.py' in old
+    assert 'src/balatro_horizons/config.py' in old
     assert provenance.fingerprint_sources(provenance.source_files(ROOT)) == provenance.implementation_fingerprint()
 
 
@@ -35,9 +35,9 @@ def test_harness_only_edits_change_full_identity_but_not_native_components():
 
 
 @pytest.mark.parametrize('path', [
-    'engine/native.py', 'engine/native_state.py', 'engine/replay.py', 'contracts.py',
+    'game/session.py', 'game/state/normalize.py', 'game/replay.py', 'contracts.py',
     'observations/projection.py', 'actions/validation.py', 'storage/journal.py',
-    'engine/new_native_module.py',
+    'game/new_native_module.py',
 ])
 def test_native_edits_additions_and_removals_invalidate_compatibility(path):
     source = provenance.source_files(ROOT)
@@ -46,15 +46,18 @@ def test_native_edits_additions_and_removals_invalidate_compatibility(path):
     source[key] = source.get(key, b'') + b'\n# changed native code\n'
     assert provenance.native_components(source) != before
     del source[key]
-    if path != 'engine/new_native_module.py':
+    if path != 'game/new_native_module.py':
         assert provenance.native_components(source) != before
 
 
 def test_config_native_dependencies_are_tracked_but_model_budgets_are_separate():
     source = provenance.source_files(ROOT)
-    key = 'src/balatro_horizons/config.py'
+    config_key = 'src/balatro_horizons/config.py'
+    key = 'src/balatro_horizons/game/environment.py'
     before = provenance.native_components(source)
-    source[key] = source[key].replace(b'WORKING_MEMORY_DECISIONS = 3', b'WORKING_MEMORY_DECISIONS = 4')
+    source[config_key] = source[config_key].replace(
+        b'WORKING_MEMORY_DECISIONS = 3', b'WORKING_MEMORY_DECISIONS = 4'
+    )
     assert provenance.native_components(source) == before
     source[key] = source[key].replace(b'port: int = Field(default=12346', b'port: int = Field(default=12347')
     assert provenance.native_components(source) != before
@@ -119,7 +122,7 @@ def test_reuse_preserves_original_evidence_and_does_not_migrate_checkpoints(migr
 def test_reuse_fails_closed_without_changing_active_certificate(migration, failure, code):
     root, candidate, report, old = migration
     if failure == 'native':
-        path = candidate/'src/balatro_horizons/engine/native.py'
+        path = candidate/'src/balatro_horizons/game/session.py'
         path.write_bytes(path.read_bytes() + b'\n# changed\n')
     elif failure == 'report':
         report.write_text('{}')

@@ -5,7 +5,7 @@ from test_boundary import project
 from test_public_information import native_state
 
 from balatro_horizons.config import ROOT
-from balatro_horizons.engine.native_state import normalize
+from balatro_horizons.game.state import normalize
 from balatro_horizons.storage.journal import Store
 
 

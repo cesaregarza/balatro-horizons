@@ -10,8 +10,8 @@ from decimal import Decimal
 
 from balatro_horizons.config import ROOT
 from balatro_horizons.contracts import Settlement
-from balatro_horizons.engine.provenance import implementation_fingerprint
 from balatro_horizons.evaluation.economy import economy_metrics
+from balatro_horizons.evidence.provenance import implementation_fingerprint
 from balatro_horizons.storage.journal import Store, atomic_json, digest
 
 

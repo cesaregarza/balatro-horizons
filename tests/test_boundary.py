@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.agents.protocol import arithmetic, context
 from balatro_horizons.contracts import ActionEnvelope, RemainingBudget
-from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 
 

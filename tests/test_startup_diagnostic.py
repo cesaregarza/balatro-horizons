@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from balatro_horizons.engine.native import NativeFailure
+from balatro_horizons.game.session import NativeFailure
 
 spec = importlib.util.spec_from_file_location(
     "startup_diagnostic", Path(__file__).resolve().parents[1] / "scripts/diagnose_native_startup.py"
@@ -61,28 +61,32 @@ def test_probe_closes_transport_on_failed_identity(tmp_path):
 @pytest.mark.parametrize("errors,calls,success", [(1, 2, True), (3, 3, False)])
 def test_launch_retries_only_pre_submission_eio(monkeypatch, errors, calls, success):
     from balatro_horizons.config import Environment
-    from balatro_horizons.engine import native
+    from balatro_horizons.game import transport as native
 
     spawn = Mock(side_effect=[OSError(5, "EIO")] * errors + [Mock()])
     monkeypatch.setattr(native.subprocess, "Popen", spawn)
     monkeypatch.setattr(native.time, "sleep", Mock())
     bridge = native.WindowsBridge(Environment())
+    bridge.verify_files = Mock(return_value={})
+    bridge.rpc = Mock(return_value={"state": "MENU"})
+    bridge.verify_identity = Mock()
     if success:
-        assert bridge.command("launch") == {"launch_requested": True}
+        assert bridge.launch() == {"state": "MENU"}
     else:
         with pytest.raises(NativeFailure, match="WINDOWS_BRIDGE_OS_ERROR_5"):
-            bridge.command("launch")
+            bridge.launch()
     assert spawn.call_count == calls
 
 
 def test_launch_does_not_retry_other_errors(monkeypatch):
     from balatro_horizons.config import Environment
-    from balatro_horizons.engine import native
+    from balatro_horizons.game import transport as native
 
     spawn = Mock(side_effect=OSError(13, "denied"))
     monkeypatch.setattr(native.subprocess, "Popen", spawn)
+    monkeypatch.setattr(native.WindowsBridge, "verify_files", Mock(return_value={}))
     with pytest.raises(NativeFailure, match="WINDOWS_BRIDGE_OS_ERROR_13"):
-        native.WindowsBridge(Environment()).command("launch")
+        native.WindowsBridge(Environment()).launch()
     spawn.assert_called_once()
 
 

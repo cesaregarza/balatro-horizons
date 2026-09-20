@@ -3,7 +3,7 @@ import pytest
 
 from balatro_horizons.agents.baselines import Baseline
 from balatro_horizons.config import Config
-from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.runner import Runner
 from balatro_horizons.storage.journal import Store
 

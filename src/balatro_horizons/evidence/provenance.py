@@ -10,7 +10,7 @@ IMPLEMENTATION_FILES = (
     "config.py", "contracts.py", "runner.py", "service.py", "review/branches.py",
     "evaluation/scheduling.py",
 )
-IMPLEMENTATION_DIRECTORIES = ("engine", "observations", "actions", "agents", "storage")
+IMPLEMENTATION_DIRECTORIES = ("game", "evidence", "observations", "actions", "agents", "storage")
 
 
 def source_files(root=ROOT):
@@ -41,29 +41,32 @@ def native_components(sources=None):
     """
     sources = source_files(ROOT) if sources is None else sources
     prefix = "src/balatro_horizons/"
-    excluded = {"engine/certification.py", "engine/provenance.py", "engine/fake.py"}
+    excluded = {"game/fake.py"}
     result = {}
     for name, content in sources.items():
         relative = name.removeprefix(prefix)
         if name.startswith(prefix) and relative not in excluded and (
             relative == "contracts.py"
-            or relative.split("/")[0] in ("engine", "observations", "actions", "storage")
+            or relative.split("/")[0] in ("game", "observations", "actions", "storage")
         ):
             result[name] = hashlib.sha256(content).hexdigest()
-    # Config combines unrelated model budgets with the native Environment schema.
-    # Hash the complete native classes/imports/ROOT expression, ignoring source layout.
+    # Config combines unrelated model budgets with the native Environment binding.
+    # Hash that binding and its dependencies, not unrelated budget defaults.
     tree = ast.parse(sources[prefix + "config.py"])
     bindings = {}
     for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             bindings[node.name] = node
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                bindings[alias.asname or alias.name] = node
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
                 for part in ast.walk(target):
                     if isinstance(part, ast.Name):
                         bindings[part.id] = node
-    required = {"Options", "Environment", "ROOT"}
+    required = {"Environment", "ROOT"}
     if not required <= bindings.keys():
         raise ValueError("NATIVE_CONFIG_BOUNDARY_CHANGED")
     pending, selected = list(required), set()
@@ -97,7 +100,7 @@ def accepted_source_matches(record):
 
 def implementation_fingerprint():
     base = ROOT / "src/balatro_horizons"
-    # Native fidelity depends on the engine, projection, action policy, runner,
+    # Native fidelity depends on the game boundary, projection, action policy, runner,
     # storage, and branch restoration. Presentation and report-only edits do not
     # invalidate native continuation evidence; their own tests cover those layers.
     paths = [base / name for name in IMPLEMENTATION_FILES]

@@ -1,4 +1,18 @@
 # Changelog
+
+## Game boundary cutover (issue #8)
+
+- Split the native adapter into `game/` contracts, state, actions, transport,
+  environment, and sessions; preserve the scripted fake and move certification
+  and source fingerprints to `evidence/`.
+- Error taxonomy: Lua infrastructure and harness faults are no longer scored
+  as agent illegality (spec §6.2). Only enumerated Lua codes appear as public
+  reasons; unrecognized endpoint text stays in private evidence.
+- A rejected request-ledger status with a missing or malformed response is now
+  infrastructure failure, not agent illegality; its outcome is unverified.
+- Unify native and upstream mutation settlement at 30 transitions plus 10
+  consecutive ready frames. Prior native certificates require re-certification.
+
 ## Harness interface history
 
 Operator decision 2026-09-18: v7 became the sole harness interface. The current prompt now lives at `configs/prompts/harness.txt`; the retired generations remain here as exact historical text.

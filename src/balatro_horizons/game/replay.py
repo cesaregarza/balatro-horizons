@@ -3,7 +3,7 @@
 import uuid
 
 from balatro_horizons.contracts import ActionEnvelope, RemainingBudget
-from balatro_horizons.engine.provenance import continuation_fingerprint
+from balatro_horizons.evidence.provenance import continuation_fingerprint
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 
 
@@ -22,7 +22,7 @@ def check_private(game, expected_hash, decision=None):
 def replay_steps(game, issuer, steps, eid):
     for step in steps:
         if step["kind"] == "fixture":
-            game.bridge.rpc("bh_fixture", {"case": step["case"]})
+            game.fixture(step["case"])
         else:
             envelope = ActionEnvelope.model_validate(step["envelope"])
             game.apply_public_action(envelope.action, issuer, uuid.uuid4().hex)

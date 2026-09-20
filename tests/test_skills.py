@@ -15,8 +15,8 @@ from balatro_horizons.agents.protocol import Operation, context, decision_contex
 from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.agents.skills import load_guide, prepare_rules, read_guide, restore_knowledge
 from balatro_horizons.config import Config
-from balatro_horizons.engine.certification import verify_checkpoint
-from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.evidence.certification import verify_checkpoint
+from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner

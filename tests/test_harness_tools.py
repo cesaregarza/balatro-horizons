@@ -18,7 +18,7 @@ from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure
 from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.config import ROOT, ModelConfig, load_config
 from balatro_horizons.contracts import ActionEnvelope, RecentPublicEvent
-from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
 

@@ -13,8 +13,9 @@ from datetime import datetime
 from pathlib import Path
 
 from balatro_horizons.config import ROOT, load_config
-from balatro_horizons.engine.certification import require_environment_certificate
-from balatro_horizons.engine.native import NativeFailure, NativeRejected, WindowsBridge
+from balatro_horizons.evidence.certification import require_environment_certificate
+from balatro_horizons.game.contract import NativeFailure, NativeRejected
+from balatro_horizons.game.transport import WindowsBridge
 
 
 def launch_metadata(root):

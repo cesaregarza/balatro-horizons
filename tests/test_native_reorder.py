@@ -10,8 +10,8 @@ from test_boundary import project
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.agents.protocol import context
 from balatro_horizons.contracts import ActionEnvelope
-from balatro_horizons.engine.native import NativeGame
-from balatro_horizons.engine.native_state import normalize
+from balatro_horizons.game.session import NativeGame
+from balatro_horizons.game.state import normalize
 from balatro_horizons.observations.projection import HandleIssuer
 
 ROOT = Path(__file__).resolve().parents[1]

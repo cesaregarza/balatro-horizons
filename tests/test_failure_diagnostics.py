@@ -4,8 +4,8 @@ import pytest
 
 from balatro_horizons.agents.baselines import Baseline
 from balatro_horizons.agents.failures import HarnessFailure
-from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.evaluation.reports import episode_export
+from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.runner import Runner
 
 

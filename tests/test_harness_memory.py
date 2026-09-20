@@ -22,9 +22,9 @@ from balatro_horizons.agents.working_memory import (
 )
 from balatro_horizons.config import WORKING_MEMORY_BYTES, WORKING_MEMORY_DECISIONS
 from balatro_horizons.contracts import Observation
-from balatro_horizons.engine.certification import read_checkpoint, verify_checkpoint
-from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.evaluation.reports import episode_export
+from balatro_horizons.evidence.certification import read_checkpoint, verify_checkpoint
+from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
@@ -229,7 +229,7 @@ def test_bad_game_action_does_not_write_valid_attached_note(store, config):
 
 
 def test_durable_attached_note_survives_native_failure_without_claiming_success(store, config):
-    from balatro_horizons.engine.native import NativeRejected
+    from balatro_horizons.game.contract import NativeRejected
 
     class RejectedGame(FakeGame):
         def apply_public_action(self, *args):

@@ -11,10 +11,13 @@ from balatro_horizons.agents.budget import BudgetExhausted, Spending
 from balatro_horizons.agents.protocol import context
 from balatro_horizons.agents.providers import DirectProvider, ProviderFailure
 from balatro_horizons.config import Limits, ModelConfig
-from balatro_horizons.engine.certification import require_checkpoint_certificate, verify_checkpoint
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.native_state import normalize
 from balatro_horizons.evaluation.batches import summarize
+from balatro_horizons.evidence.certification import (
+    require_checkpoint_certificate,
+    verify_checkpoint,
+)
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.game.state import normalize
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.storage.journal import Store
 

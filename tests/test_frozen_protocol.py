@@ -8,9 +8,9 @@ from balatro_horizons.agents.baselines import Baseline
 from balatro_horizons.agents.frozen import freeze_protocol, restore_protocol
 from balatro_horizons.agents.outcomes import VERSION as ACTION_OUTCOME_VERSION
 from balatro_horizons.config import ROOT
-from balatro_horizons.engine.certification import read_checkpoint, verify_checkpoint
-from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.evaluation.reports import episode_export
+from balatro_horizons.evidence.certification import read_checkpoint, verify_checkpoint
+from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.runner import Runner
 from balatro_horizons.storage.journal import digest

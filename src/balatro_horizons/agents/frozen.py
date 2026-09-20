@@ -6,7 +6,7 @@ from copy import deepcopy
 
 from balatro_horizons.agents.instructions import load_prompt
 from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, ROOT
-from balatro_horizons.engine.provenance import implementation_fingerprint
+from balatro_horizons.evidence.provenance import implementation_fingerprint
 from balatro_horizons.storage.journal import digest
 
 FROZEN_INTERFACE = "tools_v7"

@@ -10,12 +10,11 @@ def harness():
 
 
 def test_authentication_rejects_wrong_token_and_strips_valid_token(harness):
-    assert_error_unchanged(harness, "UNAUTHORIZED", "health", token="wrong-token")
+    assert_error_unchanged(harness, "UNAUTHORIZED", "select", token="wrong-token")
     assert harness.eval("upstream_count()") == 0
 
-    before = harness.snapshot()
-    assert harness.request("health", request_id=2).ok is True
-    assert harness.snapshot() == before
+    assert harness.request("select", request_id=2) is None
+    assert harness.eval("upstream_count()") == 1
     assert harness.globals.upstream_requests[1].params["_bh_token"] is None
 
 
@@ -33,7 +32,6 @@ def test_checkpoint_path_guard_rejects_outside_paths(harness, method):
 @pytest.mark.parametrize(
     "method,params",
     [
-        ("health", {}),
         ("bh_inspect", {}),
         ("bh_request_status", {"request_id": "missing"}),
         ("bh_rules", {}),
@@ -59,7 +57,9 @@ def test_write_while_another_write_is_pending_returns_busy(harness):
 
 def test_committed_replay_uses_recorded_response_without_clearing_current_busy(harness):
     harness.execute("next_response={accepted='first'}")
-    first = harness.request("select", {"blind": "Small"}, request_id=1)
+    assert harness.request("select", {"blind": "Small"}, request_id=1) is None
+    harness.advance(40)
+    first = harness.globals.responses[harness.eval("response_count()")]
     assert first.accepted == "first"
 
     harness.globals.auto_respond = False
@@ -98,7 +98,7 @@ def test_read_while_write_is_pending_does_not_clobber_pending_record(harness):
     harness.globals.auto_respond = False
     assert harness.request("select", {"blind": "Small"}, request_id=1) is None
     harness.globals.auto_respond = True
-    assert harness.request("health", request_id=2).ok is True
+    assert harness.request("bh_inspect", request_id=2) is not None
     assert harness.status(1).status == "pending"
     assert_error_unchanged(harness, "BUSY", "select", {"blind": "Big"}, request_id=3)
 
@@ -113,7 +113,9 @@ def test_start_from_menu_runs_calibration_reset_once(harness):
 
 def test_send_response_records_outcome_persists_and_releases_writer(harness):
     harness.execute("next_response={ok=true}")
-    assert harness.request("select", request_id=1).ok is True
+    assert harness.request("select", request_id=1) is None
+    harness.advance(40)
+    assert harness.globals.responses[harness.eval("response_count()")].ok is True
     committed = harness.status(1)
     assert committed.status == "committed" and committed.response.ok is True
 
@@ -130,8 +132,7 @@ def test_send_response_records_outcome_persists_and_releases_writer(harness):
 
 
 def test_current_error_name_classification_is_pinned_for_issue_8():
-    # Issue #8 deliberately changes these infrastructure/harness errors away
-    # from the current NOT_ALLOWED name; this is the one characterization pin.
+    # Issue #8 changes definite infrastructure errors away from NOT_ALLOWED.
     pending = NativeHarness()
     pending.globals.auto_respond = False
     pending.request("select", request_id=1)
@@ -149,4 +150,4 @@ def test_current_error_name_classification_is_pinned_for_issue_8():
     assert unknown.message == "ACTION_STATUS_UNKNOWN"
     assert busy_response.message == "BUSY"
     assert unavailable.message == "NOT_READY"
-    assert {unknown.name, busy_response.name, unavailable.name} == {"NOT_ALLOWED_NAME"}
+    assert {unknown.name, busy_response.name, unavailable.name} == {"INFRASTRUCTURE_NAME"}

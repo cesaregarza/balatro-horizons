@@ -56,7 +56,9 @@ def test_action_rejections_leave_entire_game_table_unchanged(code, setup, params
     if setup:
         harness.execute(setup)
     response = assert_error_unchanged(harness, code, "bh_action", params)
-    assert response.name == "NOT_ALLOWED_NAME"
+    assert response.name == (
+        "INFRASTRUCTURE_NAME" if code == "NOT_READY" else "NOT_ALLOWED_NAME"
+    )
     assert harness.eval("action_count()") == 0
 
 

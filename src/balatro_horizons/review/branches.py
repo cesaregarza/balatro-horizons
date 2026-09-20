@@ -4,7 +4,7 @@ from balatro_horizons.agents.frozen import restore_protocol, validate_continuati
 from balatro_horizons.agents.notebook import restore_notebook
 from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.agents.working_memory import restore_working_memory
-from balatro_horizons.engine.certification import require_checkpoint_certificate
+from balatro_horizons.evidence.certification import require_checkpoint_certificate
 
 
 def inherited_events(store, eid, seen=None):

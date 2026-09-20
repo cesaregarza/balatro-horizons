@@ -6,7 +6,7 @@ import json
 import uuid
 
 from balatro_horizons.config import ROOT, Config
-from balatro_horizons.engine.certification import (
+from balatro_horizons.evidence.certification import (
     certificate_path,
     read_checkpoint,
     steps_for,

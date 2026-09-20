@@ -9,8 +9,9 @@ from native_acceptance import Audit
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.config import ROOT, load_config
 from balatro_horizons.contracts import ActionEnvelope
-from balatro_horizons.engine.native import NativeRejected, NativeSession
-from balatro_horizons.engine.provenance import continuation_fingerprint
+from balatro_horizons.evidence.provenance import continuation_fingerprint
+from balatro_horizons.game.contract import NativeRejected
+from balatro_horizons.game.session import NativeSession
 from balatro_horizons.storage.journal import atomic_json
 
 

@@ -4,19 +4,19 @@ import json
 import uuid
 
 from balatro_horizons.config import ROOT
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.native import NativeFailure, NativeGame
-from balatro_horizons.engine.provenance import (
+from balatro_horizons.evidence.provenance import (
     accepted_source_matches,
     continuation_fingerprint,
     implementation_fingerprint,
 )
-from balatro_horizons.engine.replay import (
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.game.replay import (
     ReplayDivergence,
     check_private,
     replay_steps,
     restore_seed_prefix,
 )
+from balatro_horizons.game.session import NativeFailure, NativeGame
 from balatro_horizons.observations.projection import HandleIssuer
 from balatro_horizons.storage.journal import atomic_json, digest, locked, now
 

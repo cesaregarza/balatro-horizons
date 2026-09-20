@@ -71,7 +71,7 @@ def test_explorer_jumps_both_ways_and_records_annotation_provenance(store, episo
 def test_seek_uses_actual_ids_for_branches_and_rejects_missing_ids(store):
     from test_boundary import project
 
-    from balatro_horizons.engine.fake import FakeGame
+    from balatro_horizons.game.fake import FakeGame
 
     eid = store.create({"evidence_kind": "SYNTHETIC_TEST"}, eid="e" * 32)
     observation = project(FakeGame().observe_private(), index=17).model_dump(mode="json")
@@ -107,7 +107,7 @@ def test_explorer_can_explain_a_run_that_failed_before_any_observation(store):
 def test_live_explorer_handles_intent_commit_settlement_and_terminal(store):
     from test_boundary import project
 
-    from balatro_horizons.engine.fake import FakeGame
+    from balatro_horizons.game.fake import FakeGame
 
     game = FakeGame()
     game.phase = "SHOP"

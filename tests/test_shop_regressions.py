@@ -8,7 +8,7 @@ from test_public_information import delivered_observation, native_state, request
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.contracts import ActionEnvelope, Observation, PublicCard
-from balatro_horizons.engine.native_state import normalize
+from balatro_horizons.game.state import normalize
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer
 
