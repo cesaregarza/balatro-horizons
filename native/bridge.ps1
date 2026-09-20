@@ -46,7 +46,7 @@ if ($Mode -eq 'stop') {
   '{"stopped":true}'
   exit 0
 }
-$allowed = @('health','bh_inspect','bh_action','bh_request_status','bh_rules','bh_fixture','start','menu','save','load','select','skip','cash_out','next_round','reroll','rearrange','pack')
+$allowed = @('bh_inspect','bh_action','bh_request_status','bh_rules','bh_fixture','start','menu','save','load','select','skip','cash_out','next_round','reroll','rearrange')
 while ($null -ne ($line = [Console]::ReadLine())) {
   try {
     $request = $line | ConvertFrom-Json

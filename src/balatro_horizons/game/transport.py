@@ -21,6 +21,7 @@ from balatro_horizons.game.environment import (
 )
 
 _LUA_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,98}$")
+_UPSTREAM_REJECTION_NAMES = frozenset({"BAD_REQUEST", "INVALID_STATE", "NOT_ALLOWED"})
 
 
 def _safe_lua_code(value: object) -> str | None:
@@ -32,21 +33,30 @@ def _bridge_path(runtime: str) -> str:
 
 
 def raise_rpc_error(error: object) -> None:
-    """Raise the typed endpoint error, preserving only validated Lua fields."""
+    """Classify endpoint errors; retain untrusted text only for private evidence."""
     payload = error if isinstance(error, dict) else {}
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    code = _safe_lua_code(data.get("message"))
-    code = code or _safe_lua_code(payload.get("message"))
+    raw_message = data.get("message") if isinstance(data.get("message"), str) else None
+    if raw_message is None and isinstance(payload.get("message"), str):
+        raw_message = payload["message"]
+    code = _safe_lua_code(raw_message)
     code = code or _safe_lua_code(data.get("code"))
-    name = _safe_lua_code(data.get("name")) or _safe_lua_code(payload.get("name"))
-    if code is None:
-        raise NativeFailure("RPC_ENDPOINT_FAILURE", name=None)
+    name = data.get("name") if isinstance(data.get("name"), str) else payload.get("name")
+    name = name if isinstance(name, str) else None
+    upstream_envelope = isinstance(data.get("message"), str) and isinstance(data.get("name"), str)
     expected = ERROR_NAMES.get(code)
-    if expected is not None and name != expected:
-        raise NativeFailure(code, name=name)
-    if name == "NOT_ALLOWED":
-        raise NativeRejected(code, name=name)
-    raise NativeFailure(code, name=name)
+    if expected is not None:
+        if name == expected and name == "NOT_ALLOWED":
+            raise NativeRejected(code, name=name, raw_message=raw_message)
+        raise NativeFailure(code, name=name, raw_message=raw_message)
+    # BalatroBot puts its own message and name together under data. Project
+    # errors use the top-level message; an unknown project token claiming
+    # NOT_ALLOWED is not trusted as a legality code.
+    if name in _UPSTREAM_REJECTION_NAMES and (
+        name != "NOT_ALLOWED" or upstream_envelope or code is None
+    ):
+        raise NativeRejected("NATIVE_ACTION_REJECTED", name=name, raw_message=raw_message)
+    raise NativeFailure(code or "RPC_ENDPOINT_FAILURE", name=name, raw_message=raw_message)
 
 
 class WindowsBridge:
@@ -86,6 +96,8 @@ class WindowsBridge:
 
     @staticmethod
     def _spawn_with_retry(command: list[str], **kwargs):
+        # WSL may return EIO opening PowerShell. No request was submitted yet,
+        # so retrying process creation cannot duplicate a native action.
         for attempt in range(3):
             try:
                 return subprocess.Popen(command, **kwargs)
@@ -119,6 +131,8 @@ class WindowsBridge:
         self.lock = self.verify_files()
         self.instance_id = uuid.uuid4().hex
         try:
+            # A Windows GUI descendant can keep WSL's captured pipes open;
+            # launch detached and verify readiness over the separate RPC pipe.
             self._spawn_with_retry(
                 self._command("launch"),
                 stdin=subprocess.DEVNULL,
@@ -155,7 +169,9 @@ class WindowsBridge:
             process.stdin.write(line.encode("utf8"))
             process.stdin.flush()
             result = bytearray()
-            deadline = time.monotonic() + self.env.http_timeout_seconds
+            # PowerShell must get its full HTTP timeout before Python closes
+            # the pipe; preserve the margin for its bridge_error response.
+            deadline = time.monotonic() + self.env.http_timeout_seconds + self.env.rpc_response_margin_seconds
             with selectors.DefaultSelector() as selector:
                 selector.register(process.stdout, selectors.EVENT_READ)
                 while b"\n" not in result:

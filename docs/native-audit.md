@@ -46,15 +46,18 @@ One action follows this chain; no bridge method is exposed as an agent tool:
 | `INFRASTRUCTURE` | `BUSY`, `NOT_READY`, `ACTION_STATUS_UNKNOWN` | `NativeFailure` / `INFRASTRUCTURE_FAILURE` |
 | `HARNESS_FAULT` | `UNAUTHORIZED`, `METHOD_FORBIDDEN`, `PATH_FORBIDDEN` | `NativeFailure` / `INFRASTRUCTURE_FAILURE` |
 
-The sanitized Lua `message` code and `name` are recorded only in private episode
-error evidence; the terminal reason carries the specific code. This taxonomy
-is an executable change. Existing native certificates do not authorize runs
-with this source/runtime fingerprint; desktop re-certification follows in #9.
-For repeatable Python size checks, run
-`scripts/source_metrics.py --max-file-lines 399 --max-function-lines 60 --frozen-function-exception src/balatro_horizons/game/fake.py src/balatro_horizons/game`.
+The Lua `name` and raw message are recorded only in private episode error
+evidence. Public terminal reasons carry an enumerated project code or a generic
+fallback. BalatroBot `BAD_REQUEST`, `INVALID_STATE`, and `NOT_ALLOWED` rejections
+remain agent-invalidity outcomes; unknown project codes never gain legality
+authority from a claimed `NOT_ALLOWED` name. This taxonomy is an executable
+change. Existing native certificates do not authorize runs with this
+source/runtime fingerprint; desktop re-certification follows in #9.
+For repeatable Python and split-Lua size checks, run
+`scripts/source_metrics.py --max-file-lines 399 --max-function-lines 60 --frozen-function-exception src/balatro_horizons/game/fake.py src/balatro_horizons/game native/patches/horizons.lua native/patches/dispatch.lua native/patches/inspect.lua native/patches/action.lua native/patches/settle.lua`.
 The exception is explicit because the byte-identical fake retains its
-pre-existing 78-line observation method; all new game functions remain below
-60 lines.
+pre-existing 78-line observation method; all new game and split-Lua functions
+remain below 60 lines.
 
 ## Reorder phase regression — 2026-09-15
 

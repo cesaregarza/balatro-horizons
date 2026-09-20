@@ -62,6 +62,7 @@ class NativeGame:
 
     def start_run(self, deck, stake, seed):
         """Evaluator-only reset/start; never offered to the agent."""
+        self._require_open()
         self.bridge.rpc("menu")
         self.bridge.rpc("start", {"deck": deck, "stake": stake, "seed": seed})
 

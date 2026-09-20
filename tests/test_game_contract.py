@@ -33,7 +33,7 @@ def _lua_error_codes(source, table):
 
 def _assert_allowlists_agree(powershell, lua, contract):
     assert powershell == lua == contract
-    assert len(contract) == 17
+    assert len(contract) == 15
 
 
 def test_allowlists_agree():
@@ -55,10 +55,10 @@ def test_allowlist_guard_rejects_a_missing_entry(missing_from):
     lua = _lua_methods((ROOT / "native/patches/dispatch.lua").read_text())
     contract = RPC_METHODS
     if missing_from == "powershell":
-        powershell.remove("pack")
+        powershell.remove("select")
     elif missing_from == "lua":
-        lua.remove("pack")
+        lua.remove("select")
     else:
-        contract = contract - {"pack"}
+        contract = contract - {"select"}
     with pytest.raises(AssertionError):
         _assert_allowlists_agree(powershell, lua, contract)

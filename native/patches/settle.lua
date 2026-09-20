@@ -1,8 +1,9 @@
 -- Shared post-mutation settling. Both bh_action and upstream mutators use
 -- this exact queue: thirty transition frames, then ten consecutive ready
 -- frames. The dispatcher keeps busy/active_id asserted until the callback.
-local function module()
-  local settle = {}
+local settle = {}
+  local TRANSITION_FRAMES = 30
+  local STABLE_READY_FRAMES = 10
   local pending
   local original_update
   local running = false
@@ -13,12 +14,12 @@ local function module()
       original_update(dt)
       if not pending then return end
       pending.age = pending.age + 1
-      if pending.age > 30 and ready() then
+      if pending.age > TRANSITION_FRAMES and ready() then
         pending.stable = pending.stable + 1
       else
         pending.stable = 0
       end
-      if pending.stable >= 10 then
+      if pending.stable >= STABLE_READY_FRAMES then
         local callback = pending.callback
         pending = nil
         running = true
@@ -36,7 +37,4 @@ local function module()
   function settle.pending() return pending ~= nil end
   function settle.running() return running end
 
-  return settle
-end
-
-return module
+return settle

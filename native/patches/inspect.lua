@@ -1,7 +1,6 @@
 -- Private game observation and the small legality predicates shared by actions.
 -- No mutation or native endpoint registration belongs in this module.
-local function module()
-  local inspect = {}
+local inspect = {}
   local public
   local loaded_manifest
   local busy = function() return false end
@@ -115,7 +114,4 @@ local function module()
     return state
   end
 
-  return inspect
-end
-
-return module
+return inspect

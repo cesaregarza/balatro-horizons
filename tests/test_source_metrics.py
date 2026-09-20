@@ -22,7 +22,7 @@ def test_measure_counts_comments_and_nested_functions(tmp_path):
 
 def test_invalid_input_and_limit_fail(tmp_path, capsys):
     with pytest.raises(ValueError, match="INVALID_SOURCE_PATH"):
-        metrics.python_files([tmp_path / "missing.py"])
+        metrics.source_files([tmp_path / "missing.py"])
     source = tmp_path / "sample.py"
     source.write_text("def example():\n    return 1\n")
     assert metrics.main([str(source), "--max-function-lines", "1"]) == 1
@@ -32,3 +32,24 @@ def test_invalid_input_and_limit_fail(tmp_path, capsys):
     assert '"frozen_function_exceptions"' in capsys.readouterr().out
     with pytest.raises(SystemExit, match="2"):
         metrics.main([str(source), "--frozen-function-exception", str(tmp_path / "absent.py")])
+
+
+def test_lua_measure_counts_named_and_anonymous_functions(tmp_path):
+    source = tmp_path / "sample.lua"
+    source.write_text(
+        "-- first\nlocal function outer()\n  if true then\n"
+        "    return function() return 'end' end\n  end\nend\n"
+    )
+    row = metrics.measure(source)
+    assert row["lines"] == 6
+    assert row["comment_count"] == 1
+    assert row["longest_function"] == {"name": "outer", "lines": 5}
+    assert metrics.main([str(source), "--max-function-lines", "4"]) == 1
+
+
+def test_split_lua_modules_obey_the_function_limit():
+    files = [ROOT / "native/patches" / name for name in
+             ("horizons.lua", "dispatch.lua", "inspect.lua", "action.lua", "settle.lua")]
+    rows = [metrics.measure(path) for path in files]
+    assert all(row["lines"] < 400 for row in rows)
+    assert all(row["longest_function"]["lines"] <= 60 for row in rows)

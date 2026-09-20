@@ -244,13 +244,6 @@ class NativeHarness:
             {"id": request_id, "method": method, "params": payload}, recursive=True
         )
         self.globals.BB_DISPATCHER.dispatch(request)
-        # Preserve the original upstream-response characterization while the
-        # split implementation settles those writes on the fake frame clock.
-        upstream = {"start", "menu", "save", "load", "select", "skip", "cash_out",
-                    "next_round", "reroll", "rearrange", "pack"}
-        if (method in upstream and self.globals.auto_respond
-                and self.eval("response_count()") == before):
-            self.advance(40)
         if self.eval("response_count()") == before:
             return None
         return self.globals.responses[self.eval("response_count()")]

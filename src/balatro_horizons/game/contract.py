@@ -1,5 +1,7 @@
 """The game boundary consumed by the runner and native evaluator."""
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from typing import Any, Protocol, runtime_checkable
 
 from balatro_horizons.contracts import Action
@@ -9,19 +11,21 @@ from balatro_horizons.observations.projection import HandleIssuer
 class NativeFailure(RuntimeError):
     """Native execution was not established; it must not be scored as agent error."""
 
-    def __init__(self, code: str, *, name: str | None = None):
+    def __init__(self, code: str, *, name: str | None = None, raw_message: str | None = None):
         super().__init__(code)
         self.code = code
         self.name = name
+        self.raw_message = raw_message
 
 
 class NativeRejected(ValueError):
     """The native engine established that a public action was illegal."""
 
-    def __init__(self, code: str, *, name: str | None = None):
+    def __init__(self, code: str, *, name: str | None = None, raw_message: str | None = None):
         super().__init__(code)
         self.code = code
         self.name = name
+        self.raw_message = raw_message
 
 
 # This is the classification contract shared with the Lua dispatcher. Unknown
@@ -44,10 +48,17 @@ ERROR_NAMES = {
     **dict.fromkeys(HARNESS_FAULT_CODES, "HARNESS_FAULT"),
 }
 
+# Only these generic fallbacks and the enumerated Lua codes may enter public
+# terminal reasons. Raw endpoint messages remain private diagnostic evidence.
+PUBLIC_NATIVE_FALLBACKS = frozenset({
+    "NATIVE_ACTION_REJECTED", "NATIVE_PUBLIC_LEGALITY_MISMATCH",
+    "NATIVE_BRIDGE_FAILURE", "RPC_ENDPOINT_FAILURE",
+})
+
 RPC_METHODS = frozenset({
-    "health", "bh_inspect", "bh_action", "bh_request_status", "bh_rules",
+    "bh_inspect", "bh_action", "bh_request_status", "bh_rules",
     "bh_fixture", "start", "menu", "save", "load", "select", "skip",
-    "cash_out", "next_round", "reroll", "rearrange", "pack",
+    "cash_out", "next_round", "reroll", "rearrange",
 })
 
 
@@ -76,3 +87,7 @@ class EvaluatorSession(GameSession, Protocol):
     def fixture(self, case: str) -> dict[str, Any]: ...
     def rules(self) -> dict[str, Any]: ...
     def inspect_raw(self) -> dict[str, Any]: ...
+    def replay_request(self, method: str, params: dict, request_id: str) -> Any: ...
+    def intercept_rpc_for_calibration(
+        self, wrapper: Callable[[Callable[..., Any]], Callable[..., Any]]
+    ) -> AbstractContextManager[None]: ...

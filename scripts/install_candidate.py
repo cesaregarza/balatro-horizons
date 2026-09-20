@@ -13,6 +13,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+# Issue #16 owns migration of this installer default to Environment.runtime.
 OWNED_RUNTIME = Path('/mnt/d/BalatroHorizonsRuntime')
 
 

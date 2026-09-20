@@ -1,7 +1,6 @@
 """One in-flight native action, explicit agent operations, immutable evidence."""
 
 import json
-import re
 import threading
 import traceback
 import uuid
@@ -30,7 +29,12 @@ from balatro_horizons.evidence.provenance import (
     continuation_fingerprint,
     implementation_fingerprint,
 )
-from balatro_horizons.game.contract import NativeFailure, NativeRejected
+from balatro_horizons.game.contract import (
+    ERROR_NAMES,
+    PUBLIC_NATIVE_FALLBACKS,
+    NativeFailure,
+    NativeRejected,
+)
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 from balatro_horizons.storage.journal import digest
@@ -87,20 +91,22 @@ class Runner:
     @staticmethod
     def _native_code(error, fallback):
         code = getattr(error, "code", None)
-        return code if isinstance(code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", code) else fallback
+        return code if isinstance(code, str) and (
+            code in ERROR_NAMES or code in PUBLIC_NATIVE_FALLBACKS
+        ) else fallback
 
     def _record_native_error(self, error, phase):
         """Retain the Lua envelope privately without exposing its message in the journal."""
         name = getattr(error, "name", None)
-        self.store.private_json(
-            self.eid,
-            f"engine-error-{uuid.uuid4().hex}.json",
-            {
-                "phase": phase,
-                "code": self._native_code(error, "NATIVE_BRIDGE_FAILURE"),
-                "name": name if isinstance(name, str) and re.fullmatch(r"[A-Z_]{1,64}", name) else None,
-            },
-        )
+        record = {
+            "phase": phase,
+            "code": error.code if isinstance(getattr(error, "code", None), str) else None,
+            "name": name if isinstance(name, str) else None,
+        }
+        raw_message = getattr(error, "raw_message", None)
+        if isinstance(raw_message, str):
+            record["message"] = raw_message
+        self.store.private_json(self.eid, f"engine-error-{uuid.uuid4().hex}.json", record)
 
     def _provider(self, ctx, exchanges):
         body = self.policy.request(ctx, exchanges)

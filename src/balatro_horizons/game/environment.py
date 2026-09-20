@@ -20,6 +20,7 @@ from balatro_horizons.game.contract import NativeFailure
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_LAUNCH_HANDSHAKE_TIMEOUT_SECONDS = 45
 DEFAULT_HTTP_TIMEOUT_SECONDS = 90
+DEFAULT_RPC_RESPONSE_MARGIN_SECONDS = 5
 _WSL_RUNTIME = re.compile(r"^/mnt/(?P<drive>[A-Za-z])(?:/(?P<path>.*))?$")
 
 
@@ -55,13 +56,18 @@ class Environment(BaseModel):
     powershell: str = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
     port: int = Field(default=12346, ge=1024, le=65535)
 
-    # ``timeout_seconds`` remains for configuration compatibility.  New code
-    # uses the named values so handshake and HTTP budgets cannot be confused.
+    # ``timeout_seconds`` remains for configuration compatibility. The old
+    # control budget was 90+15=105 seconds; launch/stop now use 45 seconds.
+    # The old RPC reader used 90+5=95 seconds. Keep that five-second margin
+    # beyond PowerShell's 90-second HTTP timeout so bridge_error can arrive.
     timeout_seconds: int = Field(default=90, ge=1, le=300)
     launch_timeout_seconds: int = Field(
         default=DEFAULT_LAUNCH_HANDSHAKE_TIMEOUT_SECONDS, ge=1, le=300
     )
     http_timeout_seconds: int = Field(default=DEFAULT_HTTP_TIMEOUT_SECONDS, ge=1, le=300)
+    rpc_response_margin_seconds: int = Field(
+        default=DEFAULT_RPC_RESPONSE_MARGIN_SECONDS, ge=1, le=30
+    )
 
     @property
     def windows_runtime(self) -> str:

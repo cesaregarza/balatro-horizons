@@ -6,8 +6,10 @@
   environment, and sessions; preserve the scripted fake and move certification
   and source fingerprints to `evidence/`.
 - Error taxonomy: Lua infrastructure and harness faults are no longer scored
-  as agent illegality (spec §6.2). Specific Lua codes remain private evidence
-  and terminal reasons.
+  as agent illegality (spec §6.2). Only enumerated Lua codes appear as public
+  reasons; unrecognized endpoint text stays in private evidence.
+- A rejected request-ledger status with a missing or malformed response is now
+  infrastructure failure, not agent illegality; its outcome is unverified.
 - Unify native and upstream mutation settlement at 30 transitions plus 10
   consecutive ready frames. Prior native certificates require re-certification.
 
