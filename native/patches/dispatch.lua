@@ -63,6 +63,18 @@ local dispatch = {}
     return state.original_send(response)
   end
 
+  local function expire(state)
+    local id = state.active_id
+    if not id then return end
+    -- A timed-out mutation may have changed the game. Never turn it into a
+    -- committed or rejected result, even if it becomes ready later.
+    state.ledger[id] = {status='unknown', intent=state.ledger[id].intent}
+    persist_ledger(state)
+    state.active_id = nil
+    state.busy = false
+    respond_error(state.original_send, 'ACTION_STATUS_UNKNOWN')
+  end
+
   local function install_inspection(state)
     local inspect = state.context.inspect
     inspect.set_context({
@@ -71,7 +83,7 @@ local dispatch = {}
       settlement_visible=function() return state.context.native_settlement_visible and
         state.context.native_settlement_visible() or nil end,
     })
-    state.context.settle.install(inspect.ready)
+    state.context.settle.install(inspect.ready, function() expire(state) end)
   end
 
   local function register_endpoints(state)
