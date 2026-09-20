@@ -76,7 +76,7 @@ The current game boundary is under `src/balatro_horizons/game/`: the runner
 accepts public actions through its session contract, while state conversion,
 transport, and native evaluator operations remain separate. Certification and
 source fingerprints live under `src/balatro_horizons/evidence/`. See the
-[game-boundary map](docs/game-boundary.md). This cutover changes executable
+[native-audit boundary map](docs/native-audit.md#gametransport-hops-and-error-names). This cutover changes executable
 source and instrumentation, so prior native certificates do not certify it.
 
 ## Source checkout and private local files

@@ -50,6 +50,11 @@ The sanitized Lua `message` code and `name` are recorded only in private episode
 error evidence; the terminal reason carries the specific code. This taxonomy
 is an executable change. Existing native certificates do not authorize runs
 with this source/runtime fingerprint; desktop re-certification follows in #9.
+For repeatable Python size checks, run
+`scripts/source_metrics.py --max-file-lines 399 --max-function-lines 60 --frozen-function-exception src/balatro_horizons/game/fake.py src/balatro_horizons/game`.
+The exception is explicit because the byte-identical fake retains its
+pre-existing 78-line observation method; all new game functions remain below
+60 lines.
 
 ## Reorder phase regression — 2026-09-15
 
