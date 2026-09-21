@@ -6,6 +6,7 @@ from itertools import combinations
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.contracts import ActionEnvelope, Observation
+from balatro_horizons.harness.contract import Context
 
 
 def candidates(obs):
@@ -102,7 +103,10 @@ class Baseline:
         self.rng = random.Random(seed)
 
     def decide(self, ctx, exchanges):
-        obs = baseline_observation(ctx["observation"])
+        # Diagnostic transports can round-trip only the user-message portion.
+        obs = baseline_observation(
+            ctx.observation if isinstance(ctx, Context) else ctx.get("observation")
+        )
         choices = list(candidates(obs))
         if not choices:
             return {"kind": "abort", "reason": "NO_PUBLIC_LEGAL_ACTION_FOUND"}

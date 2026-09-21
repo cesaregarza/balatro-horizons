@@ -32,19 +32,19 @@ def encode(value, ctx):
 
 
 def canonical_messages(ctx, exchanges):
-    content = {"observation": ctx["observation"], "omitted_event_ids": ctx["omitted_event_ids"]}
+    content = {"observation": ctx.observation, "omitted_event_ids": ctx.omitted_event_ids}
     if "current_costs" in ctx:
         # Dynamic prices follow the observation, outside the stable developer/tool prefix.
-        content["current_costs"] = ctx["current_costs"]
+        content["current_costs"] = ctx.current_costs
     content.update(
-        run_notebook=ctx["run_notebook"],
-        permitted_tools=ctx["allowed_tools"],
-        helper_status=ctx["helper_status"],
-        working_memory=ctx["working_memory"],
-        notebook_maintenance=ctx["notebook_maintenance"],
+        run_notebook=ctx.run_notebook,
+        permitted_tools=ctx.allowed_tools,
+        helper_status=ctx.helper_status,
+        working_memory=ctx.working_memory,
+        notebook_maintenance=ctx.notebook_maintenance,
     )
     if "previous_action_outcome" in ctx:
-        content["previous_action_outcome"] = ctx["previous_action_outcome"]
+        content["previous_action_outcome"] = ctx.previous_action_outcome
     messages = [
         {
             "role": "user",
@@ -171,8 +171,8 @@ def tool_messages(ctx, exchanges, provider):
 def context_payload(ctx, exchanges, provider):
     """One serializer shared by budget planning and the actual provider request."""
     messages = tool_messages(ctx, exchanges, provider)
-    instructions = ctx["prompt"] + "\n\n" + ctx["rules_kernel"]
-    definitions = ctx["tools"]
+    instructions = ctx.prompt + "\n\n" + ctx.rules_kernel
+    definitions = ctx.tools
     if provider == "openai":
         # A stable developer block follows the fixed tool catalog. The explicit
         # write ends here: observations and retrieved pages are not cached.
@@ -246,7 +246,7 @@ class DirectProvider:
     def request(self, ctx, exchanges):
         settings = self.model.settings
         payload = context_payload(ctx, exchanges, self.model.provider)
-        self.available_tools = set(ctx["allowed_tools"])
+        self.available_tools = set(ctx.allowed_tools)
         self.last_tool_call = None
         self.last_provider_turn = None
         if self.model.provider == "openai":

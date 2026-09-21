@@ -5,12 +5,12 @@ from copy import deepcopy
 import pytest
 
 from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.frozen import freeze_protocol, restore_protocol
 from balatro_horizons.agents.outcomes import VERSION as ACTION_OUTCOME_VERSION
 from balatro_horizons.config import ROOT
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.evidence.certification import read_checkpoint, verify_checkpoint
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.freeze import freeze_protocol, restore_protocol
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.runner import Runner
 from balatro_horizons.storage.journal import digest
@@ -21,8 +21,8 @@ def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
 ):
     prompts = tmp_path / "source/configs/prompts"
     shutil.copytree(ROOT / "configs/prompts", prompts)
-    monkeypatch.setattr("balatro_horizons.agents.frozen.ROOT", prompts.parents[1])
-    monkeypatch.setattr("balatro_horizons.agents.protocol.ROOT", prompts.parents[1])
+    monkeypatch.setattr("balatro_horizons.harness.context.freeze.ROOT", prompts.parents[1])
+    monkeypatch.setattr("balatro_horizons.harness.context.build.ROOT", prompts.parents[1])
     path = prompts / "harness.txt"
     original = path.read_text()
 
@@ -56,11 +56,14 @@ def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
     result = Runner(store, config, FakeGame(), policy).run()
     assert result["reason"] == "AGENT_ABORT" and result["committed_actions"] == 1
     assert len(policy.contexts) == 4
-    assert all(ctx["prompt"] == original.strip() for ctx in policy.contexts)
+    from balatro_horizons.harness.context.render import render_prompt
+
+    rendered = render_prompt(original.encode()).decode()
+    assert all(ctx["prompt"] == rendered.strip() for ctx in policy.contexts)
     eid = result["episode_id"]
     checkpoint = read_checkpoint(store, eid, 0)
     bundle = restore_protocol(store, checkpoint)
-    assert bundle["prompt_utf8"] == original
+    assert bundle["prompt_utf8"] == rendered
     assert verify_checkpoint(store, config, eid, 0)["status"] == "passed"
     child, checkpoint, prefix = prepare_branch(store, config, eid, 0, "agent_continue")
     continuation = Policy()
@@ -68,7 +71,7 @@ def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
         eid=child, resume=checkpoint, history_prefix=prefix
     )
     assert branched["reason"] == "AGENT_ABORT"
-    assert all(ctx["prompt"] == original.strip() for ctx in continuation.contexts)
+    assert all(ctx["prompt"] == rendered.strip() for ctx in continuation.contexts)
     assert result["agent_protocol"]["hash"] == branched["agent_protocol"]["hash"]
     exported = episode_export(store, child)
     assert exported["agent_protocol"] == branched["agent_protocol"]

@@ -10,17 +10,9 @@ from test_harness_tools import config_for
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.agents.budget import reservation_usd
-from balatro_horizons.agents.focused import (
-    CARD_DEFAULTS,
-    COUNTER_DEFAULTS,
-    PAGE_BYTES,
-    encode,
-    text_page,
-)
-from balatro_horizons.agents.notebook import RunNotebook
-from balatro_horizons.agents.protocol import Operation, context, decision_context, helper
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import load_guide
+from balatro_horizons.agents.tool_interface import ACTION_MODELS
 from balatro_horizons.config import (
     CONTEXT_FRAMING_BYTES,
     CONTEXT_SETTINGS_BYTES,
@@ -29,10 +21,36 @@ from balatro_horizons.config import (
 )
 from balatro_horizons.contracts import Observation
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import (
+    HELPER_EXHAUSTED_MESSAGE,
+    context,
+    decision_context,
+)
+from balatro_horizons.harness.context.memory import RunNotebook
+from balatro_horizons.harness.context.present import (
+    CARD_DEFAULTS,
+    COUNTER_DEFAULTS,
+    PAGE_BYTES,
+    encode,
+    text_page,
+)
+from balatro_horizons.harness.contract import Operation
+from balatro_horizons.harness.helpers import helper
 
 
 def read(raw, obs, events=(), rules=None):
     return helper(Operation.validate_python(raw), events, rules or {}, obs)
+
+
+def test_exhausted_helper_allowance_agrees_with_allowed_tools_and_message():
+    observation = project(FakeGame().observe_private())
+    ctx = context(observation, helper_remaining=0)
+    assert ctx.helper_status["remaining"] == 0
+    assert ctx.helper_status["message"] == HELPER_EXHAUSTED_MESSAGE
+    assert set(ctx.allowed_tools) <= set(ACTION_MODELS) | {"abort_run"}
+    assert "select_blind" in ctx.allowed_tools
+    assert "inspect_state" not in ctx.allowed_tools
+    assert "set_run_note" not in ctx.allowed_tools
 
 
 def cache_model():

@@ -1,5 +1,6 @@
 """The policy boundary and the single surviving operation schema."""
 
+from dataclasses import MISSING, dataclass
 from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
 from pydantic import Field, TypeAdapter
@@ -93,12 +94,58 @@ OperationValue = (
 )
 Operation = TypeAdapter(Annotated[OperationValue, Field(discriminator="kind")])
 
-# The context remains a dictionary until #12. Its current public keys are:
-# prompt, rules_kernel, interface_version, tools, current_costs, observation,
-# omitted_event_ids, run_notebook, working_memory, previous_action_outcome,
-# allowed_tools, helper_status, notebook_maintenance, context_delivery,
-# context_bytes_upper_bound, and skill_catalog_delivery.
-Context = dict[str, Any]
+class _Missing:
+    def __deepcopy__(self, _memo):
+        return self
+
+
+_MISSING = _Missing()
+
+
+@dataclass(init=False, repr=False, eq=False)
+class Context(dict[str, Any]):
+    """Typed delivery fields with byte-compatible JSON mapping behavior."""
+
+    prompt: str
+    rules_kernel: str
+    interface_version: str
+    tools: list[dict[str, Any]]
+    current_costs: dict[str, Any]
+    observation: dict[str, Any]
+    omitted_event_ids: list[str]
+    run_notebook: dict[str, Any]
+    working_memory: dict[str, Any]
+    allowed_tools: list[str]
+    helper_status: dict[str, Any]
+    previous_action_outcome: Any = _MISSING
+    notebook_maintenance: Any = _MISSING
+    context_delivery: Any = _MISSING
+    context_bytes_upper_bound: Any = _MISSING
+    skill_catalog_delivery: Any = _MISSING
+
+    def __init__(self, **values: Any) -> None:
+        fields = type(self).__dataclass_fields__
+        required = {name for name, field in fields.items()
+                    if field.default is MISSING and field.default_factory is MISSING}
+        if unknown := values.keys() - fields.keys():
+            raise TypeError(f"unknown context fields: {sorted(unknown)}")
+        if missing := required - values.keys():
+            raise TypeError(f"missing context fields: {sorted(missing)}")
+        super().__init__((name, value) for name, value in values.items() if value is not _MISSING)
+
+    def __getattribute__(self, name: str) -> Any:
+        if name in type(self).__dataclass_fields__:
+            return dict.get(self, name, _MISSING)
+        return super().__getattribute__(name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in type(self).__dataclass_fields__:
+            if value is _MISSING:
+                self.pop(name, None)
+            else:
+                self[name] = value
+        else:
+            super().__setattr__(name, value)
 Exchanges = list[dict[str, Any]]
 RawOperation = dict[str, Any]
 

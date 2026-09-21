@@ -1,12 +1,21 @@
-"""Agent-authored notes: journal mutations are authoritative; snapshots are checked caches."""
+"""Agent-authored notes and public working history; journals remain authoritative."""
 
+import json
 from copy import deepcopy
 
-from balatro_horizons.config import MAX_MEMORY_CHARACTERS
+from balatro_horizons.config import (
+    MAX_MEMORY_CHARACTERS,
+    NOTEBOOK_KEY_MAX,
+    NOTEBOOK_KEY_MIN,
+    RETAINED_HELPER_RESULTS,
+    WORKING_MEMORY_BYTES,
+    WORKING_MEMORY_DECISIONS,
+    WORKING_MEMORY_HELPER_BYTES,
+)
 from balatro_horizons.storage.journal import digest
 
 VERSION = "run-notebook-v1"
-MAX_KEY_CHARACTERS = 64
+MAX_KEY_CHARACTERS = NOTEBOOK_KEY_MAX
 
 
 def notebook_tools(definitions, *, action_notes=False):
@@ -23,7 +32,7 @@ def notebook_tools(definitions, *, action_notes=False):
                     "anyOf": [{"type": "null"}, {
                         "type": "object", "additionalProperties": False,
                         "properties": {
-                            "key": {"type": "string", "minLength": 1,
+                            "key": {"type": "string", "minLength": NOTEBOOK_KEY_MIN,
                                     "maxLength": MAX_KEY_CHARACTERS},
                             "text": {"type": ["string", "null"],
                                      "maxLength": MAX_MEMORY_CHARACTERS},
@@ -32,7 +41,7 @@ def notebook_tools(definitions, *, action_notes=False):
                     "description": "One notebook edit saved BEFORE this action executes: null keeps notes unchanged; {key,text} sets a note; text:null deletes it. Write intentions or predictions, not unobserved success. Invalid edits reject the action too. No helper call is charged. The saved edit survives execution failure. On the next decision, previous_action_outcome pairs the recorded edit with observed results when retained; reconcile it then.",
                 }
                 schema["required"].append("note_update")
-    key = {"type": "string", "minLength": 1, "maxLength": MAX_KEY_CHARACTERS}
+    key = {"type": "string", "minLength": NOTEBOOK_KEY_MIN, "maxLength": MAX_KEY_CHARACTERS}
     return result + [
         tool("set_run_note", "Create or replace one agent-authored run note. Counts against the helper allowance; does not advance the game.",
              {"key": key, "text": {"type": "string", "maxLength": MAX_MEMORY_CHARACTERS}}),
@@ -52,7 +61,8 @@ def used_characters(entries):
 
 def valid_key(key):
     return (
-        isinstance(key, str) and 0 < len(key) <= MAX_KEY_CHARACTERS and bool(key.strip())
+        isinstance(key, str) and NOTEBOOK_KEY_MIN <= len(key) <= MAX_KEY_CHARACTERS
+        and bool(key.strip())
         and not any(ord(c) < 32 or ord(c) == 127 for c in key)
     )
 
@@ -125,3 +135,119 @@ def restore_notebook(snapshot, prefix, limit=MAX_MEMORY_CHARACTERS):
     if digest(snapshot) != digest(notebook.snapshot()):
         raise ValueError("RUN_NOTEBOOK_SNAPSHOT_MISMATCH")
     return notebook
+
+
+WORKING_MEMORY_VERSION = "working-memory-v2"
+
+
+def working_memory_policy():
+    return {"version": WORKING_MEMORY_VERSION, "max_decisions": WORKING_MEMORY_DECISIONS,
+            "max_bytes": WORKING_MEMORY_BYTES, "helpers_per_decision": RETAINED_HELPER_RESULTS,
+            "max_helper_bytes": WORKING_MEMORY_HELPER_BYTES}
+
+
+def size(value):
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
+
+
+class WorkingMemory:
+    """Fold public observations, actions, linked notebook edits and helper receipts."""
+
+    def __init__(self):
+        from balatro_horizons.agents.action_notes import ActionNoteLink
+
+        self.frames = []
+        self.omitted = 0
+        self.helpers = []
+        self.omitted_helpers = 0
+        self.observation = None
+        self.pending = None
+        self.action_notes = ActionNoteLink()
+
+    def observe(self, observation):
+        if self.pending is not None:
+            self.pending["observed_result"] = deepcopy(observation.get("last_action"))
+            self.frames.append(self.pending)
+            self.pending = None
+            self._prune()
+        self.observation = observation
+
+    def consume(self, event):
+        note_update = self.action_notes.consume(event)
+        kind, payload = event["type"], event["payload"]
+        if kind == "observation":
+            self.observe(payload)
+        elif kind == "helper_result":
+            operation = payload["operation"]
+            if operation.get("kind") in ("set_run_note", "delete_run_note"):
+                return
+            record = {"episode_id": event["episode_id"], "event_id": event["event_id"],
+                      "operation": deepcopy(operation), "result": deepcopy(payload["result"])}
+            if size(record) > WORKING_MEMORY_HELPER_BYTES:
+                self.omitted_helpers += 1
+                return
+            self.helpers.append(record)
+            if len(self.helpers) > RETAINED_HELPER_RESULTS:
+                self.helpers.pop(0)
+                self.omitted_helpers += 1
+        elif kind == "action_commit":
+            before = self.observation or {}
+            state = before.get("state", {})
+            self.pending = {
+                "episode_id": event["episode_id"], "decision_id": event["observation_id"],
+                "action_event_id": event["event_id"], "phase": before.get("phase"),
+                "progress": deepcopy(state.get("progress")),
+                "resources_before": deepcopy(state.get("resources")),
+                "action": deepcopy(payload["action"]),
+                "recorded_decision_note": payload.get("decision_note"),
+                "recorded_note_update": note_update,
+                "helpers": self.helpers, "omitted_helpers": self.omitted_helpers,
+            }
+            self.helpers, self.omitted_helpers = [], 0
+
+    def _prune(self):
+        while self.frames and (len(self.frames) > WORKING_MEMORY_DECISIONS
+                               or size(self.frames) > WORKING_MEMORY_BYTES):
+            self.frames.pop(0)
+            self.omitted += 1
+
+    def view(self):
+        return {**working_memory_policy(), "frames": deepcopy(self.frames),
+                "omitted_decisions": self.omitted,
+                "meaning": "Historical public records, not current state or verified agent conclusions."}
+
+
+def restore_working_memory(snapshot, prefix, observation):
+    memory = WorkingMemory()
+    for event in prefix:
+        memory.consume(event)
+    memory.observe(observation)
+    if digest(memory.view()) != digest(snapshot):
+        raise ValueError("WORKING_MEMORY_SNAPSHOT_MISMATCH")
+    return memory
+
+
+def trim_oldest(context):
+    memory = context.working_memory
+    if not memory or not memory["frames"]:
+        return False
+    memory["frames"].pop(0)
+    memory["omitted_decisions"] += 1
+    memory["request_pruned_decisions"] = memory.get("request_pruned_decisions", 0) + 1
+    return True
+
+
+def maintenance(context, loaded_results):
+    """Warn while retained information remains available to save."""
+    frames = context.working_memory["frames"]
+    imminent = frames[:1] if len(frames) >= WORKING_MEMORY_DECISIONS else []
+    context.notebook_maintenance = {
+        "oldest_decision_leaves_after_action": (
+            {k: imminent[0][k] for k in ("episode_id", "decision_id")} if imminent else None
+        ),
+        "next_helper_may_clear_older_results": loaded_results >= RETAINED_HELPER_RESULTS,
+        "message": (
+            "Preserve useful conclusions before acting or loading more information clears older context. "
+            "Update changed notes; unchanged notes need no write. note_update can accompany your action."
+        ),
+    }

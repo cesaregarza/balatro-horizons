@@ -1,10 +1,9 @@
 """Immutable interventions; only the original public prefix is inherited."""
 
-from balatro_horizons.agents.frozen import restore_protocol, validate_continuation
-from balatro_horizons.agents.notebook import restore_notebook
 from balatro_horizons.agents.skills import restore_knowledge
-from balatro_horizons.agents.working_memory import restore_working_memory
 from balatro_horizons.evidence.certification import require_checkpoint_certificate
+from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
+from balatro_horizons.harness.context.memory import restore_notebook, restore_working_memory
 
 
 def inherited_events(store, eid, seen=None):

@@ -8,10 +8,10 @@ import sys
 import pytest
 from test_boundary import project
 
-from balatro_horizons.agents.protocol import decision_context
 from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import ROOT, load_config
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import decision_context
 
 PRIVATE_SEED = "NEVER_EXPORT_THIS_SEED"
 

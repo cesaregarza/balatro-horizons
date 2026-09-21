@@ -14,9 +14,9 @@ from statistics import median
 
 from decision_summary import cell
 
-from balatro_horizons.agents.notebook import RunNotebook, used_characters
 from balatro_horizons.config import ROOT
 from balatro_horizons.evaluation.reports import scan
+from balatro_horizons.harness.context.memory import RunNotebook, used_characters
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.storage.journal import Store, atomic_json, locked
 

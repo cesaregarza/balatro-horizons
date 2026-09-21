@@ -9,9 +9,9 @@ from collections import Counter
 from datetime import datetime
 from decimal import Decimal
 
-from balatro_horizons.agents.frozen import FROZEN_INTERFACE
 from balatro_horizons.contracts import ActionEnvelope, Observation
 from balatro_horizons.evaluation.reports import scan
+from balatro_horizons.harness.context.freeze import FROZEN_INTERFACE
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.storage.journal import digest, locked
 

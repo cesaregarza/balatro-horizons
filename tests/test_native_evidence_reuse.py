@@ -28,7 +28,7 @@ def test_archived_full_fingerprint_matches_working_tree_identity():
 def test_harness_only_edits_change_full_identity_but_not_native_components():
     before = provenance.source_files(ROOT)
     after = deepcopy(before)
-    after['src/balatro_horizons/agents/notebook.py'] += b'\n# changed notebook policy\n'
+    after['src/balatro_horizons/harness/context/memory.py'] += b'\n# changed notebook policy\n'
     after['src/balatro_horizons/runner.py'] += b'\n# changed harness orchestration\n'
     assert provenance.fingerprint_sources(before) != provenance.fingerprint_sources(after)
     assert provenance.native_components(before) == provenance.native_components(after)
@@ -89,7 +89,7 @@ def migration(tmp_path, monkeypatch):
     (root/'reports/verification').mkdir(parents=True)
     evidence = {'implementation_hash': baseline_hash, 'environment_hash': old['environment_hash']}
     (root/'reports/verification/native-evidence.json').write_text(json.dumps(evidence))
-    notebook = candidate/'src/balatro_horizons/agents/notebook.py'
+    notebook = candidate/'src/balatro_horizons/harness/context/memory.py'
     notebook.write_bytes(notebook.read_bytes() + b'\n# tested harness update\n')
     report = tmp_path/'offline.json'
     report.write_text(json.dumps({'suite': 'check_offline', 'status': 'passed',
@@ -153,14 +153,14 @@ def test_native_gate_requires_both_native_identity_and_explicit_harness_acceptan
         with pytest.raises(NativeFailure, match='NATIVE_CAPABILITY_CERTIFICATE_MISMATCH'):
             certification.require_environment_certificate({'test': 'runtime'}, Environment())
     path.write_text(json.dumps(cert))
-    agent = candidate/'src/balatro_horizons/agents/notebook.py'
+    agent = candidate/'src/balatro_horizons/harness/context/memory.py'
     agent.write_bytes(agent.read_bytes() + b'\n# another unaccepted harness change\n')
     with pytest.raises(NativeFailure, match='NATIVE_CAPABILITY_CERTIFICATE_MISMATCH'):
         certification.require_environment_certificate({'test': 'runtime'}, Environment())
 
 
 def test_old_checkpoint_source_identity_still_fails_closed(migration, monkeypatch):
-    from balatro_horizons.agents.frozen import FROZEN_INTERFACE, restore_protocol
+    from balatro_horizons.harness.context.freeze import FROZEN_INTERFACE, restore_protocol
     from balatro_horizons.storage.journal import Store
 
     root, candidate, _, old = migration

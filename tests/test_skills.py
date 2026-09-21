@@ -11,12 +11,14 @@ from test_boundary import project
 from test_harness_tools import config_for
 
 from balatro_horizons.agents.baselines import Baseline, ScriptedPolicy
-from balatro_horizons.agents.protocol import Operation, context, decision_context, helper
 from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.agents.skills import load_guide, prepare_rules, read_guide, restore_knowledge
 from balatro_horizons.config import Config
 from balatro_horizons.evidence.certification import verify_checkpoint
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import context, decision_context
+from balatro_horizons.harness.contract import Operation
+from balatro_horizons.harness.helpers import helper
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner

@@ -6,11 +6,11 @@ import pytest
 from test_harness_memory import WorkingScript, annotated, note, play, public_event, select
 
 from balatro_horizons.agents.action_notes import ActionNoteLink
-from balatro_horizons.agents.notebook import RunNotebook
-from balatro_horizons.agents.protocol import decision_context
 from balatro_horizons.contracts import ActionEnvelope, Observation
 from balatro_horizons.evidence.certification import read_checkpoint
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.context.memory import RunNotebook
 from balatro_horizons.runner import Runner
 
 

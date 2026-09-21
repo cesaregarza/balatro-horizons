@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from balatro_horizons.agents.notebook import RunNotebook
 from balatro_horizons.config import ROOT
+from balatro_horizons.harness.context.memory import RunNotebook
 
 
 @pytest.fixture

@@ -10,10 +10,10 @@ from pydantic import ValidationError
 from test_boundary import project
 
 from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.protocol import context
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
 from balatro_horizons.config import ROOT, Limits, ModelConfig, load_config
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import context
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
 

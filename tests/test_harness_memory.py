@@ -10,21 +10,24 @@ from test_boundary import project
 from test_harness_tools import config_for
 from test_provider_continuations import model
 
-from balatro_horizons.agents.focused import context_bound
-from balatro_horizons.agents.notebook import RunNotebook, fold_notebook, restore_notebook
-from balatro_horizons.agents.protocol import ActionResult, decision_context, helper
 from balatro_horizons.agents.providers import DirectProvider, context_payload
 from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
-from balatro_horizons.agents.working_memory import (
-    WorkingMemory,
-    restore_working_memory,
-    size,
-)
 from balatro_horizons.config import WORKING_MEMORY_BYTES, WORKING_MEMORY_DECISIONS
 from balatro_horizons.contracts import Observation
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.evidence.certification import read_checkpoint, verify_checkpoint
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import context_bound, decision_context
+from balatro_horizons.harness.context.memory import (
+    RunNotebook,
+    WorkingMemory,
+    fold_notebook,
+    restore_notebook,
+    restore_working_memory,
+    size,
+)
+from balatro_horizons.harness.contract import ActionResult
+from balatro_horizons.harness.helpers import helper
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner

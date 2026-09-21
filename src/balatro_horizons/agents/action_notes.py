@@ -1,7 +1,7 @@
 """Link an action-attached edit to its saved mutation and committed action."""
 
-from balatro_horizons.agents.notebook import VERSION, valid_key
 from balatro_horizons.contracts import ActionEnvelope
+from balatro_horizons.harness.context.memory import VERSION, valid_key
 
 
 class ActionNoteLink:
