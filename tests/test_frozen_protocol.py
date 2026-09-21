@@ -59,6 +59,7 @@ def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
     from balatro_horizons.harness.context.render import render_prompt
 
     rendered = render_prompt(original.encode()).decode()
+    # test_prompt_constants independently pins the renderer's output against config.
     assert all(ctx["prompt"] == rendered.strip() for ctx in policy.contexts)
     eid = result["episode_id"]
     checkpoint = read_checkpoint(store, eid, 0)

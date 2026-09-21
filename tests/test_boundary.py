@@ -30,7 +30,7 @@ def test_AT01_allowlist():
     raw["visible"]["seed"] = "PRIVATE_SEED_SENTINEL"
     for card in raw["visible"]["hand"]:
         card["rng_state"] = "PRIVATE_RNG_SENTINEL"
-    value = json.dumps(context(project(raw)))
+    value = json.dumps(dict(context(project(raw))))
     assert "PRIVATE_" not in value and "forbidden" not in value and "card-internal" not in value
 
 

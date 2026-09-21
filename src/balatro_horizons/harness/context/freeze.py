@@ -4,12 +4,18 @@ import hashlib
 import json
 from copy import deepcopy
 
+from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.instructions import load_prompt
 from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, RETAINED_HELPER_RESULTS, ROOT
 from balatro_horizons.evidence.provenance import implementation_fingerprint
 from balatro_horizons.harness.context.memory import working_memory_policy
 from balatro_horizons.harness.context.present import PAGE_BYTES
-from balatro_horizons.harness.context.render import render_prompt, rules_kernel, tool_catalog
+from balatro_horizons.harness.context.render import (
+    render_prompt,
+    rules_kernel,
+    tool_catalog,
+    validate_prompt_template,
+)
 from balatro_horizons.harness.contract import NamedPolicy, Policy
 from balatro_horizons.storage.journal import digest
 
@@ -22,7 +28,12 @@ def episode_limits(config):
 
 
 def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
-    raw = render_prompt(load_prompt(ROOT) if prompt_bytes is None else prompt_bytes)
+    template = load_prompt(ROOT) if prompt_bytes is None else prompt_bytes
+    try:
+        validate_prompt_template(template.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise HarnessFailure("PERSISTENT_INSTRUCTIONS_INVALID", stage="protocol_freeze") from None
+    raw = render_prompt(template)
     skills = rules.get("skills", [])
     from balatro_horizons.agents.outcomes import VERSION as outcome_version
     tools = tool_catalog(skills)

@@ -1,6 +1,7 @@
 """The policy boundary and the single surviving operation schema."""
 
-from dataclasses import MISSING, dataclass
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass, field, fields
 from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
 from pydantic import Field, TypeAdapter
@@ -94,17 +95,10 @@ OperationValue = (
 )
 Operation = TypeAdapter(Annotated[OperationValue, Field(discriminator="kind")])
 
-class _Missing:
-    def __deepcopy__(self, _memo):
-        return self
 
-
-_MISSING = _Missing()
-
-
-@dataclass(init=False, repr=False, eq=False)
-class Context(dict[str, Any]):
-    """Typed delivery fields with byte-compatible JSON mapping behavior."""
+@dataclass(kw_only=True)
+class Context(Mapping[str, Any]):
+    """Typed delivery fields; the mapping view contains only delivered fields."""
 
     prompt: str
     rules_kernel: str
@@ -115,37 +109,36 @@ class Context(dict[str, Any]):
     omitted_event_ids: list[str]
     run_notebook: dict[str, Any]
     working_memory: dict[str, Any]
+    previous_action_outcome: dict[str, Any] | None = None
     allowed_tools: list[str]
     helper_status: dict[str, Any]
-    previous_action_outcome: Any = _MISSING
-    notebook_maintenance: Any = _MISSING
-    context_delivery: Any = _MISSING
-    context_bytes_upper_bound: Any = _MISSING
-    skill_catalog_delivery: Any = _MISSING
+    notebook_maintenance: dict[str, Any] | None = None
+    context_delivery: dict[str, Any] | None = None
+    context_bytes_upper_bound: int | None = None
+    skill_catalog_delivery: str | None = None
+    # A current outcome is delivered even when it is null; older frozen bundles omit it.
+    deliver_previous_action_outcome: bool = field(default=False, repr=False, compare=False)
 
-    def __init__(self, **values: Any) -> None:
-        fields = type(self).__dataclass_fields__
-        required = {name for name, field in fields.items()
-                    if field.default is MISSING and field.default_factory is MISSING}
-        if unknown := values.keys() - fields.keys():
-            raise TypeError(f"unknown context fields: {sorted(unknown)}")
-        if missing := required - values.keys():
-            raise TypeError(f"missing context fields: {sorted(missing)}")
-        super().__init__((name, value) for name, value in values.items() if value is not _MISSING)
+    def __iter__(self) -> Iterator[str]:
+        for item in fields(self):
+            if item.name == "deliver_previous_action_outcome":
+                continue
+            if item.name == "previous_action_outcome":
+                if not self.deliver_previous_action_outcome:
+                    continue
+            elif item.default is None and getattr(self, item.name) is None:
+                continue
+            yield item.name
 
-    def __getattribute__(self, name: str) -> Any:
-        if name in type(self).__dataclass_fields__:
-            return dict.get(self, name, _MISSING)
-        return super().__getattribute__(name)
+    def __getitem__(self, key: str) -> Any:
+        if key not in tuple(self):
+            raise KeyError(key)
+        return getattr(self, key)
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in type(self).__dataclass_fields__:
-            if value is _MISSING:
-                self.pop(name, None)
-            else:
-                self[name] = value
-        else:
-            super().__setattr__(name, value)
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
+
+
 Exchanges = list[dict[str, Any]]
 RawOperation = dict[str, Any]
 

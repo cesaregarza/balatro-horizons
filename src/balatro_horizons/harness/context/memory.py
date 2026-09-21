@@ -151,7 +151,11 @@ def size(value):
 
 
 class WorkingMemory:
-    """Fold public observations, actions, linked notebook edits and helper receipts."""
+    """Fold public observations, actions, linked notebook edits and helper receipts.
+
+    The journal remains authoritative. Frames contain historical handles/prices,
+    never executable tool turns, and are explicitly labelled as past information.
+    """
 
     def __init__(self):
         from balatro_horizons.agents.action_notes import ActionNoteLink
@@ -179,6 +183,7 @@ class WorkingMemory:
             self.observe(payload)
         elif kind == "helper_result":
             operation = payload["operation"]
+            # Note acknowledgments are redundant with the always-delivered notebook.
             if operation.get("kind") in ("set_run_note", "delete_run_note"):
                 return
             record = {"episode_id": event["episode_id"], "event_id": event["event_id"],
@@ -221,6 +226,7 @@ def restore_working_memory(snapshot, prefix, observation):
     memory = WorkingMemory()
     for event in prefix:
         memory.consume(event)
+    # Branch prefixes end immediately before their boundary observation.
     memory.observe(observation)
     if digest(memory.view()) != digest(snapshot):
         raise ValueError("WORKING_MEMORY_SNAPSHOT_MISMATCH")

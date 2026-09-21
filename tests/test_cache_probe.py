@@ -71,7 +71,7 @@ def source(store, config, *, leaked_seed=False):
             store.append(
                 eid,
                 "agent_context",
-                {"context": context, "exchanges": delivered},
+                {"context": dict(context), "exchanges": delivered},
                 observation_id=index,
             )
             store.append(

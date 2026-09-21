@@ -1,6 +1,7 @@
 """Public context compression, bounded retrieval and provider parity; no live APIs."""
 
 import json
+from collections.abc import Mapping
 from copy import deepcopy
 
 import pytest
@@ -40,6 +41,18 @@ from balatro_horizons.harness.helpers import helper
 
 def read(raw, obs, events=(), rules=None):
     return helper(Operation.validate_python(raw), events, rules or {}, obs)
+
+
+def test_context_is_explicit_mapping_with_source_order_and_nullable_outcome():
+    ctx = context(project(FakeGame().observe_private()))
+    assert isinstance(ctx, Mapping) and not isinstance(ctx, dict)
+    assert ctx.previous_action_outcome is None
+    assert dict(ctx)["previous_action_outcome"] is None
+    keys = list(ctx)
+    assert keys.index("working_memory") + 1 == keys.index("previous_action_outcome")
+    assert keys.index("previous_action_outcome") + 1 == keys.index("allowed_tools")
+    assert keys.index("allowed_tools") + 1 == keys.index("helper_status")
+    assert "skill_catalog_delivery" not in ctx
 
 
 def test_exhausted_helper_allowance_agrees_with_allowed_tools_and_message():

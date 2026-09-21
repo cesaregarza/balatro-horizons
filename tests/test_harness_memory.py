@@ -516,7 +516,7 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
     )
     assert view["frames"][0]["recorded_note_update"]["text"] == "Keep this conclusion"
     assert "FUTURE_PARENT" not in json.dumps(view)
-    assert "LATER_PARENT" not in json.dumps(child_policy.contexts[0])
+    assert "LATER_PARENT" not in json.dumps(dict(child_policy.contexts[0]))
     assert verify_checkpoint(store, config, child, 1)["status"] == "passed"
     grandchild, snapshot, ancestors = prepare_branch(store, config, child, 1, "agent_continue")
     grand = WorkingScript({"kind": "action_result", "decision_id": 0})
@@ -526,7 +526,7 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
         "plan": "Keep this conclusion"
     }
     assert grand.contexts[0]["run_notebook"]["revision"] == snapshot["run_notebook"]["revision"]
-    assert "FUTURE_CHILD" not in json.dumps(grand.contexts[0])
+    assert "FUTURE_CHILD" not in json.dumps(dict(grand.contexts[0]))
     assert grand.exchanges[1][-1]["result"]["references"]["action"]["episode_id"] == root
     corrupt = deepcopy(snapshot["working_memory"])
     corrupt["frames"][0]["helpers"][0]["result"] = {"result": "999"}

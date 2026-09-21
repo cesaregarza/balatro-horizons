@@ -63,7 +63,7 @@ def test_committed_action_ends_provider_continuation_once(store):
             if ctx["observation"]["observation_id"] == 1:
                 assert self.last_provider_turn is None
                 assert self.last_tool_call is None
-            return {"context": ctx, "exchanges": exchanges}
+            return {"context": dict(ctx), "exchanges": exchanges}
 
         def check_input(self, body):
             return None
