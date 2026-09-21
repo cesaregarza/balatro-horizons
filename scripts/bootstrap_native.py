@@ -13,7 +13,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from native_patches import patch_rearrange
+from balatro_horizons.game.patches import patch_rearrange
 
 ROOT = Path(__file__).resolve().parents[1]
 BOT = "e7c6db8a9ad88318f6e4128eefd6e61aafc94885"

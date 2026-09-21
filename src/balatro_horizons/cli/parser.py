@@ -14,6 +14,7 @@ def build_parser():
     add_review_commands(sub)
     add_evidence_commands(sub)
     add_data_commands(sub)
+    add_summarize_command(sub)
     return parser
 
 
@@ -84,6 +85,14 @@ def add_data_commands(sub):
     parser.add_argument("--action-file", type=Path)
     parser = sub.add_parser("native")
     parser.add_argument("operation", choices=["launch", "stop", "status"])
+
+
+def add_summarize_command(sub):
+    parser = sub.add_parser("summarize")
+    parser.add_argument("--episode-id", required=True)
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--markdown-output", type=Path)
+    parser.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS)
 
 
 def add_evidence_commands(sub):

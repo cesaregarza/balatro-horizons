@@ -1,26 +1,140 @@
 # Changelog
 
-## Dashboard cutover (issue #15)
+## 2026-09-21 — Documentation consolidation (#17; `0140954`)
 
-- Split the dashboard into a typed client, screen components, an opt-in
-  workbench, and Python gateway route/factory modules.
-- Add server-owned decision exports, shared action descriptors, loopback bind
-  protection, flag-off 404 behavior, and budget continuation admission.
-- Place DevTrace under Decision Explorer and preserve the existing accessible
-  browser test labels and review flow.
+- Consolidated the README, architecture, game-interface, harness, dashboard,
+  and evidence guides; historical records now live here newest-first.
+- Deleted the 19 retired loose docs (`cache-diagnostics`, `cache-fix`,
+  `campaign-budget-fix`, `current-costs`, `dashboard-performance-and-modifiers`,
+  `decision-summaries`, `defaults-refactor`, `dev-inspector`,
+  `frozen-agent-protocol`, `harness-efficiency-audit`, `harness-reliability`,
+  `harness-skills`, `implementation-handoff`, `input-reconciliation`,
+  `live-decision-explorer`, `native-audit`, `native-mod-feasibility`,
+  `public-information-v1.1`, and `release-2026-09-16`); net docs delta is
+  **-2,089 lines** (425 added, 2,514 deleted).
+- Preserved the contract, Balatro guide, third-party notice, and research
+  reconciliation/return handoff files byte-for-byte. The observer UX proposal
+  remains parked and was not silently adopted or dropped.
+- Carried forward only Part B4 (UI-equivalent hand preview) and B5 (context,
+  memory, and note experiments) from the implementation handoff; B1–B3 and B6
+  are implemented or shipped. The script/source/test collapse is recorded below.
 
-## Game boundary cutover (issue #8)
+## 2026-09-21 — Script collapse (#17; implementation commit recorded below)
 
-- Split the native adapter into `game/` contracts, state, actions, transport,
-  environment, and sessions; preserve the scripted fake and move certification
-  and source fingerprints to `evidence/`.
-- Error taxonomy: Lua infrastructure and harness faults are no longer scored
-  as agent illegality (spec §6.2). Only enumerated Lua codes appear as public
-  reasons; unrecognized endpoint text stays in private evidence.
-- A rejected request-ledger status with a missing or malformed response is now
-  infrastructure failure, not agent illegality; its outcome is unverified.
-- Unify native and upstream mutation settlement at 30 transitions plus 10
-  consecutive ready frames. Prior native certificates require re-certification.
+- `probe_prompt_cache.py` (introduced 2026-09-15, `f85b348`) asked whether a
+  bounded API-only probe demonstrated reusable prompt input; recorded traces,
+  not a one-shot live probe, remain the accepted evidence.
+- `audit_cache_layout.py` (2026-09-15, `f85b348`) asked whether recorded public
+  requests shared a stable cache prefix; the historical audit established the
+  comparison method, now documented in the harness guide.
+- `audit_transcript_efficiency.py` (2026-09-15, `f85b348`) asked where verified
+  public transcripts spent tokens and bytes; the answer was to improve
+  presentation and measure caching separately, not enlarge the prompt.
+- `inspect_game.py` (2026-09-15, `f85b348`) asked which selected proprietary
+  source lines supported native-interface diagnosis; source fingerprints and
+  the typed game boundary now carry the durable result without extracted files.
+- `verify_cost_evidence.py` (2026-09-16, `f66a533`) asked whether completed
+  native public journals persisted costs and reconstructable receipts; the
+  public cost and transaction contracts now own those invariants.
+- `verify_gated_run.py` (2026-09-15, `f85b348`) asked whether ordinary certified
+  startup could finish with calibration disabled and no provider spend; the
+  recorded answer was yes for its pinned configuration, not a general native
+  certification claim.
+- `audit_run_notebook.py` (2026-09-18, `b51c0be`) asked whether persistent notes
+  were actually delivered and exposed; the append-only journal and review
+  service remain the authoritative record.
+- `source_metrics.py` (2026-09-20, `21f7486`) asked for reproducible Python/Lua
+  size and function metrics during the restructure; the bounded review was
+  completed and the one-shot reporter has no runtime consumer.
+- Moved `decision_summary.py` and `summarize_run.py` into the `bh summarize`
+  package command and moved `native_patches.py` to `game/patches.py`.
+- Four load-bearing operational exceptions remain separate:
+  `configure_workbench_session.py`, `diagnose_native_startup.py`,
+  `install_candidate.py`, and `verify_browser_native.mjs`.
+
+## 2026-09-21 — Native evidence pipeline (`fd316c1`)
+
+- Moved collection/certification responsibilities behind `EvaluatorSession`,
+  preserved public/private evidence separation, and retained explicit reuse
+  requirements. Native execution and paid-provider verification remain operator
+  work, not documentation acceptance.
+
+## 2026-09-21 — Dashboard and game boundaries (`b6a3f6e`, `21f7486`)
+
+- The dashboard split keeps exploration, settings, batches, reports, and
+  retrospective annotations available by default; staged review, branches,
+  takeover, verification, and continuation remain workbench-only.
+- The game boundary uses typed sessions, public action contracts, private raw
+  evidence, and explicit native settlement/error taxonomy. Previous native
+  certificates require matching source and environment fingerprints.
+
+## 2026-09-21 — Input reconciliation and native feasibility (`fd316c1`)
+
+- Reconciled public-information, settlement, and source-fingerprint findings;
+  the parked native-mod feasibility record remains a research constraint, not
+  an activation claim.
+
+## 2026-09-18 — Harness interface v7 (`aad111d`)
+
+- v7 became the sole frozen harness interface. Prompt, guide, skills, provider
+  capability, memory policy, and delivered limits are captured per episode;
+  retired generations remain in the historical section below.
+
+## 2026-09-18 — Defaults refactor and cache diagnostics (`b859d26`)
+
+- Shared harness defaults now have one Python owner, with preset overrides and
+  explicit token/byte/cost distinctions. Cache diagnostics remain measured
+  evidence and do not authorize a paid probe.
+
+## 2026-09-16 — Release handoff (`31c0822`)
+
+- The release record covers native action/replay/branch evidence, provider
+  smoke, source/runtime fingerprints, and outstanding validation limits.
+
+## 2026-09-16 — Implementation handoff (`2ab1730`)
+
+- Part A defined durable campaign funding stops, model-specific reservations,
+  episode-versus-campaign outcomes, rerun/crash recovery, and actual export
+  coverage. The carried-forward Part B backlog is recorded in the 2026-09-21
+  documentation entry above; B4 and B5 remain hypotheses, not shipped claims.
+
+## 2026-09-16 — Campaign budget fix (`2ab1730`)
+
+- Campaign funding interruption remains unresolved scheduling state; an
+  episode-only cap remains a valid bounded non-win. Costs and unresolved slots
+  stay visible in reports and public exports.
+
+## 2026-09-16 — Dashboard performance and modifiers (`46e8096`)
+
+- Status reads use cache invalidation at the run boundary, while card modifiers
+  retain distinct visual treatment and current public prices.
+
+## 2026-09-16 — Harness reliability (`2e5708f`)
+
+- Settlement visibility, omitted-row behavior, absent-interest-as-zero, and
+  the `ROUND_EVAL` close event remain explicit evidence invariants.
+
+## 2026-09-16 — Harness efficiency audit (`f5ff6e3`)
+
+- **Question:** what measured input or budget friction should be addressed before
+  another paid run? **Method:** audit three recorded journal/provider traces,
+  usage categories, serialized component sizes, helper deliveries, and costs
+  without reading seeds or opaque provider content. **Answer:** prioritize
+  clearer offered-tag versus acquired-tag and monetary-headroom presentation;
+  measure stable-prefix/cache changes separately. The traces do not establish
+  that a larger prompt, more reasoning, or the harness caused an outcome.
+
+## 2026-09-15 — Cache fix (`f85b348`)
+
+- Prompt-cache handling remains bounded by provider usage categories and
+  conservative reservations; old traces are not relabeled as savings evidence.
+
+## 2026-09-14 — Research reconciliation and return handoff (`94c6746`, `f85b348`)
+
+- The full operator decision/reconciliation and return handoff remain verbatim
+  at `docs/research/reconciliation-2026-09-14.md` and
+  `docs/research/return-handoff-2026-09-14.md`. Read both before changing
+  research measures or annotation/navigation semantics.
 
 ## Harness interface history
 

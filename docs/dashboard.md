@@ -1,30 +1,44 @@
-# Dashboard architecture
+# Dashboard
 
-The browser is a thin operator client. `web/src/api/client.ts` owns the
-typed HTTP boundary, `screens/` owns top-level screens, and `workbench/` owns
-the opt-in staged review surface. `App.tsx` only coordinates navigation,
-tokens, polling, and screen state.
+The dashboard is a typed browser client over a Python gateway. `web/src/api`
+owns the HTTP boundary, screen components own views, and `App.tsx` only
+coordinates navigation, tokens, polling, and screen state. The server owns
+privacy projection and decision export; the client only triggers a download.
 
-The Python gateway is assembled from `api/app.py`, shared middleware, and
-route modules. Review and intervention routes are registered only when
-`Config.workbench_enabled` is true. The factory defaults that flag to false;
-the `bh review` dashboard command explicitly opts into the workbench. A
-default-off factory therefore returns 404 for review, branch, annotation,
-batch, and settings mutation routes while retaining bootstrap, run-library,
-run, and operator-status routes.
+## Surface boundary
 
-Decision exports are projected on the server. The browser requests JSON or
-JSONL from `/api/review/export/{format}` and never assembles an export from
-detail records. The shared action descriptor table at
-`web/src/actionDescriptors.json` feeds both the Python summary and TypeScript
-presentation labels.
+The factory defaults `Config.workbench_enabled` to false. The ordinary
+dashboard always mounts the run library, live status, decision exploration,
+cost/model-budget settings, batches, reports, and cheap append-only
+retrospective annotations under the `/api/explore...` and core namespaces.
+These surfaces remain usable when the flag is off.
 
-DevTrace is reached from Decision Explorer's development toggle. Budget
-continuation is an operator-only workbench action and creates an immutable
-assisted child after the parent journal, checkpoint, spending ledger, and
-implementation fingerprint have been revalidated.
+The workbench owns staged reveal/review, branching and comparison, human
+takeover, verification, and budget continuation. Its `/api/review*`,
+`/api/branches*`, `/api/operator/human`, and `/api/verify` routes are absent and
+return 404 when the flag is off. Workbench controls and screens are hidden in
+that mode; exploration and annotation are not. DevTrace is a development
+surface under Decision Explorer, not a separate navigation root.
 
-All native game and harness modules remain outside the gateway's route
-projection. The loopback bind guard must be explicitly overridden before an
-operator can bind remotely; a public tailnet origin still requires HTTPS and a
-`.ts.net` hostname.
+## Runtime and safety
+
+The gateway is assembled from route modules, shared middleware, and a factory.
+The default bind is loopback. Remote binding requires an explicit override,
+HTTPS, and a trusted `.ts.net` origin. Credentials belong in the backend
+environment, never browser settings. Private run directories, raw observations,
+seeds, saves, provider requests, and reviewer identity are not browser data.
+
+The server projects exact public schemas for JSON and JSONL exports and scans
+them before writing. A browser cannot reconstruct an export from detail records.
+Action labels come from the shared descriptor table used by API summaries and
+TypeScript presentation. Route names and accessible labels are versioned UI
+contracts; changes require matching browser coverage.
+
+## Review and continuation
+
+The workbench records exposure before a reveal, keeps cursor movement explicit,
+and appends annotation revisions. A budget continuation is admitted only for a
+terminal parent at cap exhaustion after checkpoint, certificate, protocol,
+knowledge, implementation, and spending-ledger checks. Its combined cap must
+increase; the parent remains immutable and the assisted child is not autonomous
+evidence. Loopback and route isolation apply equally to operator controls.

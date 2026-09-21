@@ -6,6 +6,20 @@
 - Do not claim checkpoint fidelity from a save call alone. Disable live branches until the pinned native environment has a passing phase-specific certificate.
 - Preserve original run journals and annotation revisions; use append-only records.
 
+## Documentation and change rules
+
+- Do not add dated Markdown files under `docs/`; put historical decisions in the
+  newest-first `CHANGELOG.md`.
+- Every new script needs a `bh` subcommand home. Code exercised through
+  `importlib` or `runpy` belongs in `src/` and is tested there.
+- Keep one harness interface. Do not add a second `harness_interface` or version
+  switch; protocol changes are commits with frozen identities.
+- Do not add an export, feature flag, helper, or seam without naming its
+  consuming surface in the same pull request.
+- Every pull request names deletions and reports net lines changed.
+- Write for a human reader: keep functions to one screen and comment decisions,
+  not mechanics.
+
 - Ordinary native regression cases must reuse an owned game process and start a
   new game with menu/start. Relaunch only for startup/isolation, restoration, or
   explicit crash-recovery checks. Use the suite's `--plan` output to report the
