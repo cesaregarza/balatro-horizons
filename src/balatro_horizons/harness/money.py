@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from balatro_horizons.storage.journal import atomic_json, locked
+from balatro_horizons.storage.journal import atomic_json, identifier, locked, now
 
 # Keep refusal classification in one place.  ``campaign`` identifies reasons
 # that can create an immutable scheduling stop; ``outcome`` is the public
@@ -17,14 +17,6 @@ REFUSAL_OUTCOMES = {
     "EPISODE_COST_CAP": {"outcome": "BUDGET_EXHAUSTED", "campaign": False},
     "CAMPAIGN_COST_CAP": {"outcome": "CAMPAIGN_INTERRUPTED", "campaign": True},
     "EPISODE_AND_CAMPAIGN_COST_CAP": {"outcome": "BUDGET_EXHAUSTED", "campaign": True},
-    "BUDGET_EXTENSION_PARENT_CHANGED": {
-        "outcome": "BUDGET_EXTENSION_REFUSED",
-        "campaign": False,
-    },
-    "PARENT_NOT_COST_EXHAUSTED": {
-        "outcome": "BUDGET_EXTENSION_REFUSED",
-        "campaign": False,
-    },
 }
 
 
@@ -76,7 +68,7 @@ class Spending:
 
     @classmethod
     def episode_only(cls, path, cap):
-        """Construct the explicit ledger used by a single episode."""
+        """Construct a standalone ledger whose cap is the campaign ceiling."""
         return cls(path, cap)
 
     def _entries(self):
@@ -189,13 +181,16 @@ class SchedulingStop(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
     batch_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     recorded_at: str
-    reason: str
+    reason: Literal[
+        "CAMPAIGN_COST_CAP",
+        "EPISODE_AND_CAMPAIGN_COST_CAP",
+    ]
     stage: Literal["preflight", "episode"]
     slot_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     agent: str
     cost_context: PublicCostContext
     episode_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
-    outcome: str | None = None
+    outcome: Literal["CAMPAIGN_INTERRUPTED", "BUDGET_EXHAUSTED"] | None = None
     terminal: TerminalReference | None = None
     recovered: bool = False
 
@@ -205,7 +200,7 @@ class SchedulingStop(BaseModel):
         if refusal is None:
             raise ValueError("UNKNOWN_REFUSAL_REASON")
         if self.stage == "preflight":
-            if not refusal["campaign"] or self.episode_id is not None or self.outcome is not None:
+            if self.reason != "CAMPAIGN_COST_CAP" or self.episode_id is not None or self.outcome is not None:
                 raise ValueError("INVALID_PREFLIGHT_STOP")
             if self.terminal is not None or self.recovered:
                 raise ValueError("INVALID_PREFLIGHT_STOP")
@@ -243,8 +238,6 @@ def _is_batch_attempt(manifest, plan, slots):
 
 
 def _attempt(store, path, manifest):
-    from balatro_horizons.storage.journal import identifier
-
     eid = identifier(path.parent.name)
     with locked(path.parent / ".writer.lock"):
         terminal = next((event for event in reversed(store.events(eid)) if event["type"] == "terminal"), None)
@@ -275,8 +268,6 @@ def _read_stop(path, plan):
 
 
 def _stop_path(store, plan):
-    from balatro_horizons.storage.journal import identifier
-
     return store.root / "batches" / identifier(plan["batch_id"])
 
 
@@ -303,8 +294,6 @@ def record_stop(store, plan, **fields):
 
 
 def _now():
-    from balatro_horizons.storage.journal import now
-
     return now()
 
 

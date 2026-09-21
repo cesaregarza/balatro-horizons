@@ -196,6 +196,7 @@ class DecisionRuntimeMixin(ProviderRuntimeMixin):
                 result["error"], **{key: value for key, value in result.items() if key != "error"}
             )
         # Validate BOTH first, then journal the note before native execution.
+        # A failed native action must never roll back an accepted durable edit.
         self.log("run_note", mutation, actor="agent", observation_id=observation.observation_id)
         self.notebook.apply(mutation)
 
@@ -229,6 +230,7 @@ class DecisionRuntimeMixin(ProviderRuntimeMixin):
     def _fit_guide_result(self, result):
         from balatro_horizons.harness.context.present import PAGE_BYTES
 
+        # Keep each returned guide page within the byte bound used by the context builder.
         key = result["key"] + "#offset=" + str(result["offset"])
         return read_guide(self.rules, key, PAGE_BYTES)
 

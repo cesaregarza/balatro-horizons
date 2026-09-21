@@ -18,6 +18,7 @@ class RuntimeDiagnosticsMixin:
     """Keep private engine details out of the public episode journal."""
 
     def _record_failure(self, error):
+        # Keep failure diagnostics to the type, allowlisted details, and stack locations.
         frames = traceback.extract_tb(error.__traceback__)
         try:
             self.store.private_json(
@@ -33,6 +34,7 @@ class RuntimeDiagnosticsMixin:
                 },
             )
         except OSError:
+            # A diagnostic write must not mask the original runtime failure.
             pass
 
     @staticmethod
@@ -77,5 +79,6 @@ class RuntimeDiagnosticsMixin:
             self.log("harness_failure", error.public())
             self._record_failure(error)
             return "INFRASTRUCTURE_FAILURE", error.code, None
+        # Exception text may contain private native state; only the type crosses.
         self._record_failure(error)
         return "INFRASTRUCTURE_FAILURE", type(error).__name__, None

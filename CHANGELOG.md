@@ -8,6 +8,9 @@
 - Moved harness helpers under `harness/`, removed the replaced runner, agent
   package, and scheduling module, and documented reserve-before-send and
   campaign-versus-episode semantics in `docs/harness.md#money`.
+- `episode_start` now sits inside the episode-loop `try` block, so a journal
+  failure while recording it is classified and closed with the run instead of
+  escaping before a terminal record.
 
 ## Game boundary cutover (issue #8)
 

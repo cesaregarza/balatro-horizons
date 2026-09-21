@@ -220,7 +220,7 @@ class RunService:
         eid = eid or self.store.create(manifest, {"seed": seed, "config": config.model_dump()})
         spending = spending or Spending.episode_only(
             self.store.root / "private_runs" / eid / "spending.json",
-            config.budgets.max_episode_cost_usd or 1,
+            config.budgets.max_batch_cost_usd,
         )
         self.review.expose(eid, "operator_configuration", model_identity_seen=True)
         self.active_id = eid

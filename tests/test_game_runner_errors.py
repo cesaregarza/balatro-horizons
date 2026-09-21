@@ -4,6 +4,8 @@ import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.game.contract import GameSession, NativeFailure, NativeRejected
 from balatro_horizons.game.fake import FakeGame
@@ -19,6 +21,62 @@ def _private_errors(store, eid):
         json.loads(path.read_text())
         for path in store.episode_path(eid, True).glob("engine-error-*.json")
     ]
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt(), SystemExit(3)])
+def test_base_exception_during_play_still_finishes_and_closes(store, config, failure):
+    class TrackedGame(FakeGame):
+        def __init__(self):
+            super().__init__("BASE_EXCEPTION")
+            self.close_count = 0
+
+        def close(self):
+            self.close_count += 1
+            return super().close()
+
+    game = TrackedGame()
+    runner = Runner(
+        store,
+        config,
+        game,
+        Baseline("heuristic"),
+        Spending.episode_only(store.root / "private_runs" / "spending.json", 1),
+    )
+    runner.play = Mock(side_effect=failure)
+    with pytest.raises(type(failure)):
+        runner.run()
+    summary = store.summary(runner.eid)
+    assert summary["outcome"] == "INFRASTRUCTURE_FAILURE"
+    assert summary["reason"] == "UNEXPECTED_RUNNER_FAILURE"
+    assert game.close_count == 1
+
+
+def test_classification_failure_uses_default_terminal_and_closes(store, config):
+    class TrackedGame(FakeGame):
+        def __init__(self):
+            super().__init__("CLASSIFICATION_FAILURE")
+            self.close_count = 0
+
+        def close(self):
+            self.close_count += 1
+            return super().close()
+
+    game = TrackedGame()
+    runner = Runner(
+        store,
+        config,
+        game,
+        Baseline("heuristic"),
+        Spending.episode_only(store.root / "private_runs" / "spending.json", 1),
+    )
+    runner.play = Mock(side_effect=RuntimeError("private classification input"))
+    runner.classify_exit = Mock(side_effect=OSError("journal classification failure"))
+    with pytest.raises(OSError, match="journal classification failure"):
+        runner.run()
+    summary = store.summary(runner.eid)
+    assert summary["outcome"] == "INFRASTRUCTURE_FAILURE"
+    assert summary["reason"] == "UNEXPECTED_RUNNER_FAILURE"
+    assert game.close_count == 1
 
 
 def test_scripted_fake_implements_the_runner_game_contract():

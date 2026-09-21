@@ -73,7 +73,11 @@ class ProviderRuntimeMixin:
         return request_id
 
     def _handle_provider_failure(self, error, request_id, attempt):
-        self.spending.retain(request_id)
+        try:
+            self.spending.retain(request_id)
+        except (KeyError, ValueError):
+            # Preserve the provider failure if the reservation ledger is already inconsistent.
+            pass
         self.log(
             "provider_error",
             {"code": error.code, "provider_code": error.provider_code, "usage": "unknown"},

@@ -20,6 +20,7 @@ from balatro_horizons.evaluation.batches import plan_batch
 from balatro_horizons.evaluation.reports import export_batch, report_batch, scan
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.baselines import Baseline
+from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.money import (
     REFUSAL_OUTCOMES,
     BudgetExhausted,
@@ -41,13 +42,17 @@ def harness(store, monkeypatch):
     config.budgets.paid_calls_enabled = True
     config.budgets.max_episode_cost_usd = 1
     monkeypatch.setenv("OPENAI_API_KEY", "mock-only")
-    games, calls, clients, failures, operations = [], [], [], [], []
+    games, calls, clients, failures, operations, ledger_rows = [], [], [], [], [], []
     class CountedGame(FakeGame):
         def __init__(self, *args, **kwargs):
             games.append(self)
             super().__init__(*args, **kwargs)
     def receive(request):
         body = json.loads(request.content)
+        spending_paths = sorted(store.root.glob("batches/*/spending.json"))
+        ledger_rows.append(
+            json.loads(spending_paths[-1].read_text()) if spending_paths else {}
+        )
         calls.append(body)
         if failures:
             raise httpx.ReadTimeout("synthetic transport failure")
@@ -67,7 +72,7 @@ def harness(store, monkeypatch):
         return plan_batch(store, config, {"seeds": [f"BUDGETFIXTURE{i}" for i in range(count)]}, agents or ["luna"], replicates=1)
     yield SimpleNamespace(
         config=config, store=store, games=games, calls=calls, clients=clients,
-        failures=failures, operations=operations, native=native,
+        failures=failures, operations=operations, ledger_rows=ledger_rows, native=native,
         service=lambda: RunService(store, ReviewService(store)), plan=plan,
     )
     for client in clients:
@@ -109,7 +114,9 @@ def test_preflight_stop_is_unresolved_and_write_once(harness, tmp_path):
     bid = plan["batch_id"]
     h.service().run_batch(h.config, bid, offline=True)
     row = report_batch(h.store, bid, tmp_path / "report")["agents"]["luna"]
-    assert (row["attempts"], row["valid"], row["unresolved"], row["coverage"]) == (1, 1, 1, 0.5)
+    assert (row["attempts"], row["valid"], row["wins"], row["unresolved"]) == (1, 1, 1, 1)
+    assert row["win_rate"] == 1 and row["coverage"] == 0.5
+    assert row["missing_outcome_bounds"] == [0.5, 1]
     path = h.store.root / "batches" / bid / "stop.json"
     before = path.read_bytes()
     h.service().run_batch(h.config, bid, offline=True)
@@ -122,12 +129,27 @@ def test_campaign_interrupt_and_episode_only_refusals_remain_distinct(harness, t
     rows = batch_attempts(h.store, plan)
     assert rows[1]["summary"]["outcome"] == "CAMPAIGN_INTERRUPTED"
     assert rows[1]["summary"]["committed_actions"] == 2
-    assert report_batch(h.store, plan["batch_id"], tmp_path / "report")["agents"]["luna"]["unresolved"] == 2
+    assert rows[1]["terminal"]["payload"]["cost_usd"] == pytest.approx(0.00088)
+    assert rows[1]["summary"]["cost_usd"] == pytest.approx(0.00088)
+    stop = read_stop(h.store, plan)
+    assert stop["stage"] == "episode"
+    assert stop["terminal"]["hash"] == rows[1]["terminal"]["hash"]
+    report = report_batch(h.store, plan["batch_id"], tmp_path / "report")
+    assert report["agents"]["luna"]["unresolved"] == 2
+    assert report["agents"]["luna"]["all_attempt_cost_usd"] == pytest.approx(0.00308)
+    assert len(h.games) == 2 and len(h.calls) == 7 and len(h.clients) == 2
+
+
+def test_episode_only_refusals_resolve_slots_without_stopping_batch(harness, tmp_path):
     h = harness
     h.config.budgets.max_episode_cost_usd = 0.0186384
     plan = h.plan()
     h.service().run_batch(h.config, plan["batch_id"], offline=True)
-    assert all(row["summary"]["reason"] == "EPISODE_COST_CAP" for row in batch_attempts(h.store, plan))
+    rows = batch_attempts(h.store, plan)
+    assert rows and all(row["summary"]["reason"] == "EPISODE_COST_CAP" for row in rows)
+    report = report_batch(h.store, plan["batch_id"], tmp_path / "report")
+    assert report["agents"]["luna"]["unresolved"] == 0
+    assert report["scheduling_stop"] is None
 def test_unknown_usage_retains_reservations_and_next_model_controls_preflight(harness, tmp_path):
     h = harness
     h.config.budgets.max_batch_cost_usd = 0.04
@@ -138,9 +160,32 @@ def test_unknown_usage_retains_reservations_and_next_model_controls_preflight(ha
     report = report_batch(h.store, plan["batch_id"], tmp_path / "report")["agents"]["luna"]
     assert report["attempt_outcomes"] == {"INFRASTRUCTURE_FAILURE": 2}
     assert report["all_attempt_cost_usd"] == pytest.approx(0.0360448)
+    stop = read_stop(h.store, plan)
+    assert stop["stage"] == "preflight"
+    assert stop["cost_context"]["unsettled_usd"] == pytest.approx(0.0360448)
+    assert len(h.games) == 2 and len(h.calls) == 2 and len(h.clients) == 2
+
+
+def test_next_model_controls_preflight_and_cheaper_model_cannot_resume(harness):
     h = harness
-    h.failures.clear()
-    h.config.budgets.max_transport_attempts = 2
+    h.config.models["pricey"] = h.config.models["luna"].model_copy(
+        update={"input_usd_per_million": 20.0, "output_usd_per_million": 120.0}
+    )
+    h.config.budgets.max_episode_cost_usd = 2
+    h.config.budgets.max_batch_cost_usd = 1.70
+    plan = h.plan(1, ["pricey", "luna", "heuristic"])
+    h.service().run_batch(h.config, plan["batch_id"], offline=True)
+    (attempt,) = batch_attempts(h.store, plan)
+    assert attempt["summary"]["outcome"] == "CAMPAIGN_INTERRUPTED"
+    assert attempt["summary"]["cost_usd"] == pytest.approx(0.088)
+    before = (h.store.root / "batches" / plan["batch_id"] / "stop.json").read_bytes()
+    h.service().run_batch(h.config, plan["batch_id"], offline=True)
+    assert (h.store.root / "batches" / plan["batch_id"] / "stop.json").read_bytes() == before
+    assert len(h.calls) == 2 and len(h.games) == 1
+
+
+def test_next_model_determines_preflight_and_cannot_be_skipped(harness):
+    h = harness
     h.config.models["pricey"] = h.config.models["luna"].model_copy(
         update={"input_usd_per_million": 20.0, "output_usd_per_million": 120.0}
     )
@@ -149,7 +194,9 @@ def test_unknown_usage_retains_reservations_and_next_model_controls_preflight(ha
     plan = h.plan(1, ["luna", "pricey", "heuristic"])
     h.service().run_batch(h.config, plan["batch_id"], offline=True)
     stop = read_stop(h.store, plan)
-    assert stop["agent"] == "pricey" and stop["cost_context"]["required_usd"] == 1.6384
+    assert stop["agent"] == "pricey" and stop["stage"] == "preflight"
+    assert stop["cost_context"]["required_usd"] == 1.6384
+    assert len(h.calls) == 5 and len(h.games) == 1 and len(h.clients) == 1
 def test_authoritative_reserve_and_overage_are_visible(tmp_path):
     spending = Spending(tmp_path / "ledger.json", 0.02)
     spending.reserve("old", "previous", 0.01496, 1)
@@ -257,9 +304,18 @@ def test_reports_exports_and_legacy_records(harness, tmp_path):
     bundle = json.loads((tmp_path / "export/public.json").read_text())
     report = json.loads((tmp_path / "report/report.json").read_text())
     assert bundle["report"] == report and report["agents"]["luna"]["unresolved"] == 2
+    assert sum(e["summary"]["cost_usd"] for e in bundle["episodes"]) == pytest.approx(
+        report["agents"]["luna"]["all_attempt_cost_usd"]
+    )
     scan(bundle, ["BUDGETFIXTURE1"])
     with pytest.raises(ValueError, match="EXPORT_PRIVACY_SCAN_FAILED"):
         scan({**bundle, "injected": "BUDGETFIXTURE1"}, ["BUDGETFIXTURE1"])
+    assert all(episode["summary"]["cost_usd"] == pytest.approx(0.0022 if episode["summary"]["outcome"] == "WIN" else 0.00088)
+               for episode in bundle["episodes"])
+    assert all(episode["manifest"]["evaluation_eligible"] for episode in bundle["episodes"])
+
+
+def test_legacy_generic_cost_stop_is_not_reinterpreted(harness, tmp_path):
     h = harness
     plan = h.plan(1)
     slot = plan["slots"][0]
@@ -269,8 +325,14 @@ def test_reports_exports_and_legacy_records(harness, tmp_path):
     h.store.finish(eid, {"outcome": "BUDGET_EXHAUSTED", "reason": "COST_CAP_REACHED", "cost_usd": 0.12})
     before = (h.store.episode_path(eid) / "events.jsonl").read_bytes()
     h.service().run_batch(h.config, plan["batch_id"], offline=True)
-    assert report_batch(h.store, plan["batch_id"], tmp_path / "legacy")["scheduling_stop"] is None
+    report = report_batch(h.store, plan["batch_id"], tmp_path / "legacy")
+    export_batch(h.store, plan["batch_id"], tmp_path / "export")
+    bundle = json.loads((tmp_path / "export/public.json").read_text())
+    assert bundle["report"] == report and report["scheduling_stop"] is None
+    assert report["agents"]["luna"]["valid"] == 1
+    assert h.store.summary(eid)["reason"] == "COST_CAP_REACHED"
     assert (h.store.episode_path(eid) / "events.jsonl").read_bytes() == before
+    assert not h.games and not h.calls
 def test_stop_recovery_and_first_writer_are_durable(harness, monkeypatch):
     h = harness
     h.config.budgets.max_batch_cost_usd = 0.0186384
@@ -319,10 +381,11 @@ def test_reserve_event_precedes_send_and_unknown_usage_is_retained(harness):
     plan = h.plan(1)
     h.service().run_batch(h.config, plan["batch_id"], offline=True)
     eid = batch_attempts(h.store, plan)[0]["episode_id"]
-    events = h.store.events(eid)
-    reservation = next(i for i, event in enumerate(events) if event["type"] == "provider_reservation")
-    request = next(i for i, event in enumerate(events) if event["type"] == "provider_request")
-    assert reservation < request
+    assert h.ledger_rows and all(h.ledger_rows)
+    assert all(
+        any(row["episode_id"] == eid for row in rows.values())
+        for rows in h.ledger_rows
+    )
     ledger = json.loads((h.store.root / "batches" / plan["batch_id"] / "spending.json").read_text())
     assert ledger and all(not row["settled"] for row in ledger.values())
 def test_non_cost_limits_authorization_and_baselines_remain_unchanged(harness, monkeypatch):
@@ -333,11 +396,11 @@ def test_non_cost_limits_authorization_and_baselines_remain_unchanged(harness, m
     plan = h.plan(1, ["heuristic"])
     h.service().run_batch(h.config, plan["batch_id"], offline=True)
     assert batch_attempts(h.store, plan)[0]["summary"]["outcome"] == "WIN"
+    assert not h.calls and not h.clients
+
+
+def test_provider_call_limit_remains_a_budget_outcome(harness):
     h = harness
-    h.config.budgets.paid_calls_enabled = True
-    h.config.budgets.max_episode_cost_usd = 1
-    h.config.budgets.max_batch_cost_usd = 1
-    monkeypatch.setenv("OPENAI_API_KEY", "mock-only")
     h.config.budgets.max_provider_calls = 1
     plan = h.plan()
     h.service().run_batch(h.config, plan["batch_id"], offline=True)
@@ -348,3 +411,148 @@ def test_cache_write_price_is_used_for_reservation():
         update={"cached_input_usd_per_million": 0.02, "cache_write_input_usd_per_million": 0.4}
     )
     assert reservation_usd(model, config.budgets) == 0.0229376
+
+
+def test_stopped_batch_revalidates_configuration_and_evidence_kind(harness):
+    h = harness
+    h.config.budgets.max_batch_cost_usd = 0.005
+    plan = h.plan()
+    h.service().run_batch(h.config, plan["batch_id"], offline=True)
+    h.config.budgets.max_batch_cost_usd = 2
+    with pytest.raises(ValueError, match="^BATCH_CONFIGURATION_CHANGED$"):
+        h.service().run_batch(h.config, plan["batch_id"], offline=True)
+    h.config.budgets.max_batch_cost_usd = 0.005
+    with pytest.raises(ValueError, match="^BATCH_EVIDENCE_KIND_CHANGED$"):
+        h.service().run_batch(h.config, plan["batch_id"], offline=False)
+    assert not h.calls and not h.games and not h.clients
+
+
+@pytest.mark.parametrize(
+    "corruption", ["truncated", "wrong_batch", "missing_context", "unreadable"]
+)
+def test_corrupt_or_unreadable_stop_fails_closed(harness, monkeypatch, corruption):
+    h = harness
+    h.config.budgets.max_batch_cost_usd = 0.005
+    plan = h.plan()
+    h.service().run_batch(h.config, plan["batch_id"], offline=True)
+    path = h.store.root / "batches" / plan["batch_id"] / "stop.json"
+    value = json.loads(path.read_text())
+    if corruption == "truncated":
+        path.write_text('{"schema_version":')
+    elif corruption == "wrong_batch":
+        value["batch_id"] = "a" * 32
+        path.write_text(json.dumps(value))
+    elif corruption == "missing_context":
+        del value["cost_context"]
+        path.write_text(json.dumps(value))
+    else:
+        original_read = type(path).read_text
+
+        def denied(self, *args, **kwargs):
+            if self == path:
+                raise PermissionError("simulated unreadable stop")
+            return original_read(self, *args, **kwargs)
+
+        monkeypatch.setattr(type(path), "read_text", denied)
+    before = path.read_bytes()
+    with pytest.raises((ValueError, PermissionError)):
+        h.service().run_batch(h.config, plan["batch_id"], offline=True)
+    assert path.read_bytes() == before
+    assert not h.games and not h.calls and not h.clients
+
+
+@pytest.mark.parametrize("branch_outcome", ["WIN", "CAMPAIGN_INTERRUPTED"])
+def test_assisted_children_do_not_resolve_slots_or_stop_scheduling(harness, branch_outcome, tmp_path):
+    h = harness
+    plan = h.plan(1)
+    slot = plan["slots"][0]
+    eid = h.store.create(
+        {
+            **slot,
+            "batch_id": plan["batch_id"],
+            "evidence_kind": "SYNTHETIC_TEST",
+            "evaluation_eligible": False,
+            "parent_episode_id": "a" * 32,
+            "assistance": "human_override",
+            "config": h.config.public(),
+        }
+    )
+    h.store.finish(
+        eid,
+        {"outcome": branch_outcome, "reason": "CAMPAIGN_COST_CAP", "cost_usd": 20},
+    )
+    h.service().run_batch(h.config, plan["batch_id"], offline=True)
+    report = report_batch(h.store, plan["batch_id"], tmp_path / "report")
+    assert report["scheduling_stop"] is None
+    assert report["agents"]["luna"]["attempts"] == 1
+    assert report["agents"]["luna"]["all_attempt_cost_usd"] == pytest.approx(0.0022)
+    export_batch(h.store, plan["batch_id"], tmp_path / "export")
+    bundle = json.loads((tmp_path / "export/public.json").read_text())
+    assert len(bundle["episodes"]) == 1
+    assert bundle["episodes"][0]["manifest"]["episode_id"] != eid
+    assert len(h.games) == 1
+
+
+def test_native_dispatch_rejects_unfunded_slot_before_game_constructor(harness):
+    h = harness
+    h.config.budgets.max_batch_cost_usd = 0.005
+    plan = h.plan()
+    h.service().run_batch(h.config, plan["batch_id"], offline=False)
+    assert not h.native.called
+    assert not h.games and not h.calls and not h.clients and not h.store.list_episodes()
+    assert read_stop(h.store, plan)["stage"] == "preflight"
+
+
+@pytest.mark.parametrize("invalid", [0, -1, math.inf, math.nan, True])
+def test_invalid_caps_are_configuration_errors(harness, invalid):
+    h = harness
+    h.config.budgets.max_episode_cost_usd = invalid
+    with pytest.raises(ValueError, match="^PAID_EXECUTION_NOT_AUTHORIZED$"):
+        h.service().execute(h.config, "luna", "fixture", offline=True)
+    assert not h.games and not h.clients and not h.store.list_episodes()
+
+
+def test_missing_provider_credential_is_checked_before_funding_stop(harness, monkeypatch):
+    h = harness
+    h.config.budgets.max_batch_cost_usd = 0.005
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    plan = h.plan()
+    with pytest.raises(ValueError, match="^MISSING_PROVIDER_CREDENTIAL$"):
+        h.service().run_batch(h.config, plan["batch_id"], offline=True)
+    assert read_stop(h.store, plan) is None
+    assert not h.games and not h.calls and not h.clients
+
+
+def test_standalone_run_honors_campaign_cap(harness):
+    h = harness
+    h.config.budgets.max_episode_cost_usd = 1
+    h.config.budgets.max_batch_cost_usd = 0.002
+    summary = h.service().execute(h.config, "luna", "fixture", offline=True)
+    assert summary["outcome"] == "CAMPAIGN_INTERRUPTED"
+    assert summary["reason"] == "CAMPAIGN_COST_CAP"
+    assert summary["provider_calls"] == 0 and summary["cost_usd"] == 0
+    assert len(h.games) == 1 and not h.calls
+
+
+def test_required_ledger_guard_precedes_episode_creation(store, config):
+    runner = Runner(store, config, FakeGame("MISSING_LEDGER"), Baseline("heuristic"), None)
+    with pytest.raises(TypeError, match="^SPENDING_LEDGER_REQUIRED$"):
+        runner.run()
+    assert store.list_episodes() == []
+
+
+def test_committed_terminal_takes_precedence_over_execute_exception(harness, monkeypatch):
+    h = harness
+    h.config.budgets.max_batch_cost_usd = 0.0186384
+    plan = h.plan()
+    service = h.service()
+    execute = service.execute
+
+    def execute_then_raise(*args, **kwargs):
+        execute(*args, **kwargs)
+        raise RuntimeError("failure after committed terminal")
+
+    monkeypatch.setattr(service, "execute", execute_then_raise)
+    service.run_batch(h.config, plan["batch_id"], offline=True)
+    assert read_stop(h.store, plan)["reason"] == "CAMPAIGN_COST_CAP"
+    assert len(h.calls) == 2 and len(h.games) == 1
