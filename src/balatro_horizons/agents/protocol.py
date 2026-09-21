@@ -4,115 +4,14 @@ import ast
 import operator
 from copy import deepcopy
 from decimal import Decimal
-from typing import Annotated, Literal
-
-from pydantic import Field, TypeAdapter
 
 from balatro_horizons.agents.skills import discovery, read_guide
-from balatro_horizons.agents.tool_interface import (
-    ACTION_MODELS,
-    INSPECT_SECTIONS,
-    stable_tools,
-)
-from balatro_horizons.config import (
-    DEFAULT_HISTORY_PAGE_EVENTS,
-    DEFAULT_REQUEST_BYTE_LIMIT,
-    MAX_ABORT_REASON_CHARACTERS,
-    MAX_ARITHMETIC_CHARACTERS,
-    MAX_ARITHMETIC_NODES,
-    MAX_HISTORY_PAGE_EVENTS,
-    ROOT,
-)
-from balatro_horizons.contracts import ActionEnvelope, StrictModel
+from balatro_horizons.agents.tool_interface import ACTION_MODELS, stable_tools
+from balatro_horizons.config import DEFAULT_REQUEST_BYTE_LIMIT, MAX_ARITHMETIC_NODES, ROOT
+from balatro_horizons.harness.contract import ActionResult as ActionResult
+from balatro_horizons.harness.contract import Operation as Operation
+from balatro_horizons.harness.contract import Rules as Rules
 
-
-class NoteUpdate(StrictModel):
-    key: str
-    text: str | None
-
-
-class Submit(StrictModel):
-    kind: Literal["action"]
-    envelope: ActionEnvelope
-
-
-class WorkingSubmit(Submit):
-    note_update: NoteUpdate | None = None
-
-
-class Rules(StrictModel):
-    kind: Literal["rules"]
-    key: str
-
-
-class Skill(StrictModel):
-    kind: Literal["skill"]
-    name: str = Field(pattern=r"^balatro-[a-z0-9-]+$", max_length=64)
-
-
-class History(StrictModel):
-    kind: Literal["history"]
-    offset: int = Field(ge=0)
-    limit: int = Field(default=DEFAULT_HISTORY_PAGE_EVENTS, ge=1, le=MAX_HISTORY_PAGE_EVENTS)
-
-
-class Arithmetic(StrictModel):
-    kind: Literal["arithmetic"]
-    expression: str = Field(max_length=MAX_ARITHMETIC_CHARACTERS)
-
-
-class Abort(StrictModel):
-    kind: Literal["abort"]
-    reason: str = Field(max_length=MAX_ABORT_REASON_CHARACTERS)
-
-
-class InspectPage(StrictModel):
-    kind: Literal["inspect_page"]
-    section: Literal[*INSPECT_SECTIONS]
-    offset: int = Field(default=0, ge=0)
-
-
-class HistoryDetail(StrictModel):
-    kind: Literal["history_detail"]
-    offset: int = Field(ge=0)
-    byte_offset: int = Field(default=0, ge=0)
-
-
-class SetRunNote(StrictModel):
-    kind: Literal["set_run_note"]
-    key: str
-    text: str
-
-
-class DeleteRunNote(StrictModel):
-    kind: Literal["delete_run_note"]
-    key: str
-
-
-class ActionResult(StrictModel):
-    kind: Literal["action_result"]
-    decision_id: int | None = Field(default=None, ge=0)
-    episode_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
-    section: Literal["receipt", "before", "after"] = "receipt"
-    byte_offset: int = Field(default=0, ge=0)
-
-
-Operation = TypeAdapter(
-    Annotated[
-        WorkingSubmit
-        | Rules
-        | History
-        | Arithmetic
-        | Abort
-        | Skill
-        | InspectPage
-        | HistoryDetail
-        | SetRunNote
-        | DeleteRunNote
-        | ActionResult,
-        Field(discriminator="kind"),
-    ]
-)
 KERNEL = "The objective is the ordinary Ante 8 native run win. Hand scores resolve in native order. Discards consume a discard; playing consumes a hand. Money, remaining hands, Jokers, consumables and their order carry native effects. Use only visible state and permitted history. Hidden identities and future draws are unknown. Rules lookup accepts a visible item name, a rules key, or index to list frozen keys."
 
 

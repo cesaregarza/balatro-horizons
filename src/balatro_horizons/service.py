@@ -14,15 +14,17 @@ from balatro_horizons.config import ROOT
 from balatro_horizons.evaluation.scheduling import batch_attempts, reconcile_stop, record_stop
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeGame
+from balatro_horizons.harness.contract import ProviderPolicy
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.runner import OperatorAbort, Runner
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
 
 
 class HumanPolicy:
-    paid = False
+    interface = "tools_v7"
     name = "human"
     actor = "human"
+    model = None
 
     def __init__(self, stop):
         self.queue = queue.Queue(maxsize=1)
@@ -40,19 +42,37 @@ class HumanPolicy:
                 pass
         raise OperatorAbort
 
+    def on_decision_end(self) -> None:
+        # The submitted operation already left the one-slot human queue.
+        pass
+
+    def on_commit(self) -> None:
+        # A human selection has no provider continuation to advance.
+        pass
+
 
 class InterventionPolicy:
+    interface = "tools_v7"
+
     def __init__(self, operations, continuation):
         self.operations = list(operations)
         self.continuation = continuation
 
     @property
     def actor(self):
-        return "human_override" if self.operations else getattr(self.continuation, "actor", "agent")
+        return "human_override" if self.operations else self.continuation.actor
 
     @property
-    def paid(self):
-        return not self.operations and self.continuation.paid
+    def active_policy(self):
+        return self if self.operations else self.continuation
+
+    @property
+    def name(self):
+        return self.continuation.name
+
+    @property
+    def model(self):
+        return self.continuation.model
 
     def decide(self, ctx, exchanges):
         if self.operations:
@@ -65,21 +85,36 @@ class InterventionPolicy:
             }
         return self.continuation.decide(ctx, exchanges)
 
-    def __getattr__(self, key):
-        return getattr(self.continuation, key)
+    def on_decision_end(self):
+        # An override itself has no continuation; forwarded turns have their own owner.
+        pass
+
+    def on_commit(self):
+        # Removing the operation at decision time already advances this wrapper.
+        pass
 
 
 class HumanSequencePolicy:
+    interface = "tools_v7"
+
     def __init__(self, human, continuation, steps):
         self.human, self.continuation, self.remaining = human, continuation, steps
 
     @property
-    def paid(self):
-        return self.remaining == 0 and self.continuation.paid
+    def active_policy(self):
+        return self.human if self.remaining else self.continuation
+
+    @property
+    def name(self):
+        return self.continuation.name
+
+    @property
+    def model(self):
+        return self.continuation.model
 
     @property
     def actor(self):
-        return "human" if self.remaining else getattr(self.continuation, "actor", "agent")
+        return "human" if self.remaining else self.continuation.actor
 
     def decide(self, ctx, exchanges):
         return (self.human if self.remaining else self.continuation).decide(ctx, exchanges)
@@ -87,8 +122,9 @@ class HumanSequencePolicy:
     def on_commit(self):
         self.remaining = max(0, self.remaining - 1)
 
-    def __getattr__(self, key):
-        return getattr(self.continuation, key)
+    def on_decision_end(self):
+        # The active human/provider policy clears its own state before this wrapper advances.
+        pass
 
 
 class RunService:
@@ -163,7 +199,7 @@ class RunService:
         if human_steps:
             self.human = HumanPolicy(self.stop)
             policy = HumanSequencePolicy(self.human, policy, human_steps)
-        if calibration and (policy.paid or agent == "human"):
+        if calibration and (isinstance(policy, ProviderPolicy) or policy.model or agent == "human"):
             raise ValueError("CALIBRATION_REQUIRES_SCRIPTED_POLICY")
         manifest = {
             "evidence_kind": "SYNTHETIC_TEST" if offline else "NATIVE",

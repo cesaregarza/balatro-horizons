@@ -18,7 +18,7 @@ from balatro_horizons.agents.budget import (
 from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.frozen import freeze_protocol, restore_protocol
 from balatro_horizons.agents.notebook import RunNotebook, restore_notebook
-from balatro_horizons.agents.protocol import KERNEL, Operation, decision_context, helper
+from balatro_horizons.agents.protocol import KERNEL, decision_context, helper
 from balatro_horizons.agents.providers import ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import prepare_rules, read_guide, restore_knowledge
 from balatro_horizons.agents.tool_interface import ACTION_MODELS
@@ -32,8 +32,17 @@ from balatro_horizons.evidence.provenance import (
 from balatro_horizons.game.contract import (
     ERROR_NAMES,
     PUBLIC_NATIVE_FALLBACKS,
+    GameSession,
     NativeFailure,
     NativeRejected,
+)
+from balatro_horizons.harness.contract import (
+    EnvironmentLockedGame,
+    NamedPolicy,
+    Operation,
+    Policy,
+    ProviderPolicy,
+    RoutedPolicy,
 )
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer, project_public
@@ -45,7 +54,7 @@ class OperatorAbort(RuntimeError):
 
 
 class Runner:
-    def __init__(self, store, config, game, policy, *, stop=None, spending=None, rules=None,
+    def __init__(self, store, config, game: GameSession, policy: Policy, *, stop=None, spending=None, rules=None,
                  prompt_bytes=None):
         self.store, self.config, self.game, self.policy = (
             store,
@@ -68,6 +77,17 @@ class Runner:
         self.observation = None
         self.protocol = None
         self.prompt_bytes = prompt_bytes
+        self.active_policy = policy
+
+    def _policy_for_decision(self):
+        # An intervention can become a metered provider after its last override.
+        policy = self.policy
+        while isinstance(policy, RoutedPolicy):
+            active = policy.active_policy
+            if active is policy:
+                break
+            policy = active
+        return policy
 
     def log(self, kind, payload, **kwargs):
         event = self.store.append(self.eid, kind, payload, **kwargs)
@@ -108,19 +128,17 @@ class Runner:
             record["message"] = raw_message
         self.store.private_json(self.eid, f"engine-error-{uuid.uuid4().hex}.json", record)
 
-    def _provider(self, ctx, exchanges):
-        body = self.policy.request(ctx, exchanges)
+    def _provider(self, policy: ProviderPolicy, ctx, exchanges):
+        body = policy.request(ctx, exchanges)
         if self.stop.is_set():
             raise OperatorAbort
         if self.calls >= self.limits.max_provider_calls:
             raise BudgetExhausted("PROVIDER_CALL_LIMIT")
-        input_measurement = (
-            self.policy.check_input(body) if hasattr(self.policy, "check_input") else None
-        )
+        input_measurement = policy.check_input(body)
         if input_measurement is not None:
             self.log("provider_input_check", input_measurement,
                      observation_id=self.observation.observation_id)
-        model = self.policy.model
+        model = policy.model
         reserve = reservation_usd(model, self.limits)
         for attempt in range(self.limits.max_transport_attempts):
             if self.stop.is_set():
@@ -145,7 +163,7 @@ class Runner:
                 observation_id=self.observation.observation_id,
             )
             try:
-                response = self.policy.send(body)
+                response = policy.send(body)
             except ProviderFailure as error:
                 self.log(
                     "provider_error",
@@ -157,7 +175,7 @@ class Runner:
                 if self.stop.wait(min(2**attempt, 4)):
                     raise OperatorAbort from None
                 continue
-            actual = self.policy.usage_cost(response, reserve)
+            actual = policy.usage_cost(response, reserve)
             self.spending.settle(request_id, actual)
             self.cost += actual - reserve
             self.log(
@@ -166,7 +184,7 @@ class Runner:
                 actor="agent",
                 request_id=request_id,
             )
-            return self.policy.parse(response)
+            return policy.parse(response)
 
     def _decision(self, observation):
         if self.protocol and self.protocol["implementation_hash"] != implementation_fingerprint():
@@ -203,11 +221,14 @@ class Runner:
             )
             try:
                 raw = None
-                self.action_actor = getattr(self.policy, "actor", "agent")
+                self.active_policy = self._policy_for_decision()
+                self.action_actor = (
+                    self.policy.actor if isinstance(self.policy, Policy) else "agent"
+                )
                 raw = (
-                    self._provider(ctx, delivered_exchanges)
-                    if self.policy.paid
-                    else self.policy.decide(ctx, delivered_exchanges)
+                    self._provider(self.active_policy, ctx, delivered_exchanges)
+                    if isinstance(self.active_policy, ProviderPolicy)
+                    else self.active_policy.decide(ctx, delivered_exchanges)
                 )
                 self.log(
                     "agent_operation",
@@ -314,8 +335,9 @@ class Runner:
 
     def _exchange(self, raw, result):
         exchange = {"operation": raw if raw is not None else {"kind": "invalid"}, "result": result}
-        exchange["tool_call"] = getattr(self.policy, "last_tool_call", None)
-        turn = getattr(self.policy, "last_provider_turn", None)
+        provider = self.active_policy if isinstance(self.active_policy, ProviderPolicy) else None
+        exchange["tool_call"] = provider.last_tool_call if provider is not None else None
+        turn = provider.last_provider_turn if provider is not None else None
         if turn is not None:
             exchange["provider_turn"] = turn
         return exchange
@@ -368,7 +390,7 @@ class Runner:
         return feedback
 
     def run(self, *, eid=None, manifest=None, private=None, resume=None, history_prefix=None):
-        if self.policy.paid:
+        if isinstance(self.policy, Policy) and self.policy.model is not None:
             validate_paid_configuration(self.policy.model, self.limits)
         self.rules = (
             restore_knowledge(self.store, resume)
@@ -385,8 +407,8 @@ class Runner:
 
             if self.protocol["episode_limits"] != episode_limits(self.config):
                 raise ValueError("AGENT_PROTOCOL_CONFIGURATION_CHANGED")
-            model = getattr(self.policy, "model", None)
-            if getattr(self.policy, "name", "") != "human" and self.protocol["model"] != (
+            model = self.policy.model if isinstance(self.policy, Policy) else None
+            if self.policy.name != "human" and self.protocol["model"] != (
                 model.model_dump() if model is not None else None
             ):
                 raise ValueError("AGENT_PROTOCOL_MODEL_CHANGED")
@@ -397,7 +419,7 @@ class Runner:
             or {
                 "evidence_kind": self.game.evidence_kind,
                 "config": self.config.public(),
-                "agent": getattr(self.policy, "name", "model"),
+                "agent": self.policy.name if isinstance(self.policy, NamedPolicy) else "model",
                 "evaluation_eligible": False,
             },
             private or {},
@@ -441,7 +463,10 @@ class Runner:
                 "rules_hash": digest(self.rules),
                 "knowledge": self.rules.get("guide", {"preset": "none", "protocol": "rules_only"}),
                 "implementation_hash": implementation_fingerprint(),
-                "environment_hash": digest(getattr(self.game, "lock", {"kind": "synthetic"})),
+                "environment_hash": digest(
+                    self.game.lock if isinstance(self.game, EnvironmentLockedGame)
+                    else {"kind": "synthetic"}
+                ),
                 "agent_protocol": deepcopy(self.protocol_reference),
             },
         )
@@ -549,7 +574,9 @@ class Runner:
                     observation_id=decision,
                     request_id=request_id,
                 )
-                if hasattr(self.policy, "on_commit"):
+                if isinstance(self.active_policy, Policy):
+                    self.active_policy.on_decision_end()
+                if isinstance(self.policy, Policy):
                     self.policy.on_commit()
                 self.recent.append(
                     RecentPublicEvent(
