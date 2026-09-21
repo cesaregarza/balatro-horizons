@@ -10,6 +10,7 @@ import httpx
 from balatro_horizons.agents.input_limits import InputCounter, check_request_bytes
 from balatro_horizons.agents.tool_interface import decode_tool
 from balatro_horizons.config import PROVIDER_TIMEOUT_SECONDS
+from balatro_horizons.harness.contract import Context, Exchanges, RawOperation
 
 
 class ProviderFailure(RuntimeError):
@@ -208,7 +209,9 @@ def context_payload(ctx, exchanges, provider):
 
 
 class DirectProvider:
-    paid = True
+    interface = "tools_v7"
+    name = "model"
+    actor = "agent"
 
     def __init__(self, model, limits, client=None):
         self.model, self.limits = model.model_copy(deep=True), limits.model_copy(deep=True)
@@ -299,6 +302,19 @@ class DirectProvider:
             body["temperature"] = settings["temperature"]
         check_request_bytes(body, self.limits)
         return body
+
+    def decide(self, context: Context, exchanges: Exchanges) -> RawOperation:
+        # The runner must reserve and settle cost around every provider send.
+        raise RuntimeError("PROVIDER_DECISION_REQUIRES_METERED_TRANSPORT")
+
+    def on_decision_end(self) -> None:
+        # Continuation artifacts may cross helper turns, never game actions.
+        self.last_tool_call = None
+        self.last_provider_turn = None
+
+    def on_commit(self) -> None:
+        # The provider owns no game-side state to commit.
+        pass
 
     def check_input(self, body):
         return self.input_counter.check(self, body)

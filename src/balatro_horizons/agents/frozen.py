@@ -7,6 +7,7 @@ from copy import deepcopy
 from balatro_horizons.agents.instructions import load_prompt
 from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, ROOT
 from balatro_horizons.evidence.provenance import implementation_fingerprint
+from balatro_horizons.harness.contract import NamedPolicy, Policy
 from balatro_horizons.storage.journal import digest
 
 FROZEN_INTERFACE = "tools_v7"
@@ -36,7 +37,7 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         focused_tools(stable_tools(skills=skills, target_guidance=True)), action_notes=True
     )
     from balatro_horizons.agents.working_memory import policy as working_memory_policy
-    model = getattr(policy, "model", None)
+    model = policy.model if isinstance(policy, Policy) else None
     return {
         "version": "agent-protocol-v1",
         "interface": FROZEN_INTERFACE,
@@ -47,7 +48,7 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         "tool_catalog": tools,
         "tool_policy": "stable_catalog_local_phase_rejection",
         "model": model.model_dump() if model is not None else None,
-        "agent": getattr(policy, "name", "model"),
+        "agent": policy.name if isinstance(policy, NamedPolicy) else "model",
         "benchmark": deepcopy(config.benchmark),
         "episode_limits": episode_limits(config),
         "knowledge_hash": digest(rules),

@@ -91,7 +91,9 @@ def baseline_observation(presented):
 
 
 class Baseline:
-    paid = False
+    interface = "tools_v7"
+    actor = "agent"
+    model = None
 
     def __init__(self, name="random_legal", seed=0):
         if name not in ("random_legal", "heuristic"):
@@ -143,12 +145,31 @@ class Baseline:
             chosen = max(choices, key=key)
         return {"kind": "action", "envelope": chosen.model_dump(mode="json")}
 
+    def on_decision_end(self) -> None:
+        # Baselines retain no provider continuation between actions.
+        pass
+
+    def on_commit(self) -> None:
+        # The next choice is computed from the next public observation.
+        pass
+
 
 class ScriptedPolicy:
-    paid = False
+    interface = "tools_v7"
+    name = "model"
+    actor = "agent"
+    model = None
 
     def __init__(self, operations):
         self.operations = iter(operations)
 
     def decide(self, ctx, exchanges):
         return next(self.operations)
+
+    def on_decision_end(self) -> None:
+        # The script iterator already tracks the next operation.
+        pass
+
+    def on_commit(self) -> None:
+        # Consuming the operation is the only scripted state change.
+        pass
