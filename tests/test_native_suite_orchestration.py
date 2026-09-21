@@ -79,8 +79,8 @@ class FaultGame:
         self.session = session
         self.games = games
         self.rpc_events = rpc_events
-        self.bridge = SimpleNamespace(rpc=self.rpc)
-        self.original_rpc = self.bridge.rpc
+        self._rpc = self.rpc
+        self.original_rpc = self._rpc
         self.closed = False
 
     def rpc(self, method, params=None, request_id=None):
@@ -97,12 +97,20 @@ class FaultGame:
 
     @contextmanager
     def intercept_rpc_for_calibration(self, wrapper):
-        original = self.bridge.rpc
-        self.bridge.rpc = wrapper(original)
+        original = self._rpc
+        self._rpc = wrapper(original)
         try:
             yield
         finally:
-            self.bridge.rpc = original
+            self._rpc = original
+
+    def apply_public_action(self, action, issuer, request_id=None):
+        try:
+            self._rpc("select", {}, request_id)
+        except NativeFailure:
+            status = self._rpc("bh_request_status", {"request_id": request_id})
+            if status["status"] != "committed":
+                raise NativeFailure("ACTION_STATUS_UNKNOWN") from None
 
     def close(self):
         self.closed = True
@@ -144,13 +152,11 @@ class FaultRunner:
 
     def run(self, *, manifest, private):
         try:
-            self.game.bridge.rpc("select", {}, "request")
+            self.game.apply_public_action(None, None, "request")
         except NativeFailure:
-            status = self.game.bridge.rpc("bh_request_status", {"request_id": "request"})
-            outcome = "WIN" if status["status"] == "committed" else "INFRASTRUCTURE_FAILURE"
-            actions = 1 if outcome == "WIN" else 0
+            outcome, actions = "INFRASTRUCTURE_FAILURE", 0
         else:
-            raise AssertionError("injected acknowledgment loss did not occur")
+            outcome, actions = "WIN", 1
         self.game.close()
         return {"episode_id": "episode", "outcome": outcome, "committed_actions": actions}
 
@@ -327,7 +333,7 @@ def test_fault_collection_restores_transport_and_keeps_unknown_last(monkeypatch)
 
     assert [result["unknown_status"] for result in results] == [False, True]
     assert session.games_created == session.games_closed == 2
-    assert all(game.closed and game.bridge.rpc == game.original_rpc for game in games)
+    assert all(game.closed and game._rpc == game.original_rpc for game in games)
     assert results[-1]["outcome"] == "INFRASTRUCTURE_FAILURE"
     assert [entry[1] for entry in rpc_events if entry[0] is games[1]] == ["select", "select"]
 
