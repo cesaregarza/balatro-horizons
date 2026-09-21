@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-09-21 — Documentation consolidation (#17; `0140954`)
+## 2026-09-21 — Documentation consolidation (#17; `5afe41f`)
 
 - Consolidated the README, architecture, game-interface, harness, dashboard,
   and evidence guides; historical records now live here newest-first.
@@ -11,7 +11,7 @@
   `harness-skills`, `implementation-handoff`, `input-reconciliation`,
   `live-decision-explorer`, `native-audit`, `native-mod-feasibility`,
   `public-information-v1.1`, and `release-2026-09-16`); net docs delta is
-  **-2,089 lines** (425 added, 2,514 deleted).
+  **-2,059 lines** (457 added, 2,516 deleted).
 - Preserved the contract, Balatro guide, third-party notice, and research
   reconciliation/return handoff files byte-for-byte. The observer UX proposal
   remains parked and was not silently adopted or dropped.
@@ -19,7 +19,7 @@
   memory, and note experiments) from the implementation handoff; B1–B3 and B6
   are implemented or shipped. The script/source/test collapse is recorded below.
 
-## 2026-09-21 — Script collapse (#17; implementation commit recorded below)
+## 2026-09-21 — Script collapse (#17; `5afe41f`)
 
 - `probe_prompt_cache.py` (introduced 2026-09-15, `f85b348`) asked whether a
   bounded API-only probe demonstrated reusable prompt input; recorded traces,
