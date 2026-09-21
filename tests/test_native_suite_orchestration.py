@@ -458,6 +458,38 @@ def test_failed_direct_checkpoint_probe_is_recorded_and_tolerated(monkeypatch):
     )["status"] == "failed"
 
 
+@pytest.mark.parametrize("prefix_status", ["passed", "failed"])
+def test_release_keeps_prefix_branch_after_failed_direct_proof(monkeypatch, tmp_path, prefix_status):
+    reports = tmp_path / "reports/verification"
+    certification.atomic_json(
+        reports / "native-fixtures-final.json",
+        {"actions": {"episode_id": "fixture"}, "win": {"outcome": "WIN"}},
+    )
+    certification.atomic_json(reports / "native-runs.json", {"pilot": {"episode_id": "gold"}})
+    store = SimpleNamespace(manifest=lambda *_: {"config": certification.Config().model_dump()})
+    monkeypatch.setattr(certification, "Store", lambda _: store)
+    monkeypatch.setattr(certification, "implementation_fingerprint", lambda: "source")
+    monkeypatch.setattr(certification, "lock_digest", lambda _: "environment")
+    monkeypatch.setattr(prefix, "certify_prefix", lambda *_: {"status": prefix_status})
+    failed_direct = {"status": "failed", "mode": "checkpoint"}
+    monkeypatch.setattr(certification, "verify_checkpoint", lambda *_, **__: failed_direct)
+    branches = []
+    monkeypatch.setattr(
+        certification, "_branch_restoration",
+        lambda *args: branches.append(args) or ("child", {"outcome": "WIN"}, "annotation"),
+    )
+    monkeypatch.setattr(certification, "_settlement_evidence", lambda *_: None)
+    release_path = reports / "native-release.json"
+    if prefix_status == "failed":
+        with pytest.raises(ValueError, match="CONTINUATION_CERTIFICATION_FAILED"):
+            certification.certify_release(tmp_path)
+        assert branches == [] and not release_path.exists()
+    else:
+        assert certification.certify_release(tmp_path)["branch"] == "child"
+        assert len(branches) == 1
+        assert json.loads(release_path.read_text())["direct_checkpoint"] == failed_direct
+
+
 @pytest.mark.parametrize("defect, code", [
     ("source", "STALE_SETTLEMENT_SOURCE"),
     ("environment", "STALE_SETTLEMENT_ENVIRONMENT"),
