@@ -21,12 +21,25 @@ ROW_FIELDS = (
 )
 MANIFEST_FIELDS = (
     "episode_id", "created_at", "agent", "evidence_kind", "evaluation_eligible", "fixture",
-    "validation_purpose", "parent_episode_id", "parent_decision", "assistance", "batch_id", "slot_id",
+    "validation_purpose", "parent_episode_id", "parent_decision", "assistance", "batch_id",
+    "slot_id",
 )
 SUMMARY_FIELDS = (
     "outcome", "reason", "cost_usd", "attempted_actions", "committed_actions", "provider_calls",
     "agent_protocol", "terminal_event_id", "journal_head",
 )
+
+
+def safe_json(value, **kwargs):
+    """Serialize JSON safely for downloads embedded in browser contexts."""
+    return (
+        json.dumps(value, **kwargs)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
 
 
 def pick(value, fields):
@@ -40,7 +53,14 @@ def metadata(ledger, exported_at):
         **pick(manifest, MANIFEST_FIELDS),
         "deck": manifest.get("config", {}).get("deck"),
         "stake": manifest.get("config", {}).get("stake"),
-        "model": pick(model, ("provider", "model", "settings", "pricing_date", "input_usd_per_million", "output_usd_per_million", "cached_input_usd_per_million", "cache_write_input_usd_per_million")) if model else None,
+        "model": pick(
+            model,
+            (
+                "provider", "model", "settings", "pricing_date", "input_usd_per_million",
+                "output_usd_per_million", "cached_input_usd_per_million",
+                "cache_write_input_usd_per_million",
+            ),
+        ) if model else None,
     }
     summary = ledger.get("summary")
     return {
@@ -62,9 +82,19 @@ def metadata(ledger, exported_at):
 
 def grouped_decisions(ledger):
     decisions = {}
-    for key, rows in (("committed_actions", ledger.get("actions", [])), ("uncommitted_requests", ledger.get("uncommitted_actions") or [])):
+    for key, rows in (
+        ("committed_actions", ledger.get("actions", [])),
+        ("uncommitted_requests", ledger.get("uncommitted_actions") or []),
+    ):
         for row in rows:
-            item = decisions.setdefault(row["decision"], {"decision": row["decision"], "committed_actions": [], "uncommitted_requests": []})
+            item = decisions.setdefault(
+                row["decision"],
+                {
+                    "decision": row["decision"],
+                    "committed_actions": [],
+                    "uncommitted_requests": [],
+                },
+            )
             item[key].append(pick(row, ROW_FIELDS))
     return [decisions[key] for key in sorted(decisions)]
 
@@ -75,8 +105,13 @@ def export_content(ledger, format, exported_at=None):
     metadata_row = metadata(ledger, exported_at or datetime.now(UTC).isoformat())
     decisions = grouped_decisions(ledger)
     if format == "json":
-        return json.dumps({**metadata_row, "decisions": decisions}, indent=2, ensure_ascii=False) + "\n"
-    return "".join(json.dumps({**metadata_row, **decision}, ensure_ascii=False) + "\n" for decision in decisions)
+        return safe_json(
+            {**metadata_row, "decisions": decisions}, indent=2, ensure_ascii=False
+        ) + "\n"
+    return "".join(
+        safe_json({**metadata_row, **decision}, ensure_ascii=False) + "\n"
+        for decision in decisions
+    )
 
 
 def export_response(ledger, format):

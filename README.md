@@ -94,9 +94,9 @@ The repository does not include Balatro executables, game assets, or personal sa
 ## Open the workbench
 
 The dashboard factory is safe by default: `Config.workbench_enabled` is false
-until the explicit `bh review` dashboard entry point enables the review
-surface. See [dashboard architecture](docs/dashboard.md) for route, client,
-export, and isolation boundaries.
+and `bh review` serves that default dashboard. Add `--workbench` to opt into
+staged review and intervention routes. See [dashboard architecture](docs/dashboard.md)
+for route, client, export, and isolation boundaries.
 
 ```bash
 git clone https://github.com/cesaregarza/balatro-horizons.git
@@ -104,14 +104,23 @@ cd balatro-horizons
 uv sync --locked
 npm --prefix web ci
 npm --prefix web run build
-uv run bh review --port 8765
+uv run bh review --workbench --port 8765
 ```
 
 Open **http://127.0.0.1:8765**. Use Python 3.12 and the tested Node 22 LTS version in `.nvmrc` (22.12.0). The checked-in `uv.lock` and `web/package-lock.json` pin dependencies. The browser server binds only to loopback.
 
 Start with **Synthetic pipeline test** to inspect the complete application without a game or credentials. For native runs, clear that option after the runtime gates pass. The run library conceals agent identity and outcomes. Watching live status, opening a comparison, or revealing an outcome records your exposure before subsequent annotations.
 
-Review advances through available information, agent action, and consequences. You can annotate individual decisions or intervals and preserve revisions. The revealed trajectory shows resources and build changes only through the review cursor. A certified decision can create an agent continuation, one-action override, three-action human sequence, or human takeover. Human controls preserve explicit card selection and order; moving cards left can produce any permutation. Comparisons reveal both outcomes and exclude all assisted branches from autonomous scores.
+The default dashboard's Decision explorer shows the full recorded run and
+supports retrospective annotations. With `--workbench`, review advances
+through available information, agent action, and consequences. You can
+annotate individual decisions or intervals and preserve revisions. The
+revealed trajectory shows resources and build changes only through the review
+cursor. A certified decision can create an agent continuation, one-action
+override, three-action human sequence, or human takeover. Human controls
+preserve explicit card selection and order; moving cards left can produce any
+permutation. Comparisons reveal both outcomes and exclude all assisted
+branches from autonomous scores.
 
 ## Native setup and checks
 

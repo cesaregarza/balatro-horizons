@@ -215,7 +215,7 @@ ACTION_DETAIL_HANDLERS.update({"buy": _buy_details, "reorder": _reorder_details}
 def action_details(action, state):
     objects = _action_objects(state)
     details = _common_action_details(action, objects)
-    handler = ACTION_DETAIL_HANDLERS.get(action["type"], _no_action_details)
+    handler = ACTION_DETAIL_HANDLERS[action["type"]]
     details.update(handler(action, state, objects))
     return details
 

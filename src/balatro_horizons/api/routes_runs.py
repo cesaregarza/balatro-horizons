@@ -45,19 +45,4 @@ def operator_status(request: Request):
         "active_episode": state.runs.active_id,
         "error": state.runs.error,
         "episodes": state.operator_status.episodes(),
-        "runtime_connection": runtime_status(),
-    }
-
-
-@router.get("/api/operator/runtime", dependencies=[Depends(require_operator)])
-def runtime_connection():
-    return runtime_status()
-
-
-def runtime_status():
-    """Report the safe default until the separately certified native bridge is up."""
-    return {
-        "ready": False,
-        "code": "NATIVE_RUNTIME_UNAVAILABLE",
-        "message": "Native runtime is unavailable; synthetic episodes remain available.",
     }

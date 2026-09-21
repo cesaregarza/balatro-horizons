@@ -14,6 +14,8 @@ def main(argv=None):
         result = dispatch(args)
         if result is not None:
             print(json.dumps(result, indent=2))
+        if args.command == "doctor":
+            return 1 if result["blockers"] else 0
         return 0 if not failed_result(result) else 1
     except (ValueError, OSError, RuntimeError) as error:
         print(json.dumps(error_payload(error)), file=sys.stderr)

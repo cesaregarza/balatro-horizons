@@ -45,10 +45,12 @@ def add_command_options(parser, name):
 
 def add_review_commands(sub):
     parser = sub.add_parser("review")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", choices=["127.0.0.1", "localhost"], default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--allow-remote", action="store_true")
-    parser.add_argument("--public-origin")
+    parser.add_argument(
+        "--public-origin", help="Exact Tailscale HTTPS origin served by a loopback proxy"
+    )
+    parser.add_argument("--workbench", action="store_true")
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
     for name in ("replay", "branch"):
         add_intervention_parser(sub, name)

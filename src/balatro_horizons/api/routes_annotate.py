@@ -1,6 +1,6 @@
 """Append-only reviewer annotation endpoints."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from balatro_horizons.contracts import AnnotationInput
 
@@ -10,10 +10,14 @@ router = APIRouter()
 
 
 @router.get("/api/explore/annotations")
-def annotations(request: Request, token=Depends(require_session)):
+def annotations(
+    request: Request,
+    decision: int | None = Query(default=None),
+    token=Depends(require_session),
+):
     review = request.app.state.review
-    view = review.explore_view(token)
-    return review.annotations(view["episode_id"])
+    view = review.explore_view(token) if decision is None else review.decision(token, decision)
+    return review.annotations_for_view(view)
 
 
 @router.post("/api/explore/annotations")

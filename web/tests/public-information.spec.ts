@@ -4,8 +4,8 @@ import { awaitIdleWorker } from "./runHelpers";
 test("review distinguishes skip offers from owned effects and escapes descriptions", async ({
   page,
 }) => {
-  // Stub only this browser's public review response; no game launch or trace edits.
-  await page.route("**/api/reviews", async (route) => {
+  // Stub only this browser's public explorer response; no game launch or trace edits.
+  await page.route("**/api/explore/sessions", async (route) => {
     const response = await route.fetch();
     if (!response.ok()) {
       await route.fulfill({ response });
@@ -44,9 +44,9 @@ test("review distinguishes skip offers from owned effects and escapes descriptio
   await expect(page.getByRole("status")).toContainText("Run created");
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await page.getByRole("button", { name: "Review →" }).first().click();
+    await page.getByRole("button", { name: "Explore decisions" }).first().click();
     await expect(
-      page.getByRole("heading", { name: "What was knowable here?" }),
+      page.getByRole("heading", { name: "Decision explorer" }),
     ).toBeVisible();
   }).toPass({ timeout: 10000 });
   await page

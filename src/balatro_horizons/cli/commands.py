@@ -33,8 +33,7 @@ def dispatch(args):
 
 
 def doctor_command(args):
-    result = doctor(load_config(args.config), args.live)
-    return {**result, "exit_code": 1 if result["blockers"] else 0}
+    return doctor(load_config(args.config), args.live)
 
 
 def replay_command(args, store):
