@@ -93,6 +93,11 @@ The repository does not include Balatro executables, game assets, or personal sa
 
 ## Open the workbench
 
+The dashboard factory is safe by default: `Config.workbench_enabled` is false
+until the explicit `bh review` dashboard entry point enables the review
+surface. See [dashboard architecture](docs/dashboard.md) for route, client,
+export, and isolation boundaries.
+
 ```bash
 git clone https://github.com/cesaregarza/balatro-horizons.git
 cd balatro-horizons

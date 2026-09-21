@@ -1,5 +1,14 @@
 # Changelog
 
+## Dashboard cutover (issue #15)
+
+- Split the dashboard into a typed client, screen components, an opt-in
+  workbench, and Python gateway route/factory modules.
+- Add server-owned decision exports, shared action descriptors, loopback bind
+  protection, flag-off 404 behavior, and budget continuation admission.
+- Place DevTrace under Decision Explorer and preserve the existing accessible
+  browser test labels and review flow.
+
 ## Game boundary cutover (issue #8)
 
 - Split the native adapter into `game/` contracts, state, actions, transport,

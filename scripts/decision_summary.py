@@ -1,8 +1,14 @@
 """Render the public action ledger as a readable retrospective decision report."""
 
 import html
+import json
 from collections import Counter
 from itertools import groupby
+from pathlib import Path
+
+DESCRIPTORS = json.loads(
+    (Path(__file__).resolve().parents[1] / "web/src/actionDescriptors.json").read_text()
+)
 
 
 def cell(value):
@@ -24,31 +30,19 @@ def compact_names(names):
 def describe(row):
     kind = row["type"]
     item = row.get("item", "unknown object")
-    simple = {
-        "select_blind": f"Select {item}",
-        "skip_blind": f"Skip {item}",
-        "buy": f"Buy {item}",
-        "sell": f"Sell {item}",
-        "choose_pack": f"Choose {item} from pack",
-        "use_consumable": f"Use {item}",
-        "reroll_shop": "Reroll shop",
-        "reroll_boss": "Reroll boss",
-        "cash_out": "Cash out",
-        "leave_shop": "Leave shop",
-        "skip_pack": "Skip pack",
-    }
+    descriptor = DESCRIPTORS.get(kind, {"verb": kind, "subject": ""})
     if kind == "reorder":
         return f"Reorder {row['area']}: " + " → ".join(row["ordered_objects"])
-    if kind in ("play_hand", "discard"):
-        prefix = (
-            "Play " + (" / ".join(row.get("hand_types", [])) or "hand")
-            if kind == "play_hand"
-            else "Discard"
-        )
+    if kind == "play_hand":
+        prefix = descriptor["verb"] + " " + (" / ".join(row.get("hand_types", [])) or "hand")
         return prefix + ": " + ", ".join(row.get("cards", []))
-    text = simple.get(kind, kind)
+    if kind == "discard":
+        return descriptor["verb"] + ": " + ", ".join(row.get("cards", []))
+    subject = item if descriptor.get("subject") == "item" else descriptor.get("subject", "")
+    text = " ".join(part for part in (descriptor["verb"], subject) if part)
+    text += descriptor.get("suffix", "")
     if row.get("mode") == "buy_and_use":
-        text += " and use immediately"
+        text = text.replace(descriptor["verb"], descriptor.get("buy_and_use", descriptor["verb"]), 1)
     if row.get("targets"):
         text += "; targets: " + ", ".join(row["targets"])
     return text

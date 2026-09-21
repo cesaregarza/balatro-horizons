@@ -22,9 +22,9 @@ from balatro_horizons.harness.helpers import helper
 from balatro_horizons.harness.transport import DirectProvider
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer
-from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
 from balatro_horizons.service import RunService
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def native_state(phase="SHOP"):

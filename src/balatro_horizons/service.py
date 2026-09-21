@@ -15,9 +15,9 @@ from balatro_horizons.game.session import NativeGame
 from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
 from balatro_horizons.harness.contract import ProviderPolicy
 from balatro_horizons.harness.transport import DirectProvider
-from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.runner import OperatorAbort, Runner
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
+from balatro_horizons.workbench.branches import prepare_branch
 
 
 class HumanPolicy:
@@ -332,6 +332,44 @@ class RunService:
                     human_steps=human_steps
                     if mode == "short_human_sequence" and not actions
                     else 0,
+                )
+            )
+            return eid
+
+    def continue_budget(self, parent, combined_cap, *, expected_head):
+        """Admit one explicit paid continuation through the same worker."""
+        from balatro_horizons.review.budget_continuation import prepare_budget_continuation
+
+        admission = self.store.episode_path(parent, True) / "budget-admission.lock"
+        with locked(admission), self._guard:
+            if self.thread and self.thread.is_alive():
+                raise ValueError("WORKER_BUSY")
+            plan = prepare_budget_continuation(
+                self.store, parent, combined_cap, expected_head=expected_head
+            )
+            config, manifest = plan["config"], plan["manifest"]
+            amount = self.validate_policy(config, manifest["agent"])
+            if amount is None:
+                raise ValueError("BUDGET_EXTENSION_REQUIRES_PAID_MODEL")
+            if not plan["spending"].affordability(amount)[0]:
+                raise ValueError("BUDGET_EXTENSION_BELOW_RESERVATION")
+            if plan["resume"]["calls"] >= config.budgets.max_provider_calls:
+                raise ValueError("PROVIDER_CALL_LIMIT")
+            offline = manifest["evidence_kind"] == "SYNTHETIC_TEST"
+            eid = self.store.create(manifest, plan["private"])
+            self.stop.clear()
+            self.error = None
+            self.review.expose(eid, "operator_budget_extension", model_identity_seen=True)
+            self._launch(
+                lambda: self.execute(
+                    config,
+                    manifest["agent"],
+                    plan["private"]["seed"],
+                    offline=offline,
+                    eid=eid,
+                    resume=plan["resume"],
+                    prefix=plan["prefix"],
+                    spending=plan["spending"],
                 )
             )
             return eid

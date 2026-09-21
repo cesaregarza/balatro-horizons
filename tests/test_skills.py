@@ -19,10 +19,10 @@ from balatro_horizons.harness.context.build import context, decision_context
 from balatro_horizons.harness.contract import Operation
 from balatro_horizons.harness.helpers import helper
 from balatro_horizons.harness.transport import DirectProvider
-from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
 from balatro_horizons.storage.journal import digest
+from balatro_horizons.workbench.branches import prepare_branch
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def test_catalog_has_descriptions_without_loading_bodies_and_provider_parity():

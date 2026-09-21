@@ -1,4 +1,4 @@
-"""Immutable interventions; only the original public prefix is inherited."""
+"""Immutable workbench interventions from a certified public prefix."""
 
 from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.evidence.certification import require_checkpoint_certificate

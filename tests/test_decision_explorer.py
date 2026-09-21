@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 from test_review_branches import annotation
 
 from balatro_horizons.api import create_app
-from balatro_horizons.review.service import ReviewError, ReviewService
+from balatro_horizons.workbench.service import ReviewError
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def test_prospective_tokens_cannot_enumerate_or_seek(store, episode, config):

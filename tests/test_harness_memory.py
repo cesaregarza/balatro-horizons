@@ -28,9 +28,9 @@ from balatro_horizons.harness.context.memory import (
 from balatro_horizons.harness.contract import ActionResult
 from balatro_horizons.harness.helpers import helper
 from balatro_horizons.harness.transport import DirectProvider, context_payload
-from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
+from balatro_horizons.workbench.branches import prepare_branch
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def select(ctx):

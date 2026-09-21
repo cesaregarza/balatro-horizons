@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 
 from balatro_horizons.api import create_app
 from balatro_horizons.review.dev_trace import decision_trace
-from balatro_horizons.review.service import ReviewError, ReviewService
+from balatro_horizons.workbench.service import ReviewError
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 @pytest.fixture

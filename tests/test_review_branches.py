@@ -6,9 +6,10 @@ from fastapi.testclient import TestClient
 from balatro_horizons.api import create_app
 from balatro_horizons.contracts import AnnotationInput
 from balatro_horizons.evidence.certification import verify_checkpoint
-from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.review.service import ReviewError, ReviewService
 from balatro_horizons.service import RunService
+from balatro_horizons.workbench.branches import prepare_branch
+from balatro_horizons.workbench.service import ReviewError
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def test_AT16_cursor_does_not_reveal_future(store, episode, config):

@@ -18,7 +18,9 @@ def block_real_http(monkeypatch):
 
 @pytest.fixture
 def config():
-    return Config()
+    # Frozen review/workbench cases explicitly opt into the new default-off
+    # router while ordinary app construction still exercises the safe default.
+    return Config(workbench_enabled=True)
 
 
 @pytest.fixture
