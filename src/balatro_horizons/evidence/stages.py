@@ -14,6 +14,7 @@ class Stage:
 
     name: str
     launches: int
+    game_resets: int
     reasons: tuple[str, ...]
     collector: str
     artifact: str
@@ -36,35 +37,36 @@ _FUNCTIONAL_CASES = (
     "unknown action status (last)",
 )
 
-RESET_COUNTS = {
-    "startup profile stability": 4,
-    "functional collection": 8,
-    "fresh-process restoration certification": 9,
-    "branch restoration": 1,
-    "gameplay collection only": 8,
-    "resumed functional collection": 6,
-    "reorder acceptance fixture": 1,
-}
+STARTUP_PROFILE_STABILITY = "startup profile stability"
+FUNCTIONAL_COLLECTION = "functional collection"
+RESTORATION_CERTIFICATION = "fresh-process restoration certification"
+BRANCH_RESTORATION = "branch restoration"
+GAMEPLAY_COLLECTION_ONLY = "gameplay collection only"
+RESUMED_FUNCTIONAL_COLLECTION = "resumed functional collection"
+REORDER_ACCEPTANCE_FIXTURE = "reorder acceptance fixture"
 
 
 def _full_stages() -> tuple[Stage, ...]:
     return (
         Stage(
-            "startup profile stability",
+            STARTUP_PROFILE_STABILITY,
             2,
+            4,
             ("two fresh-process profile repetitions",),
             "runtime",
             "runtime-audit-{stake}.json",
         ),
         Stage(
-            "functional collection",
+            FUNCTIONAL_COLLECTION,
             0,
+            8,
             ("reuse of the second profile process", *_FUNCTIONAL_CASES),
             "acceptance",
             "native-fixtures-final.json",
         ),
         Stage(
-            "fresh-process restoration certification",
+            RESTORATION_CERTIFICATION,
+            9,
             9,
             (
                 "three fresh-process seed-prefix continuation probes for each of two episodes",
@@ -74,7 +76,8 @@ def _full_stages() -> tuple[Stage, ...]:
             "certificate-record-*.json",
         ),
         Stage(
-            "branch restoration",
+            BRANCH_RESTORATION,
+            1,
             1,
             ("explicit child branch launch",),
             "certification",
@@ -86,8 +89,9 @@ def _full_stages() -> tuple[Stage, ...]:
 def _gameplay_stages() -> tuple[Stage, ...]:
     return (
         Stage(
-            "gameplay collection only",
+            GAMEPLAY_COLLECTION_ONLY,
             1,
+            8,
             ("startup; one process reused across all eight gameplay cases", *_FUNCTIONAL_CASES),
             "acceptance",
             "native-gameplay-collection-*.json",
@@ -98,8 +102,9 @@ def _gameplay_stages() -> tuple[Stage, ...]:
 def _resume_action_stages() -> tuple[Stage, ...]:
     return (
         Stage(
-            "resumed functional collection",
+            RESUMED_FUNCTIONAL_COLLECTION,
             1,
+            6,
             ("startup; one session reused across remaining cases",),
             "acceptance",
             "native-fixtures-final.json",
@@ -111,7 +116,8 @@ def _resume_action_stages() -> tuple[Stage, ...]:
 def _resume_certification_stages() -> tuple[Stage, ...]:
     return (
         Stage(
-            "reorder acceptance fixture",
+            REORDER_ACCEPTANCE_FIXTURE,
+            1,
             1,
             ("startup for a standalone functional collection",),
             "acceptance",
@@ -142,7 +148,7 @@ def stage_list(
 def plan(**options) -> dict:
     """Render stages plus compatibility totals from the former release plan."""
     stages = stage_list(**options)
-    resets = sum(RESET_COUNTS[stage.name] for stage in stages)
+    resets = sum(stage.game_resets for stage in stages)
     return {
         "stages": [stage.as_dict() for stage in stages],
         "expected_physical_launches": sum(stage.launches for stage in stages),
@@ -157,11 +163,11 @@ def from_stage(name: str, **options) -> tuple[Stage, ...]:
     """Return a plan suffix beginning at ``name`` for resumable collection."""
     if any(options.values()):
         stages = stage_list(**options)
-    elif name == "resumed functional collection":
+    elif name == RESUMED_FUNCTIONAL_COLLECTION:
         stages = _resume_action_stages()
-    elif name == "reorder acceptance fixture":
+    elif name == REORDER_ACCEPTANCE_FIXTURE:
         stages = _resume_certification_stages()
-    elif name == "gameplay collection only":
+    elif name == GAMEPLAY_COLLECTION_ONLY:
         stages = _gameplay_stages()
     else:
         stages = _full_stages()

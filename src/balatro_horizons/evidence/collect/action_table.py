@@ -3,25 +3,19 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from balatro_horizons.contracts import RemainingBudget
+from balatro_horizons.evidence.collect.action_rows import ActionRow
+from balatro_horizons.evidence.collect.action_rows import buy_offer as _buy_offer
+from balatro_horizons.evidence.collect.action_rows import require as _require
+from balatro_horizons.evidence.collect.action_rows import reverse_ids as _reverse_ids
+from balatro_horizons.evidence.collect.inventory_rows import inventory_rows as _inventory_rows
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 
 if TYPE_CHECKING:
     from balatro_horizons.evidence.collect.acceptance import Audit
-
-
-@dataclass(frozen=True)
-class ActionRow:
-    """One public action, a before-state capture, and an after-state assertion."""
-
-    name: str
-    action: Any
-    capture: Any = lambda _audit: None
-    expected: Any = lambda _audit, _before: None
 
 
 def run_action_table(audit: Audit, rows: list[ActionRow]) -> None:
@@ -29,57 +23,6 @@ def run_action_table(audit: Audit, rows: list[ActionRow]) -> None:
         before = row.capture(audit)
         audit.take(row.action(audit))
         row.expected(audit, before)
-
-
-def _reverse_ids(audit: Audit, area: str) -> list[str]:
-    return [card.id for card in reversed(getattr(audit.obs.state, area))]
-
-
-def _assert_order(area: str):
-    def check(audit: Audit, before: list[str]) -> None:
-        assert [card.id for card in getattr(audit.obs.state, area)] == before[::-1]
-
-    return check
-
-
-def _expect_discard(audit: Audit, before: int) -> None:
-    assert audit.obs.state.resources.discards == before - 1
-
-
-def _expect_shop(audit: Audit, _before: Any) -> None:
-    assert audit.obs.phase == "SHOP"
-
-
-def _expect_jokers(audit: Audit, _before: Any) -> None:
-    assert len(audit.obs.state.jokers) == 6
-
-
-def _expect_consumables(audit: Audit, _before: Any) -> None:
-    assert len(audit.obs.state.consumables) == 2
-
-
-def _expect_two_choices(audit: Audit, _before: Any) -> None:
-    assert audit.obs.state.resources.pack_choices_remaining == 2
-
-
-def _expect_one_choice(audit: Audit, _before: Any) -> None:
-    assert audit.obs.state.resources.pack_choices_remaining == 1
-
-
-def _expect_negative_money(audit: Audit, _before: Any) -> None:
-    assert float(audit.obs.state.resources.money) < 0
-
-
-def _expect_round_eval(audit: Audit, _before: Any) -> None:
-    assert audit.obs.phase == "ROUND_EVAL" and not audit.game.terminal_status()
-
-
-def _expect_win(audit: Audit, _before: Any) -> None:
-    assert audit.game.terminal_status() == "WIN"
-
-
-def _expect_progress(audit: Audit, _before: Any) -> None:
-    assert audit.obs.state.progress.blind == "Big"
 
 
 def _shop_rows(audit: Audit) -> list[ActionRow]:
@@ -107,13 +50,19 @@ def _shop_rows(audit: Audit) -> list[ActionRow]:
                 "ordered_ids": _reverse_ids(current, "hand"),
             },
             capture=lambda current: [card.id for card in current.obs.state.hand],
-            expected=_assert_order("hand"),
+            expected=lambda current, before: _require(
+                [card.id for card in current.obs.state.hand] == before[::-1],
+                "HAND_REORDER_NOT_REVERSED",
+            ),
         ),
         ActionRow(
             "discard",
             lambda current: {"type": "discard", "card_ids": [current.obs.state.hand[0].id]},
             capture=lambda current: current.obs.state.resources.discards,
-            expected=_expect_discard,
+            expected=lambda current, before: _require(
+                current.obs.state.resources.discards == before - 1,
+                "DISCARD_COUNT_NOT_DECREMENTED",
+            ),
         ),
     ]
     if "skip_pack" in audit.obs.available_action_types:
@@ -122,11 +71,19 @@ def _shop_rows(audit: Audit) -> list[ActionRow]:
             ActionRow(
                 "skip_pack",
                 lambda _current: {"type": "skip_pack"},
-                expected=_expect_progress,
+                expected=lambda current, _before: _require(
+                    current.obs.state.progress.blind == "Big", "SKIP_PACK_DID_NOT_ADVANCE"
+                ),
             ),
         )
     else:
-        rows[0] = ActionRow(skip_blind.name, skip_blind.action, expected=_expect_progress)
+        rows[0] = ActionRow(
+            skip_blind.name,
+            skip_blind.action,
+            expected=lambda current, _before: _require(
+                current.obs.state.progress.blind == "Big", "SKIP_BLIND_DID_NOT_ADVANCE"
+            ),
+        )
     return rows
 
 
@@ -138,72 +95,19 @@ def _round_rows() -> list[ActionRow]:
                 "type": "play_hand",
                 "card_ids": [current.obs.state.hand[0].id],
             },
-            expected=_expect_round_eval,
-        ),
-        ActionRow("cash_out", lambda _current: {"type": "cash_out"}, expected=_expect_shop),
-    ]
-
-
-def _buy_offer(audit: Audit, kind: str, *, mode: str = "acquire") -> dict:
-    offer = next(item for item in audit.obs.state.offers if item.kind == kind)
-    if mode == "buy_and_use":
-        assert offer.buy_and_use_allowed
-    else:
-        assert offer.acquire_allowed
-    return {"type": "buy", "offer_id": offer.id, "mode": mode, "target_ids": []}
-
-
-def _inventory_rows() -> list[ActionRow]:
-    rows = [
-        ActionRow(
-            "reorder",
-            lambda current: {
-                "type": "reorder",
-                "area": "jokers",
-                "ordered_ids": _reverse_ids(current, "jokers"),
-            },
-            capture=lambda current: [card.id for card in current.obs.state.jokers],
-            expected=_assert_order("jokers"),
-        ),
-        ActionRow(
-            "reorder",
-            lambda current: {
-                "type": "reorder",
-                "area": "consumables",
-                "ordered_ids": _reverse_ids(current, "consumables"),
-            },
-            capture=lambda current: [card.id for card in current.obs.state.consumables],
-            expected=_assert_order("consumables"),
-        ),
-        ActionRow(
-            "buy",
-            lambda current: _buy_offer(current, "joker"),
-            expected=_expect_jokers,
-        ),
-        ActionRow(
-            "buy",
-            lambda current: _buy_offer(current, "consumable", mode="buy_and_use"),
-            expected=_expect_consumables,
-        ),
-    ]
-    rows.extend(
-        ActionRow(
-            "sell",
-            lambda current: {"type": "sell", "owned_id": current.obs.state.jokers[0].id},
-        )
-        for _index in range(2)
-    )
-    rows.extend(
-        [
-            ActionRow("buy", lambda current: _buy_offer(current, "voucher")),
-            ActionRow(
-                "buy",
-                lambda current: _buy_offer(current, "pack"),
-                expected=_expect_two_choices,
+            expected=lambda current, _before: _require(
+                current.obs.phase == "ROUND_EVAL" and not current.game.terminal_status(),
+                "PLAY_HAND_DID_NOT_ENTER_ROUND_EVAL",
             ),
-        ]
-    )
-    return rows
+        ),
+        ActionRow(
+            "cash_out",
+            lambda _current: {"type": "cash_out"},
+            expected=lambda current, _before: _require(
+                current.obs.phase == "SHOP", "CASH_OUT_DID_NOT_RETURN_TO_SHOP"
+            ),
+        ),
+    ]
 
 
 def _pack_rows() -> list[ActionRow]:
@@ -214,8 +118,21 @@ def _pack_rows() -> list[ActionRow]:
             "target_ids": [],
         }
     return [
-        ActionRow("choose_pack", choose, expected=_expect_one_choice),
-        ActionRow("choose_pack", choose, expected=_expect_shop),
+        ActionRow(
+            "choose_pack",
+            choose,
+            expected=lambda current, _before: _require(
+                current.obs.state.resources.pack_choices_remaining == 1,
+                "PACK_CHOICE_COUNT_NOT_DECREMENTED",
+            ),
+        ),
+        ActionRow(
+            "choose_pack",
+            choose,
+            expected=lambda current, _before: _require(
+                current.obs.phase == "SHOP", "PACK_SELECTION_DID_NOT_RETURN_TO_SHOP"
+            ),
+        ),
     ]
 
 
@@ -225,12 +142,17 @@ def _credit_rows() -> list[ActionRow]:
         ActionRow(
             "skip_pack",
             lambda _current: {"type": "skip_pack"},
-            expected=_expect_shop,
+            expected=lambda current, _before: _require(
+                current.obs.phase == "SHOP", "SKIP_PACK_DID_NOT_RETURN_TO_SHOP"
+            ),
         ),
         ActionRow(
             "reroll_shop",
             lambda _current: {"type": "reroll_shop"},
-            expected=_expect_negative_money,
+            expected=lambda current, _before: _require(
+                float(current.obs.state.resources.money) < 0,
+                "REROLL_DID_NOT_PRESERVE_NEGATIVE_MONEY",
+            ),
         ),
     ]
 
@@ -286,19 +208,6 @@ def fixture(audit: Audit, case: str, check=None) -> None:
         check(audit)
 
 
-def _assert_easy_blind(audit: Audit) -> None:
-    assert audit.obs.state.resources.target == "1"
-
-
-def _assert_shop_inventory(audit: Audit) -> None:
-    assert len(audit.obs.state.jokers) == 5 and len(audit.obs.state.consumables) == 2
-
-
-def _assert_credit(audit: Audit) -> None:
-    assert audit.obs.state.resources.money == "-5"
-    assert audit.obs.state.resources.credit_limit == "20"
-
-
 def _assert_masked_projection(audit: Audit) -> None:
     assert all(
         card.face_down
@@ -333,36 +242,71 @@ def _assert_masked_projection(audit: Audit) -> None:
 def run_shop_table(audit: Audit) -> None:
     """Run the complete historical shop action table in order."""
     run_action_table(audit, _shop_rows(audit))
-    fixture(audit, "easy_blind", _assert_easy_blind)
+    fixture(
+        audit,
+        "easy_blind",
+        lambda current: _require(
+            current.obs.state.resources.target == "1", "EASY_BLIND_TARGET_MISMATCH"
+        ),
+    )
     run_action_table(audit, _round_rows()[:1])
     audit.capture()
     run_action_table(audit, _round_rows()[1:])
-    fixture(audit, "shop", _assert_shop_inventory)
+    fixture(
+        audit,
+        "shop",
+        lambda current: _require(
+            len(current.obs.state.jokers) == 5
+            and len(current.obs.state.consumables) == 2,
+            "SHOP_INVENTORY_MISMATCH",
+        ),
+    )
     run_action_table(audit, _inventory_rows())
     audit.capture()
     run_action_table(audit, _pack_rows())
     fixture(audit, "another_pack")
-    run_action_table(audit, _credit_rows())
-    fixture(audit, "credit", _assert_credit)
+    credit_rows = _credit_rows()
+    run_action_table(audit, credit_rows[:2])
+    # Establish debt before rerolling; this proves credit permits a negative balance.
+    fixture(
+        audit,
+        "credit",
+        lambda current: _require(
+            current.obs.state.resources.money == "-5"
+            and current.obs.state.resources.credit_limit == "20",
+            "CREDIT_FIXTURE_MISMATCH",
+        ),
+    )
+    run_action_table(audit, credit_rows[2:])
     audit.capture()
     run_action_table(audit, _consumable_rows())
     audit.capture()
     fixture(audit, "mask_jokers", _assert_masked_projection)
 
 
-def shop_action_types(*, tag_pack_opened: bool = True) -> list[str]:
-    """Return the golden-comparable action order without executing a game."""
+def shop_action_types(*, tag_pack_opened: bool = True) -> list[str | dict[str, str]]:
+    """Return action and fixture order for the non-executing shop golden."""
     available = ["skip_pack"] if tag_pack_opened else []
     audit = SimpleNamespace(obs=SimpleNamespace(available_action_types=available))
-    rows = [
-        *_shop_rows(audit),
-        *_round_rows(),
-        *_inventory_rows(),
-        *_pack_rows(),
-        *_credit_rows(),
-        *_consumable_rows(),
+
+    def names(rows):
+        return [row.name for row in rows]
+
+    credit_rows = _credit_rows()
+    return [
+        *names(_shop_rows(audit)),
+        {"fixture": "easy_blind"},
+        *names(_round_rows()),
+        {"fixture": "shop"},
+        *names(_inventory_rows()),
+        *names(_pack_rows()),
+        {"fixture": "another_pack"},
+        *names(credit_rows[:2]),
+        {"fixture": "credit"},
+        *names(credit_rows[2:]),
+        *names(_consumable_rows()),
+        {"fixture": "mask_jokers"},
     ]
-    return [row.name for row in rows]
 
 
 def win_rows() -> list[ActionRow]:
@@ -377,6 +321,8 @@ def win_rows() -> list[ActionRow]:
         ActionRow(
             "play_hand",
             lambda current: {"type": "play_hand", "card_ids": [current.obs.state.hand[0].id]},
-            expected=_expect_win,
+            expected=lambda current, _before: _require(
+                current.game.terminal_status() == "WIN", "WIN_FIXTURE_DID_NOT_WIN"
+            ),
         ),
     ]

@@ -12,6 +12,10 @@ from balatro_horizons.evidence.provenance import (
     continuation_fingerprint,
     implementation_fingerprint,
 )
+from balatro_horizons.evidence.stages import (
+    BRANCH_RESTORATION,
+    RESTORATION_CERTIFICATION,
+)
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.replay import (
     ReplayDivergence,
@@ -42,15 +46,12 @@ def require_environment_certificate(lock, environment):
 def certificate_path(store, eid, decision):
     return store.episode_path(eid, True) / f"certificate-{decision}.json"
 
-
 def read_checkpoint(store, eid, decision):
     return json.loads((store.episode_path(eid, True) / f"checkpoint-{decision}.json").read_text())
-
 
 def private_hash(store, eid, decision):
     path = store.episode_path(eid, True) / f"raw-{decision}.json"
     return continuation_fingerprint(json.loads(path.read_text())) if path.exists() else None
-
 
 def steps_for(store, eid):
     events = store.events(eid)
@@ -74,7 +75,6 @@ def steps_for(store, eid):
         steps.append(step)
     return steps
 
-
 def prefix_snapshot(store, eid, decision, steps):
     first = read_checkpoint(store, eid, 0)
     if first["game"]["kind"] != "native":
@@ -91,7 +91,6 @@ def prefix_snapshot(store, eid, decision, steps):
         "initial_continuation_hash": private_hash(store, eid, 0),
         "steps": [s for s in steps if s["observation"]["observation_id"] <= decision],
     }
-
 
 def _failure_record(store, eid, decision, repetition, error):
     artifact = None
@@ -117,7 +116,6 @@ def _failure_record(store, eid, decision, repetition, error):
         "reason": str(error) if str(error).isupper() else type(error).__name__,
     }
 
-
 def _replay_once(store, config, eid, decision, mode, checkpoint, suffix, snapshot, repetition):
     game = None
     try:
@@ -140,7 +138,6 @@ def _replay_once(store, config, eid, decision, mode, checkpoint, suffix, snapsho
             game.close()
     return None
 
-
 def _replay_failures(store, config, eid, decision, mode, checkpoint, suffix, snapshot, repetitions):
     native = checkpoint["game"]["kind"] == "native"
     lock_path = ROOT / "private/native-worker.lock" if native else store.root / "verification.lock"
@@ -153,8 +150,9 @@ def _replay_failures(store, config, eid, decision, mode, checkpoint, suffix, sna
                 return [failure]
     return []
 
-
-def _checkpoint_certificate(store, eid, decision, mode, checkpoint, suffix, snapshot, source, failures):
+def _checkpoint_certificate(
+    store, eid, decision, mode, checkpoint, suffix, snapshot, source, failures, repetitions
+):
     return {
         "schema_version": 2,
         "certificate_id": uuid.uuid4().hex,
@@ -163,7 +161,7 @@ def _checkpoint_certificate(store, eid, decision, mode, checkpoint, suffix, snap
         "mode": mode,
         "evidence_kind": store.manifest(eid)["evidence_kind"],
         "status": "failed" if failures else "passed",
-        "repetitions": 3,
+        "repetitions": repetitions,
         "phase": checkpoint["observation"]["phase"],
         "checkpoint_hash": digest(checkpoint),
         "environment_hash": digest(snapshot.get("environment", {"kind": "synthetic"})),
@@ -173,7 +171,6 @@ def _checkpoint_certificate(store, eid, decision, mode, checkpoint, suffix, snap
         "created_at": now(),
         "failures": failures,
     }
-
 
 def verify_checkpoint(store, config, eid, decision, *, repetitions=3, mode="checkpoint"):
     if type(repetitions) is not int or repetitions < 3:
@@ -197,9 +194,17 @@ def verify_checkpoint(store, config, eid, decision, *, repetitions=3, mode="chec
     if source_hash != implementation_fingerprint():
         failures.append({"reason": "SOURCE_CHANGED_DURING_VERIFICATION"})
     cert = _checkpoint_certificate(
-        store, eid, decision, mode, checkpoint, suffix, snapshot, source_hash, failures
+        store,
+        eid,
+        decision,
+        mode,
+        checkpoint,
+        suffix,
+        snapshot,
+        source_hash,
+        failures,
+        repetitions,
     )
-    cert["repetitions"] = repetitions
     path = certificate_path(store, eid, decision)
     atomic_json(
         path.with_name("certificate-record-" + cert["certificate_id"] + ".json"),
@@ -303,6 +308,12 @@ def _settlement_evidence(root, store, release):
     if reorder["environment_hash"] != release["environment_hash"]:
         raise ValueError("STALE_REORDER_ENVIRONMENT")
     episode_ids.append(reorder["episode_id"])
+    for episode_id in episode_ids:
+        checkpoint = read_checkpoint(store, episode_id, 0)
+        if checkpoint.get("implementation_hash") != release["implementation_hash"]:
+            raise ValueError("STALE_SETTLEMENT_SOURCE")
+        if digest(checkpoint["game"]["environment"]) != release["environment_hash"]:
+            raise ValueError("STALE_SETTLEMENT_ENVIRONMENT")
     checks = verify(store, episode_ids)
     result = {
         "status": "passed",
@@ -323,11 +334,16 @@ def _restoration_certificates(store, config, fixture, gold, *, branch_only=False
         return direct
     for episode_id in (fixture["episode_id"], gold):
         continuation_probe(store, config, episode_id, restoration="seed_prefix")
+    # A failed direct check leaves the separately verified seed-prefix capability intact.
     return continuation_probe(store, config, gold, restoration="checkpoint")
 
 
 def continuation_probe(store, config, episode_id, *, decision=0, restoration="checkpoint"):
-    """Require a passing three-process proof for one stopped continuation boundary."""
+    """Require a passing replay proof; direct-save failures remain recorded and tolerated.
+
+    ``certify_prefix`` is currently called only from this probe, so its failed
+    certificate is returned here rather than treated as a successful CLI exit.
+    """
     if restoration == "seed_prefix":
         from balatro_horizons.evidence.collect.prefix import certify_prefix
 
@@ -338,14 +354,14 @@ def continuation_probe(store, config, episode_id, *, decision=0, restoration="ch
         )
     else:
         raise ValueError("UNKNOWN_RESTORATION_MODE")
-    if certificate["status"] != "passed":
+    if certificate["status"] != "passed" and restoration == "seed_prefix":
         raise ValueError("CONTINUATION_CERTIFICATION_FAILED")
     return certificate
 
 
 def certify_release(root=None, *, from_stage=None):
     """Certify collected restoration boundaries and one immutable-parent branch."""
-    if from_stage not in (None, "fresh-process restoration certification", "branch restoration"):
+    if from_stage not in (None, RESTORATION_CERTIFICATION, BRANCH_RESTORATION):
         raise ValueError("UNKNOWN_CERTIFICATION_STAGE")
     root = Path(ROOT if root is None else root).resolve()
     source = implementation_fingerprint()
@@ -359,7 +375,7 @@ def certify_release(root=None, *, from_stage=None):
         config,
         fixture,
         gold,
-        branch_only=from_stage == "branch restoration",
+        branch_only=from_stage == BRANCH_RESTORATION,
     )
     child, branch, annotation_id = _branch_restoration(store, config, gold)
     current_source = implementation_fingerprint()

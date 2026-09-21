@@ -15,6 +15,7 @@ from pathlib import Path
 from balatro_horizons.evidence.lock import lock_digest, native_path
 from balatro_horizons.evidence.provenance import (
     fingerprint_sources,
+    native_component_manifest,
     native_implementation_fingerprint,
     source_files,
 )
@@ -100,6 +101,22 @@ def _check_evidence(root: Path, old: dict, baseline_hash: str) -> dict:
     return evidence
 
 
+def _native_identity(old: dict, before: dict[str, bytes], candidate: dict[str, bytes]):
+    baseline_manifest = native_component_manifest(before)
+    candidate_manifest = native_component_manifest(candidate)
+    require(candidate_manifest == baseline_manifest, "NATIVE_GAME_SOURCE_CHANGED")
+    native_hash = native_implementation_fingerprint(before)
+    require(
+        old.get("native_implementation_hash", native_hash) == native_hash,
+        "BASELINE_NATIVE_MANIFEST_MISMATCH",
+    )
+    require(
+        old.get("native_component_manifest", baseline_manifest) == baseline_manifest,
+        "BASELINE_NATIVE_MANIFEST_MISMATCH",
+    )
+    return baseline_manifest, native_hash
+
+
 def prepare(root: Path, candidate: Path, baseline: str, offline_report: Path):
     """Build a reuse certificate without changing the live workbench."""
     root, candidate = native_path(root), native_path(candidate)
@@ -111,12 +128,9 @@ def prepare(root: Path, candidate: Path, baseline: str, offline_report: Path):
         old.get("accepted_implementation_hash", old.get("implementation_hash")) == baseline_hash,
         "BASELINE_NOT_CERTIFIED",
     )
-    before_native = native_implementation_fingerprint(before)
     after = source_files(candidate)
-    require(native_implementation_fingerprint(after) == before_native, "NATIVE_GAME_SOURCE_CHANGED")
-    native_hash = before_native
-    require(old.get("native_implementation_hash", native_hash) == native_hash,
-            "BASELINE_NATIVE_MANIFEST_MISMATCH")
+    before_native_manifest, native_hash = _native_identity(old, before, after)
+    before_native = native_hash
     require(old["environment_hash"] == lock_digest(root), "NATIVE_ENVIRONMENT_CHANGED")
     evidence = _check_evidence(root, old, baseline_hash)
     source = fingerprint_sources(after)
@@ -128,12 +142,13 @@ def prepare(root: Path, candidate: Path, baseline: str, offline_report: Path):
         "MATCHING_OFFLINE_CHECKS_REQUIRED",
     )
     reuse = {
-        "kind": "unchanged_game_source",
+        "kind": "unchanged_native_components",
         "baseline_revision": commit,
         "parent_certificate_id": identifier,
         "parent_certificate_hash": digest(old),
         "offline_report_hash": digest(report),
         "native_game_fingerprint": before_native,
+        "native_component_manifest": before_native_manifest,
         "native_launches": 0,
         "checkpoint_certificates_migrated": False,
     }
@@ -144,6 +159,7 @@ def prepare(root: Path, candidate: Path, baseline: str, offline_report: Path):
         "created_at": now(),
         "accepted_implementation_hash": source,
         "native_implementation_hash": native_hash,
+        "native_component_manifest": before_native_manifest,
         "validation_kind": "harness_compatibility",
         "reuse": reuse,
         "native_validation_created_at": old.get("native_validation_created_at", old["created_at"]),
@@ -152,6 +168,7 @@ def prepare(root: Path, candidate: Path, baseline: str, offline_report: Path):
         **evidence,
         "accepted_implementation_hash": source,
         "native_implementation_hash": native_hash,
+        "native_component_manifest": before_native_manifest,
         "reuse": reuse,
     }
 

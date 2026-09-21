@@ -3,6 +3,7 @@
     {
       "name": "startup profile stability",
       "launches": 2,
+      "game_resets": 4,
       "reasons": [
         "two fresh-process profile repetitions"
       ],
@@ -12,6 +13,7 @@
     {
       "name": "functional collection",
       "launches": 0,
+      "game_resets": 8,
       "reasons": [
         "reuse of the second profile process",
         "invalid action",
@@ -29,6 +31,7 @@
     {
       "name": "fresh-process restoration certification",
       "launches": 9,
+      "game_resets": 9,
       "reasons": [
         "three fresh-process seed-prefix continuation probes for each of two episodes",
         "three fresh-process direct-checkpoint continuation probes"
@@ -39,6 +42,7 @@
     {
       "name": "branch restoration",
       "launches": 1,
+      "game_resets": 1,
       "reasons": [
         "explicit child branch launch"
       ],

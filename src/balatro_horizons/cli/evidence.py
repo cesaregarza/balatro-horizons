@@ -8,7 +8,11 @@ def run_evidence_command(args):
     if operation == "plan":
         from balatro_horizons.evidence.stages import plan
 
-        return plan(gameplay_only=args.gameplay_only)
+        return plan(
+            gameplay_only=args.gameplay_only,
+            resume_actions=getattr(args, "resume_actions", False),
+            resume_certification=getattr(args, "resume_certification", False),
+        )
     if operation == "collect":
         from balatro_horizons.evidence.collect.orchestrator import collect
 

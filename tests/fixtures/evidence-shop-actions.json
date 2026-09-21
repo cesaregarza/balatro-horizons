@@ -4,8 +4,10 @@
   "select_blind",
   "reorder",
   "discard",
+  {"fixture": "easy_blind"},
   "play_hand",
   "cash_out",
+  {"fixture": "shop"},
   "reorder",
   "reorder",
   "buy",
@@ -16,11 +18,14 @@
   "buy",
   "choose_pack",
   "choose_pack",
+  {"fixture": "another_pack"},
   "buy",
   "skip_pack",
+  {"fixture": "credit"},
   "reroll_shop",
   "leave_shop",
   "reroll_boss",
   "select_blind",
-  "use_consumable"
+  "use_consumable",
+  {"fixture": "mask_jokers"}
 ]

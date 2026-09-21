@@ -12,6 +12,8 @@ Always inspect the non-executing plan first:
 ```bash
 uv run bh evidence plan
 uv run bh evidence plan --gameplay-only
+uv run bh evidence plan --resume-actions
+uv run bh evidence plan --resume-certification
 ```
 
 Planning reads no private manifest or seed, launches no process, and contacts no
@@ -19,12 +21,12 @@ provider. Native collection requires the operator's separately granted runtime
 access. Never add invisible retries: retain failures and resume from a named
 stage only when its prerequisites still match.
 
-| Stage | Launches | What it proves | Artifact |
+| Stage | Launches / resets | What it proves | Artifact |
 | --- | ---: | --- | --- |
-| Startup profile stability | 2 | Pinned identity and stable White/Gold profiles in fresh processes | `runtime-audit-{stake}.json` |
-| Functional collection | 0 | Invalid actions, all strategic actions, terminal detection, ordinary runs, reorder and fault handling in the retained process | `native-fixtures-final.json` |
-| Fresh-process restoration | 9 | Three fresh-process seed-prefix continuation probes for two episodes and three direct-checkpoint probes | `certificate-record-*.json` |
-| Branch restoration | 1 | One immutable-parent assisted continuation | `native-release.json` |
+| Startup profile stability | 2 / 4 | Pinned identity and stable White/Gold profiles in fresh processes | `runtime-audit-{stake}.json` |
+| Functional collection | 0 / 8 | Invalid actions, all strategic actions, terminal detection, ordinary runs, reorder and fault handling in the retained process | `native-fixtures-final.json` |
+| Fresh-process restoration | 9 / 9 | Three fresh-process seed-prefix continuation probes for two episodes and three direct-checkpoint probes | `certificate-record-*.json` |
+| Branch restoration | 1 / 1 | One immutable-parent assisted continuation | `native-release.json` |
 
 The cold plan is 12 physical launches and 22 game resets. Gameplay-only uses one
 process and eight resets; it writes collection evidence but neither certifies
@@ -32,6 +34,8 @@ restoration nor activates capabilities. Use `bh evidence collect --from-stage
 NAME` to resume the declarative suffix; the command does not infer success from
 old terminal output. A resumed action fixture requires its explicit
 `--episode-id`; the journal and pinned environment must still validate.
+The resume plans report 11 launches / 16 resets for actions, or 11 / 11 for
+certification. Selecting the gameplay-only stage requires `--gameplay-only`.
 
 ## Collection and certification
 
@@ -51,6 +55,8 @@ across at least three fresh processes. Seed-prefix certificates cover only the
 recorded prefix and suffix they replayed; direct-save support is per checkpoint,
 not universal. A divergence leaves a private `divergence-*.json` artifact and a
 failed immutable record. Use `bh evidence inspect ARTIFACT` for its bounded diff.
+Seed-prefix failure aborts certification; direct-checkpoint failure is recorded
+in `native-release.json` while the passing seed-prefix capability remains usable.
 
 `publish` validates every required artifact and the schema-selected public export
 before it writes the active `private/capability-certificate.json`. The active file
@@ -77,9 +83,11 @@ uv run bh evidence reuse \
 Preview is read-only. `--baseline auto` searches Git history for the exact
 certified implementation identity and fails with
 `CERTIFIED_BASELINE_REVISION_NOT_FOUND` when none exists. Reuse requires the
-immutable parent certificate, unchanged native `game/` bytes, the same environment
+immutable parent certificate, unchanged `contracts.py`, `game/` (except
+`fake.py`), `observations/`, `actions/`, and `storage/` bytes, the same environment
 lock, existing evidence artifacts, and an offline report bound to the exact
-candidate. Apply only after the candidate is installed and the worker is idle.
+candidate. The receipt includes the per-file native manifest and aggregate hash.
+Apply only after the candidate is installed and the worker is idle.
 
 The acceptance record preserves the original native-tested implementation hash,
 adds the reviewed candidate hash and parent certificate, and records zero native
@@ -97,3 +105,4 @@ those continue to require their full original implementation identity.
   require their own evidence and budgets; this pipeline performs no paid calls.
 - Tests that need live artifacts skip with an artifact-specific reason on a clean
   clone, and release summaries count those checks as skipped rather than passed.
+  An existing passed evidence record naming a missing artifact fails as corrupt.

@@ -56,4 +56,4 @@ def test_native_evidence_gate(acceptance):
     assert item["evidence_kind"] == "NATIVE" and item["artifacts"]
     for artifact in item["artifacts"]:
         if not (ROOT / artifact).is_file():
-            pytest.skip(f"{acceptance}: missing artifact {artifact}")
+            pytest.fail(f"{acceptance}: passed evidence names missing artifact {artifact}")
