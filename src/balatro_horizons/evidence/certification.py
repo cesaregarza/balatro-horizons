@@ -250,7 +250,7 @@ def _implementation_annotation(store, review, eid):
         model_identity_seen=True,
         max_event_seen=len(store.events(eid)) - 1,
     )
-    session = review.open(eid)
+    session = review.open_explorer(eid)
     annotation = review.annotate(
         session["review_token"],
         AnnotationInput.model_validate(

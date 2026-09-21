@@ -140,8 +140,8 @@ class ModelConfig(Options):
 
 
 class Config(Options):
-    # Review sessions, intervention controls, and budget continuation are an
-    # explicit operator opt-in. The ordinary dashboard remains read-only.
+    # Review sessions and intervention controls are an explicit operator
+    # opt-in. The ordinary dashboard remains enabled.
     workbench_enabled: bool = False
     skills: Literal["balatro-guide-v1", "none"] = "balatro-guide-v1"
     benchmark: dict = Field(

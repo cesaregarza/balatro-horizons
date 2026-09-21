@@ -11,10 +11,7 @@ def run_review_command(args):
             args.data_dir,
             public_origin=args.public_origin,
             bind_host=args.host,
-            allow_remote=args.allow_remote,
-            # The review server is the explicit dashboard entry point. The
-            # lower-level factory and ordinary Config remain default-off.
-            workbench_enabled=True,
+            workbench_enabled=args.workbench,
         ),
         host=args.host,
         port=args.port,

@@ -11,7 +11,8 @@ from balatro_horizons.workbench.service import ReviewError
 from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
-def test_prospective_tokens_cannot_enumerate_or_seek(store, episode, config):
+def test_prospective_tokens_cannot_enumerate_or_seek(store, episode, workbench_config):
+    config = workbench_config
     with TestClient(create_app(store.root, config)) as client:
         op = client.get("/api/bootstrap").json()["operator_token"]
         opened = client.post(
@@ -34,7 +35,8 @@ def test_prospective_tokens_cannot_enumerate_or_seek(store, episode, config):
         assert "terminal" not in unchanged and "action_events" not in unchanged
 
 
-def test_explorer_jumps_both_ways_and_records_annotation_provenance(store, episode, config):
+def test_explorer_jumps_both_ways_and_records_annotation_provenance(store, episode, workbench_config):
+    config = workbench_config
     before = (store.episode_path(episode) / "events.jsonl").read_bytes()
     with TestClient(create_app(store.root, config)) as client:
         op = client.get("/api/bootstrap").json()["operator_token"]

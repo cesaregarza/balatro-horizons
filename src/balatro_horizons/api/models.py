@@ -60,11 +60,6 @@ class VerifyInput(Input):
     decision: int = Field(ge=0)
 
 
-class BudgetContinuationInput(Input):
-    combined_cap_usd: float = Field(gt=0, allow_inf_nan=False, strict=True)
-    parent_terminal_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
-
-
 class SettingsInput(Input):
     skills: Literal["balatro-guide-v1", "none"] = "balatro-guide-v1"
     budgets: dict

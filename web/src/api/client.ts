@@ -182,18 +182,13 @@ export type AnnotationInput = {
 export type DecisionExportFormat = "json" | "jsonl";
 
 let operatorToken = "";
-let workbenchEnabled = false;
 
 export function setOperatorToken(token: string) {
   operatorToken = token;
 }
 
-export function setWorkbenchEnabled(enabled: boolean) {
-  workbenchEnabled = enabled;
-}
-
 function explorerPath(path: string) {
-  return workbenchEnabled ? `/review${path}` : `/explore${path}`;
+  return `/explore${path}`;
 }
 
 async function request<T>(path: string, method = "GET", body?: unknown, reviewToken?: string, signal?: AbortSignal): Promise<T> {
@@ -215,18 +210,19 @@ export const listEpisodes = () => request<Episode[]>("/episodes");
 export const startRun = (input: RunInput) => request<{ episode_id: string }>("/runs", "POST", input);
 export const stopRun = () => request<{ stop_requested: boolean }>("/stop", "POST", {});
 export const operatorStatus = () => request<any>("/operator/status");
-export const runtimeStatus = () => request<{ ready: boolean; code: string; message: string }>("/operator/runtime");
 export const saveSettings = (input: unknown) => request<any>("/settings", "PUT", input);
 export const openReview = (input: ReviewOpenInput) => request<{ review_token: string; view: View }>("/reviews", "POST", input);
-export const openExplorer = (input: ReviewOpenInput) => request<{ review_token: string; view: View | null }>(workbenchEnabled ? "/reviews" : "/explore/sessions", "POST", { ...input, retrospective: true });
+export const openExplorer = (input: ReviewOpenInput) => request<{ review_token: string; view: View | null }>("/explore/sessions", "POST", { ...input, retrospective: true });
 export const reviewView = (token: string) => request<View>("/review", "GET", undefined, token);
 export const advanceReview = (token: string) => request<View>("/review/advance", "POST", {}, token);
 export const listDecisions = (token: string) => request<DecisionLedger>(explorerPath("/decisions"), "GET", undefined, token);
 export const decisionDetail = (token: string, decision: number) => request<View>(`${explorerPath("/decisions")}/${decision}`, "GET", undefined, token);
 export const decisionTrace = (token: string, decision: number, signal?: AbortSignal) => request<any>(`${explorerPath("/decisions")}/${decision}/trace`, "GET", undefined, token, signal);
 export const seekReview = (token: string, decision: number) => request<View>(explorerPath("/seek"), "POST", { decision }, token);
-export const listAnnotations = (token: string) => request<any[]>(explorerPath("/annotations"), "GET", undefined, token);
+export const listAnnotations = (token: string, decision?: number) => request<any[]>(`${explorerPath("/annotations")}${decision === undefined ? "" : `?decision=${decision}`}`, "GET", undefined, token);
 export const saveAnnotation = (token: string, input: AnnotationInput) => request<any>(explorerPath("/annotations"), "POST", input, token);
+export const listReviewAnnotations = (token: string, decision?: number) => request<any[]>(`/review/annotations${decision === undefined ? "" : `?decision=${decision}`}`, "GET", undefined, token);
+export const saveReviewAnnotation = (token: string, input: AnnotationInput) => request<any>("/review/annotations", "POST", input, token);
 export const branchCapability = (token: string) => request<{ enabled: boolean; reason: string | null }>("/review/branch-capability", "GET", undefined, token);
 export const verifyContinuation = (input: unknown) => request<any>("/verify", "POST", input);
 export const createBranch = (input: unknown) => request<{ episode_id: string }>("/branches", "POST", input);
@@ -241,11 +237,9 @@ export const runBatch = (id: string, offline: boolean) => request<any>(`/batches
 export const batchReport = (id: string) => request<any>(`/batches/${id}/report`);
 export const batchExport = (id: string) => request<any>(`/batches/${id}/export`, "POST", {});
 
-export async function download(path: string, filename: string, reviewToken?: string, method = "GET", body?: unknown) {
+export async function download(path: string, filename: string, reviewToken?: string) {
   const response = await fetch("/api" + path, {
-    method,
     headers: { "Content-Type": "application/json", [reviewToken ? "X-Review-Token" : "X-BH-Operator"]: reviewToken ?? operatorToken },
-    body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) throw new Error("Public export download failed");
   const url = URL.createObjectURL(await response.blob());
@@ -260,5 +254,5 @@ export async function download(path: string, filename: string, reviewToken?: str
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export const downloadDecisionExport = (token: string, format: DecisionExportFormat, snapshot?: DecisionLedger) =>
-  download(`${explorerPath("/export")}/${format}`, "decision-export." + format, token, snapshot ? "POST" : "GET", snapshot);
+export const downloadDecisionExport = (token: string, format: DecisionExportFormat) =>
+  download(`${explorerPath("/export")}/${format}`, "decision-export." + format, token);

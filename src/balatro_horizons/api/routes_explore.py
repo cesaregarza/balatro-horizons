@@ -65,16 +65,6 @@ def export_decisions(request: Request, format: str, token=Depends(require_sessio
     return export_response(request.app.state.review.decisions(token), format)
 
 
-@router.post("/api/explore/export/{format}")
-def export_snapshot(request: Request, format: str, ledger: dict, token=Depends(require_session)):
-    if format not in ("json", "jsonl"):
-        raise ValueError("UNKNOWN_EXPORT_FORMAT")
-    session = request.app.state.review.session(token)[1]
-    if ledger.get("manifest", {}).get("episode_id") != session["episode_id"]:
-        raise ValueError("EXPORT_SESSION_MISMATCH")
-    return export_response({**ledger, "summary": None}, format)
-
-
 @router.post("/api/explore/seek")
 def seek(request: Request, data: SeekReview, token=Depends(require_session)):
     return request.app.state.review.seek(token, data.decision)

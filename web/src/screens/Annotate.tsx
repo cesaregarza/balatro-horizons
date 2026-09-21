@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { listAnnotations, saveAnnotation, type View } from "../api/client";
+import { listAnnotations, listReviewAnnotations, saveAnnotation, saveReviewAnnotation, type View } from "../api/client";
 
-export function Annotate({ token, view, annotations, setAnnotations, busy, run }: { token: string; view: View; annotations: any[]; setAnnotations: (items: any[]) => void; busy: boolean; run: (task: () => Promise<void>) => Promise<void> }) {
+export function Annotate({ token, view, annotations, setAnnotations, busy, run, route = "explore" }: { token: string; view: View; annotations: any[]; setAnnotations: (items: any[]) => void; busy: boolean; run: (task: () => Promise<void>) => Promise<void>; route?: "explore" | "review" }) {
   const [evidenceIds, setEvidenceIds] = useState("");
   const [judgment, setJudgment] = useState("unclear");
   const [note, setNote] = useState("");
@@ -24,7 +24,7 @@ export function Annotate({ token, view, annotations, setAnnotations, busy, run }
     <label>What tradeoff do you see?<textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Describe the mechanism and what the available evidence supports." /></label>
     <label>Alternative continuation<textarea value={alternative} onChange={(e) => setAlternative(e.target.value)} placeholder="What would you try, and why?" /></label>
     <label>Supporting event IDs<input value={evidenceIds} onChange={(e) => setEvidenceIds(e.target.value)} placeholder="Optional event IDs from the revealed trace, separated by commas" /></label>
-    <button disabled={busy || !note} onClick={() => run(async () => { const result = await saveAnnotation(token, { start_decision: start, end_decision: view.decision, judgment, horizons_in_tension: horizons, mechanism_summary: note, alternative_actions: alternative ? [alternative] : [], confidence, evidence_event_ids: evidenceIds.split(",").map((value) => value.trim()).filter(Boolean), annotation_id: editing }); setSaved("Saved revision " + result.revision); setEditing(result.annotation_id); setAnnotations(await listAnnotations(token)); })}>{editing ? "Save revision" : "Save assessment"}</button>
+    <button disabled={busy || !note} onClick={() => run(async () => { const save = route === "review" ? saveReviewAnnotation : saveAnnotation; const result = await save(token, { start_decision: start, end_decision: view.decision, judgment, horizons_in_tension: horizons, mechanism_summary: note, alternative_actions: alternative ? [alternative] : [], confidence, evidence_event_ids: evidenceIds.split(",").map((value) => value.trim()).filter(Boolean), annotation_id: editing }); setSaved("Saved revision " + result.revision); setEditing(result.annotation_id); setAnnotations(await (route === "review" ? listReviewAnnotations(token) : listAnnotations(token, view.decision))); })}>{editing ? "Save revision" : "Save assessment"}</button>
     <span className="success">{saved}</span>
     {annotations.length > 0 && <details><summary>Annotations and revisions ({annotations.length})</summary>{annotations.map((annotation) => <article key={annotation.annotation_id + "-" + annotation.revision}><p>{annotation.mechanism_summary}</p><small>Revision {annotation.revision} · {annotation.review_mode}</small><button onClick={() => edit(annotation)}>Revise</button></article>)}</details>}
   </section>;

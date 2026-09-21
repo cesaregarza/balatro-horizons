@@ -80,7 +80,7 @@ export function DecisionExplorer({ token, initialDecision }: { token: string; in
     try {
       const detail = await decisionDetail(token, active.decision);
       setAnnotationView(detail);
-      setAnnotations(await listAnnotations(token));
+      setAnnotations(await listAnnotations(token, detail.decision));
     } catch (caught) { setDetailError(String(caught)); } finally { setBusy(false); }
   }
   function runAnnotation(task: () => Promise<void>) {
@@ -89,7 +89,7 @@ export function DecisionExplorer({ token, initialDecision }: { token: string; in
   async function exportDecisions(format: DecisionExportFormat) {
     setExportError("");
     try {
-      await downloadDecisionExport(token, format, !ledger?.summary?.outcome ? ledger! : undefined);
+      await downloadDecisionExport(token, format);
     } catch { setExportError("Could not create the download. Try again."); }
   }
 

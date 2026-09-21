@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { bootstrap, compareBranch, humanStatus, listBatches, listEpisodes, listPanels, openExplorer, openReview, operatorStatus, setOperatorToken, setWorkbenchEnabled, type Episode, type View } from "./api/client";
+import { bootstrap, compareBranch, humanStatus, listBatches, listEpisodes, listPanels, openExplorer, openReview, operatorStatus, setOperatorToken, type Episode, type View } from "./api/client";
 import { DecisionExplorer } from "./screens/DecisionExplorer";
 import { BatchesAndReports } from "./screens/BatchesAndReports";
 import { ModelsAndBudgets } from "./screens/ModelsAndBudgets";
@@ -58,7 +58,6 @@ export default function App() {
   useEffect(() => {
     bootstrap().then(async (data) => {
       setOperatorToken(data.operator_token);
-      setWorkbenchEnabled(data.workbench);
       setConfig(data.config);
       setCredentials(data.paid_credentials);
       setNotice(data.workbench ? "Workbench ready." : "Dashboard ready.");
