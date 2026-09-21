@@ -12,12 +12,12 @@ from audit_cache_layout import candidates, readonly_store
 from pydantic import ValidationError
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
-from balatro_horizons.agents.budget import Spending
-from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.config import load_config
 from balatro_horizons.evaluation.reports import scan
 from balatro_horizons.evidence.provenance import implementation_fingerprint
 from balatro_horizons.harness.contract import Operation
+from balatro_horizons.harness.failures import HarnessFailure
+from balatro_horizons.harness.money import Spending, reservation_usd
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure, ProviderFailure
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.storage.journal import atomic_json, digest, locked
@@ -82,10 +82,7 @@ def main():
     private_seed = store.manifest(args.episode_id, True).get("seed")
     for row in rows:
         scan(row["body"], [private_seed])
-    reserve = (
-        limits.max_input_tokens_per_call * model.maximum_input_usd_per_million
-        + limits.max_output_tokens_per_call * model.output_usd_per_million
-    ) / 1_000_000
+    reserve = reservation_usd(model, limits)
     preflight = {
         "source_episode_id": args.episode_id,
         "calls": 4,
@@ -172,6 +169,7 @@ def main():
             try:
                 response = policy.send(body)
             except ProviderFailure as error:
+                spending.retain(request_id)
                 result = {
                     "request_id": request_id,
                     "error": error.code,

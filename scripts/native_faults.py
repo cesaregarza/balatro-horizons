@@ -4,11 +4,12 @@
 import json
 import uuid
 
-from balatro_horizons.agents.baselines import Baseline
 from balatro_horizons.config import ROOT, load_config
 from balatro_horizons.evidence.provenance import continuation_fingerprint
 from balatro_horizons.game.session import NativeFailure, NativeGame, NativeSession
-from balatro_horizons.runner import Runner
+from balatro_horizons.harness.baselines import Baseline
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
 from balatro_horizons.storage.journal import Store, atomic_json
 
 
@@ -39,7 +40,11 @@ def exercise(unknown, config, *, game_factory=None):
         return rpc
 
     with game.intercept_rpc_for_calibration(wrapper):
-        summary = Runner(store, config, game, Baseline("heuristic")).run(
+        spending = Spending.episode_only(
+            store.root / "private_runs" / f"native-fault-{seed}-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        )
+        summary = Runner(store, config, game, Baseline("heuristic"), spending).run(
             manifest={
                 "evidence_kind": "NATIVE",
                 "agent": "heuristic",

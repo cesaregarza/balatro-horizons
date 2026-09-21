@@ -83,6 +83,34 @@ counting enforces `max_input_tokens_per_call` (default 32,768) with a 512-token
 safety margin; unavailable counts fail closed. Spending reserves the configured
 input/output ceilings, not an estimate derived from request bytes.
 
+## Money
+
+Every loop receives an explicit `Spending` ledger. A standalone episode uses
+`Spending.episode_only(path, cap)`; a batch passes one ledger shared by all
+original attempts. The scheduler and loop use the same locked ledger and the
+same conservative reservation formula, including the maximum input price.
+
+Reserve under the lock immediately before sending each request, including a
+transport retry. The journal records the reservation before the request. A
+successful response settles the reservation with its measured cost; a provider
+failure calls `retain(request_id)`, so unknown usage remains charged.
+Preflight affordability is a locked, non-binding snapshot and never replaces
+the authoritative reserve operation.
+
+The `REFUSAL_OUTCOMES` table is the single reason-to-outcome vocabulary:
+
+| refusal | episode outcome | scheduler |
+| --- | --- | --- |
+| episode cap | `BUDGET_EXHAUSTED` | continue |
+| campaign cap | `CAMPAIGN_INTERRUPTED` | stop |
+| both caps | `BUDGET_EXHAUSTED` | stop |
+| continuation parent changed or not cost-exhausted | `BUDGET_EXTENSION_REFUSED` | reject |
+
+An unfunded paid slot creates no episode or game and records a write-once
+`stop.json`. Episode-only refusals remain valid non-wins; campaign interruption
+leaves the current slot unresolved. Reports retain all attempt costs, including
+retained reservations, and preserve the first stop bytes across restarts.
+
 The source journal and complete delivered requests remain authoritative.
 Branches inherit only public ancestry through their boundary observation;
 later parent events cannot enter the child. Dynamic notebook and history do

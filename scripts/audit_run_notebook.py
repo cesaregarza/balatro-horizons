@@ -14,7 +14,7 @@ from statistics import median
 
 from decision_summary import cell
 
-from balatro_horizons.config import ROOT
+from balatro_horizons.config import MAX_MEMORY_CHARACTERS, ROOT
 from balatro_horizons.evaluation.reports import scan
 from balatro_horizons.harness.context.memory import RunNotebook, used_characters
 from balatro_horizons.review.service import ReviewService
@@ -44,7 +44,9 @@ def analyze(events, manifest):
     # A branch needs inherited mutations; fail rather than treat them as missing.
     if manifest.get("parent") or manifest.get("parent_episode_id"):
         raise ValueError("NOTEBOOK_AUDIT_REQUIRES_UNBRANCHED_EPISODE")
-    limit = manifest.get("config", {}).get("budgets", {}).get("memory_max_characters", 4096)
+    limit = manifest.get("config", {}).get("budgets", {}).get(
+        "memory_max_characters", MAX_MEMORY_CHARACTERS
+    )
     notebook = RunNotebook(limit)
     mutations, requests, problems, actions, rejections = [], [], [], [], []
     observation, context, operation = {}, {}, {}

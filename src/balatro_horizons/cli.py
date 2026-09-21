@@ -26,7 +26,7 @@ def doctor(config, live=False):
         "blockers": [],
     }
     try:
-        from balatro_horizons.agents.skills import prepare_rules
+        from balatro_horizons.harness.skills import prepare_rules
 
         knowledge = prepare_rules({}, config.skills)
         checks["skills"] = {

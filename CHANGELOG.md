@@ -1,5 +1,14 @@
 # Changelog
 
+## Harness money and loop consolidation (issue #14)
+
+- Merged reservations and durable batch scheduling into `harness/money.py`,
+  with one `REFUSAL_OUTCOMES` table, explicit `Spending.retain`, and required
+  ledgers for named episode-loop phases.
+- Moved harness helpers under `harness/`, removed the replaced runner, agent
+  package, and scheduling module, and documented reserve-before-send and
+  campaign-versus-episode semantics in `docs/harness.md#money`.
+
 ## Game boundary cutover (issue #8)
 
 - Split the native adapter into `game/` contracts, state, actions, transport,

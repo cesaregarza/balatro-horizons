@@ -4,8 +4,8 @@ import sys
 
 import pytest
 
-from balatro_horizons.agents.budget import Spending
 from balatro_horizons.config import ROOT
+from balatro_horizons.harness.money import Spending
 from balatro_horizons.review.service import ReviewService
 
 spec = importlib.util.spec_from_file_location("smoke_openai", ROOT / "scripts/smoke_openai.py")

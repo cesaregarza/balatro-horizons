@@ -6,17 +6,22 @@ import os
 import queue
 import threading
 
-from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.budget import Spending, validate_paid_configuration
 from balatro_horizons.config import ROOT
-from balatro_horizons.evaluation.scheduling import batch_attempts, reconcile_stop, record_stop
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeGame
+from balatro_horizons.harness.baselines import Baseline
 from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
 from balatro_horizons.harness.contract import ProviderPolicy
+from balatro_horizons.harness.loop import OperatorAbort, run_episode
+from balatro_horizons.harness.money import (
+    Spending,
+    batch_attempts,
+    reconcile_stop,
+    record_stop,
+    validate_paid_configuration,
+)
 from balatro_horizons.harness.transport import DirectProvider
 from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.runner import OperatorAbort, Runner
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
 
 
@@ -189,7 +194,7 @@ class RunService:
                 restore_protocol(self.store, resume), config, agent, human=agent == "human"
             )
         policy = self.policy(config, agent)
-        from balatro_horizons.agents.instructions import load_prompt
+        from balatro_horizons.harness.instructions import load_prompt
 
         # NativeGame's constructor launches the game. Validate and capture prompt
         # bytes before constructing it; ordinary branches use their original snapshot.
@@ -213,6 +218,10 @@ class RunService:
             manifest["evaluation_eligible"] = False
             manifest["assistance"] = "human_takeover" if agent == "human" else "intervention"
         eid = eid or self.store.create(manifest, {"seed": seed, "config": config.model_dump()})
+        spending = spending or Spending.episode_only(
+            self.store.root / "private_runs" / eid / "spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        )
         self.review.expose(eid, "operator_configuration", model_identity_seen=True)
         self.active_id = eid
         lock_path = (
@@ -232,10 +241,19 @@ class RunService:
                     rules = json.loads(frozen.read_text())
                     if rules.get("environment_hash") != digest(game.lock):
                         raise ValueError("FROZEN_RULES_ENVIRONMENT_MISMATCH")
-                return Runner(
-                    self.store, config, game, policy, stop=self.stop, spending=spending, rules=rules,
+                return run_episode(
+                    self.store,
+                    config,
+                    game,
+                    policy,
+                    spending,
+                    stop=self.stop,
+                    rules=rules,
                     prompt_bytes=prompt_bytes,
-                ).run(eid=eid, resume=resume, history_prefix=prefix)
+                    eid=eid,
+                    resume=resume,
+                    history_prefix=prefix,
+                )
             except Exception as error:
                 if game:
                     try:
@@ -267,7 +285,7 @@ class RunService:
             self.stop.clear()
             self.error = None
             self.validate_policy(config, agent)
-            from balatro_horizons.agents.instructions import load_prompt
+            from balatro_horizons.harness.instructions import load_prompt
 
             load_prompt(ROOT)
             eid = self.store.create(

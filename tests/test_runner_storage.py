@@ -2,12 +2,12 @@ import json
 
 import pytest
 
-from balatro_horizons.agents.baselines import Baseline, ScriptedPolicy
-from balatro_horizons.agents.budget import BudgetExhausted, Spending
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeFailure
-from balatro_horizons.runner import Runner
+from balatro_horizons.harness.baselines import Baseline, ScriptedPolicy
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import BudgetExhausted, Spending
 
 
 def test_AT06_every_committed_action_has_explicit_actor(store, episode):
@@ -31,7 +31,11 @@ def test_AT09_unknown_native_application_is_not_retried(store, config):
             raise NativeFailure("ACTION_STATUS_UNKNOWN")
 
     game = AppliedThenLost()
-    summary = Runner(store, config, game, Baseline("heuristic")).run()
+    spending = Spending.episode_only(
+        store.root / "private_runs" / "test-spending.json",
+        config.budgets.max_episode_cost_usd or 1,
+    )
+    summary = Runner(store, config, game, Baseline("heuristic"), spending).run()
     assert game.calls == 1 and game.committed == 1
     assert summary["outcome"] == "INFRASTRUCTURE_FAILURE"
     assert summary["committed_actions"] == 0
@@ -83,8 +87,16 @@ def test_AT14_helpers_do_not_reset_invalid_counter(store, config):
         "envelope": {"observation_id": 999, "action": {"type": "select_blind", "blind_id": "no"}},
     }
     helper = {"kind": "arithmetic", "expression": "2+2"}
+    spending = Spending.episode_only(
+        store.root / "private_runs" / "test-spending.json",
+        config.budgets.max_episode_cost_usd or 1,
+    )
     summary = Runner(
-        store, config, FakeGame(), ScriptedPolicy([invalid, helper, invalid, helper, invalid])
+        store,
+        config,
+        FakeGame(),
+        ScriptedPolicy([invalid, helper, invalid, helper, invalid]),
+        spending,
     ).run()
     assert summary["outcome"] == "AGENT_PROTOCOL_FAILURE" and summary["committed_actions"] == 0
 

@@ -324,7 +324,7 @@ def test_gameplay_only_main_writes_collection_artifact_and_skips_certification(
     assert output["collection_only_artifact"] == str(artifact_path)
 
 
-def test_fault_collection_restores_transport_and_ends_on_unknown_status(monkeypatch):
+def test_fault_collection_restores_transport_and_ends_on_unknown_status(monkeypatch, tmp_path):
     _modules(monkeypatch)
     faults = importlib.import_module("native_faults")
     environment = _environment("WHITE")
@@ -386,14 +386,20 @@ def test_fault_collection_restores_transport_and_ends_on_unknown_status(monkeypa
             return session
 
     factory = FaultFactory()
-    config = SimpleNamespace(environment=environment, public=lambda: {}, model_dump=lambda: {})
-    monkeypatch.setattr(faults, "Store", lambda root: object())
+    config = SimpleNamespace(
+        environment=environment,
+        budgets=SimpleNamespace(max_episode_cost_usd=1),
+        public=lambda: {},
+        model_dump=lambda: {},
+    )
+    monkeypatch.setattr(faults, "Store", lambda root: SimpleNamespace(root=tmp_path))
     monkeypatch.setattr(faults, "continuation_fingerprint", lambda raw: "same-state")
     monkeypatch.setattr(faults, "atomic_json", lambda *args, **kwargs: None)
 
     class RunnerStub:
-        def __init__(self, store, config, game, policy):
+        def __init__(self, store, config, game, policy, spending):
             self.game = game
+            assert spending is not None
 
         def run(self, *, manifest, private):
             try:

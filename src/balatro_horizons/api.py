@@ -12,7 +12,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.config import ROOT, Config, load_config
 from balatro_horizons.contracts import AnnotationInput
 from balatro_horizons.evaluation.batches import plan_batch, seed_panel
@@ -22,6 +21,7 @@ from balatro_horizons.evidence.certification import (
     verify_checkpoint,
 )
 from balatro_horizons.harness.context.freeze import restore_protocol
+from balatro_horizons.harness.skills import restore_knowledge
 from balatro_horizons.review.operator_status import OperatorStatus
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService

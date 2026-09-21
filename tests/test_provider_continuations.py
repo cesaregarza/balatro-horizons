@@ -4,6 +4,7 @@ from copy import deepcopy
 import httpx
 import pytest
 from provider_transport import with_input_count
+from runner_support import episode_spending
 from test_boundary import project
 from test_harness_tools import config_for
 
@@ -11,8 +12,9 @@ from balatro_horizons.config import Limits, ModelConfig
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure
-from balatro_horizons.runner import Runner
 
 
 def model(provider):
@@ -185,7 +187,13 @@ def test_multiple_openai_calls_are_all_resolved_with_specific_feedback():
     with pytest.raises(ProtocolFailure) as error:
         policy.parse({"status": "completed", "output": calls})
     assert error.value.code == "MULTIPLE_OPERATIONS"
-    feedback = Runner(None, config_for("openai"), None, policy)._tool_feedback(
+    feedback = Runner(
+        None,
+        config_for("openai"),
+        None,
+        policy,
+        Spending.episode_only("/tmp/balatro-horizons-provider-feedback.json", 1),
+    )._tool_feedback(
         error.value, error.value.code, observation
     )
     ctx, delivered = decision_context(
@@ -210,7 +218,13 @@ def test_invalid_openai_arguments_get_linked_json_feedback():
     with pytest.raises(ProtocolFailure) as error:
         policy.parse({"status": "completed", "output": [call]})
     assert error.value.code == "INVALID_OPERATION_JSON"
-    feedback = Runner(None, config_for("openai"), None, policy)._tool_feedback(
+    feedback = Runner(
+        None,
+        config_for("openai"),
+        None,
+        policy,
+        Spending.episode_only("/tmp/balatro-horizons-provider-feedback.json", 1),
+    )._tool_feedback(
         error.value, error.value.code, observation
     )
     ctx, delivered = decision_context(
@@ -229,7 +243,13 @@ def test_unavailable_anthropic_call_gets_linked_error_feedback():
     with pytest.raises(ProtocolFailure) as error:
         policy.parse({"stop_reason": "tool_use", "content": [call]})
     assert error.value.code == "UNAVAILABLE_TOOL"
-    feedback = Runner(None, config_for("anthropic"), None, policy)._tool_feedback(
+    feedback = Runner(
+        None,
+        config_for("anthropic"),
+        None,
+        policy,
+        Spending.episode_only("/tmp/balatro-horizons-provider-feedback.json", 1),
+    )._tool_feedback(
         error.value, error.value.code, observation
     )
     ctx, delivered = decision_context(
@@ -295,7 +315,7 @@ def test_provider_continuation_resets_after_committed_game_action(store, monkeyp
         config.budgets,
         client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
-    runner = Runner(store, config, FakeGame(), policy)
+    runner = Runner(store, config, FakeGame(), policy, episode_spending(store, config))
     result = runner.run()
     assert result["reason"] == "AGENT_ABORT"
     assert len(requests) == 3

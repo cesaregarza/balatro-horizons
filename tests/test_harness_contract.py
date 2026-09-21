@@ -5,12 +5,13 @@ from types import SimpleNamespace
 
 from test_openai_luna import luna
 
-from balatro_horizons.agents.baselines import Baseline, ScriptedPolicy
 from balatro_horizons.game.contract import GameSession
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.baselines import Baseline, ScriptedPolicy
 from balatro_horizons.harness.contract import Policy, ProviderPolicy
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
 from balatro_horizons.harness.transport import DirectProvider
-from balatro_horizons.runner import Runner
 from balatro_horizons.service import HumanPolicy, HumanSequencePolicy, InterventionPolicy
 
 
@@ -97,7 +98,16 @@ def test_committed_action_ends_provider_continuation_once(store):
 
     policy = ProbeProvider()
     try:
-        result = Runner(store, config, FakeGame(), policy).run()
+        result = Runner(
+            store,
+            config,
+            FakeGame(),
+            policy,
+            Spending.episode_only(
+                store.root / "private_runs" / "test-spending.json",
+                config.budgets.max_episode_cost_usd or 1,
+            ),
+        ).run()
         assert result["committed_actions"] == 1
         assert result["reason"] == "AGENT_ABORT"
         assert policy.ended == 1

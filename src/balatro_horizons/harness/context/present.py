@@ -3,12 +3,12 @@
 import json
 from copy import deepcopy
 
-from balatro_horizons.agents.tool_interface import INSPECT_SECTIONS, tool
 from balatro_horizons.config import (
     AUTOMATIC_PUBLIC_EVENT_COUNT,
     EVENT_SUMMARY_CHARACTERS,
 )
 from balatro_horizons.config import HELPER_PAGE_BYTES as PAGE_BYTES
+from balatro_horizons.harness.tool_interface import INSPECT_SECTIONS, tool
 
 CARD_DEFAULTS = {
     "face_down": False,

@@ -4,13 +4,14 @@ import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from balatro_horizons.agents.baselines import Baseline
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.game.contract import GameSession, NativeFailure, NativeRejected
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeGame
 from balatro_horizons.game.transport import raise_rpc_error
-from balatro_horizons.runner import Runner
+from balatro_horizons.harness.baselines import Baseline
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
 
 
 def _private_errors(store, eid):
@@ -29,7 +30,11 @@ def test_rejected_lua_code_is_terminal_reason_and_envelope_is_private(store, con
         def apply_public_action(self, action, issuer, request_id=None):
             raise NativeRejected("X", name="NOT_ALLOWED")
 
-    summary = Runner(store, config, Rejected(), Baseline("heuristic")).run()
+    spending = Spending.episode_only(
+        store.root / "private_runs" / "test-spending.json",
+        config.budgets.max_episode_cost_usd or 1,
+    )
+    summary = Runner(store, config, Rejected(), Baseline("heuristic"), spending).run()
     assert summary["outcome"] == "INVALID_EVALUATION"
     assert summary["reason"] == "NATIVE_PUBLIC_LEGALITY_MISMATCH"
     assert _private_errors(store, summary["episode_id"]) == [
@@ -46,7 +51,16 @@ def test_upstream_invalid_blind_scores_agent_rejection_with_private_raw_message(
         def apply_public_action(self, action, issuer, request_id=None):
             raise_rpc_error({"data": {"name": "INVALID_STATE", "message": "INVALID_BLIND"}})
 
-    summary = Runner(store, config, Upstream(), Baseline("heuristic")).run()
+    summary = Runner(
+        store,
+        config,
+        Upstream(),
+        Baseline("heuristic"),
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     assert summary["outcome"] == "INVALID_EVALUATION"
     assert summary["reason"] == "NATIVE_ACTION_REJECTED"
     assert _private_errors(store, summary["episode_id"]) == [
@@ -63,7 +77,16 @@ def test_arbitrary_uppercase_native_code_is_private_not_a_public_reason(store, c
         def wait_ready(self):
             raise NativeFailure(code)
 
-    summary = Runner(store, config, Secret(), Baseline("heuristic")).run()
+    summary = Runner(
+        store,
+        config,
+        Secret(),
+        Baseline("heuristic"),
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     assert summary["outcome"] == "INFRASTRUCTURE_FAILURE"
     assert summary["reason"] == "NATIVE_BRIDGE_FAILURE"
     assert _private_errors(store, summary["episode_id"]) == [
@@ -85,7 +108,16 @@ def test_malformed_rejected_ledger_status_scores_infrastructure(store, config):
             native.wait_ready = Mock()
             native.apply_public_action(SimpleNamespace(type="select_blind"), None, request_id)
 
-    summary = Runner(store, config, Malformed(), Baseline("heuristic")).run()
+    summary = Runner(
+        store,
+        config,
+        Malformed(),
+        Baseline("heuristic"),
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     assert summary["outcome"] == "INFRASTRUCTURE_FAILURE"
     assert summary["reason"] == "RPC_ENDPOINT_FAILURE"
 
@@ -95,7 +127,16 @@ def test_infrastructure_lua_code_is_not_collapsed(store, config):
         def wait_ready(self):
             raise NativeFailure("BUSY", name="INFRASTRUCTURE")
 
-    summary = Runner(store, config, Busy(), Baseline("heuristic")).run()
+    summary = Runner(
+        store,
+        config,
+        Busy(),
+        Baseline("heuristic"),
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     assert summary["outcome"] == "INFRASTRUCTURE_FAILURE"
     assert summary["reason"] == "BUSY"
     assert _private_errors(store, summary["episode_id"]) == [

@@ -2,11 +2,11 @@
 
 import re
 
-from balatro_horizons.agents.skills import discovery
-from balatro_horizons.agents.tool_interface import stable_tools
 from balatro_horizons.config import NOTEBOOK_KEY_MAX, NOTEBOOK_KEY_MIN, RETAINED_HELPER_RESULTS
 from balatro_horizons.harness.context.memory import notebook_tools
 from balatro_horizons.harness.context.present import focused_tools
+from balatro_horizons.harness.skills import discovery
+from balatro_horizons.harness.tool_interface import stable_tools
 
 KERNEL = (
     "The objective is the ordinary Ante 8 native run win. Hand scores resolve in native "

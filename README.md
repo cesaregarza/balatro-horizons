@@ -189,14 +189,8 @@ Use the application's **Export public bundle** or `bh export --public` to genera
 
 Batch reports include planned slots, first valid outcomes, wins, coverage, unresolved slots, outcome categories, missing-outcome bounds, and costs across all attempts. Confidence intervals resample seeds with their replicates. Paired comparisons retain seed/replicate matching. Human interventions are diagnostic evidence, not autonomous wins or proofs of optimal play.
 
-Campaign funding is separate from the agent's episode budget. An unfunded next
-paid slot creates no episode; a campaign-only interruption leaves the current
-slot unresolved and retains its costs. An episode-only cost refusal remains a
-valid `BUDGET_EXHAUSTED` non-win. If both caps bind, the current attempt is valid
-and the campaign also stops. Funding stops are durable: rerunning the same frozen
-batch cannot resume it, even with a cheaper or scripted agent next. Reports and
-public exports include `scheduling_stop`; old generic cost stops retain their
-original meaning. See [exact semantics and validation](docs/campaign-budget-fix.md).
+Money admission, reserve-before-send ordering, unknown-usage retention, and
+durable campaign stops are documented in the [harness Money guide](docs/harness.md#money).
 
 The current harness preserves provider-native reasoning and tool-call blocks
 across helper calls within one decision, then deliberately resets provider state
