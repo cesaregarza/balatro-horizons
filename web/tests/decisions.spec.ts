@@ -184,7 +184,7 @@ test("live explorer appends decisions, preserves the selected board, retries and
   let fail = false;
   let finished = false;
   let polls = 0;
-  await page.route("**/api/review/decisions", async (route) => {
+  await page.route("**/api/explore/decisions", async (route) => {
     polls += 1;
     if (fail) {
       await route.fulfill({

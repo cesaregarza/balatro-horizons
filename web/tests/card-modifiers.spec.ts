@@ -88,7 +88,7 @@ test("explorer shows pickup modifiers in live rows, details and the board on a p
         ?.summary?.outcome;
     })
     .toBe("WIN");
-  await page.route("**/api/review/decisions", async (route) => {
+  await page.route("**/api/explore/decisions", async (route) => {
     const response = await route.fetch();
     const ledger = await response.json();
     for (const row of ledger.actions)
@@ -104,7 +104,7 @@ test("explorer shows pickup modifiers in live rows, details and the board on a p
     ledger.summary = null;
     await route.fulfill({ response, json: ledger });
   });
-  await page.route("**/api/review/decisions/3", async (route) => {
+  await page.route("**/api/explore/decisions/3", async (route) => {
     const response = await route.fetch();
     const view = await response.json();
     view.transition.state.jokers = [

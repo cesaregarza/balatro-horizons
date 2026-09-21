@@ -13,7 +13,6 @@ from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.api.middleware import require_operator, require_session
 from balatro_horizons.api.models import (
     BranchInput,
-    BudgetContinuationInput,
     OpenReview,
     SeekReview,
     VerifyInput,
@@ -72,16 +71,6 @@ def export_decisions(request: Request, format: str, token=Depends(require_sessio
     return export_response(ledger, format)
 
 
-@router.post("/api/review/export/{format}")
-def export_snapshot(request: Request, format: str, ledger: dict, token=Depends(require_session)):
-    if format not in ("json", "jsonl"):
-        raise ValueError("UNKNOWN_EXPORT_FORMAT")
-    session = request.app.state.workbench.session(token)[1]
-    if ledger.get("manifest", {}).get("episode_id") != session["episode_id"]:
-        raise ValueError("EXPORT_SESSION_MISMATCH")
-    return export_response({**ledger, "summary": None}, format)
-
-
 @router.post("/api/review/seek")
 def seek(request: Request, data: SeekReview, token=Depends(require_session)):
     return request.app.state.workbench.seek(token, data.decision)
@@ -99,7 +88,11 @@ def branch_capability(request: Request, token=Depends(require_session)):
         restore_protocol(request.app.state.store, checkpoint)
         return {"enabled": True, "reason": None}
     except (ValueError, OSError):
-        return {"enabled": False, "reason": "This decision needs a current passing replay certificate and frozen knowledge and agent-protocol snapshots."}
+        return {
+            "enabled": False,
+            "reason": "This decision needs a current passing replay certificate and frozen "
+            "knowledge and agent-protocol snapshots.",
+        }
 
 
 @router.post("/api/verify", dependencies=[Depends(require_operator)])
@@ -123,10 +116,17 @@ def branch(request: Request, data: BranchInput):
     state = request.app.state
     parent = state.store.manifest(data.episode_id, True)
     config = state.config.model_validate(parent.get("config", state.config.model_dump()))
-    return {"episode_id": state.runs.branch(config, data.episode_id, data.decision, data.mode, data.actions)}
+    return {
+        "episode_id": state.runs.branch(
+            config, data.episode_id, data.decision, data.mode, data.actions
+        )
+    }
 
 
-@router.get("/api/operator/branches/{branch_id}/comparison", dependencies=[Depends(require_operator)])
+@router.get(
+    "/api/operator/branches/{branch_id}/comparison",
+    dependencies=[Depends(require_operator)],
+)
 def compare_branch(request: Request, branch_id: str):
     state = request.app.state
     child = state.store.manifest(branch_id)
@@ -136,7 +136,10 @@ def compare_branch(request: Request, branch_id: str):
     result = {
         "assistance": child["assistance"],
         "branch_decision": child["parent_decision"],
-        "interpretation": "A successful alternative continuation does not establish an optimal move or a causal share of failure.",
+        "interpretation": (
+            "A successful alternative continuation does not establish an optimal move or a "
+            "causal share of failure."
+        ),
         "runs": [],
     }
     for episode_id in (parent_id, branch_id):
@@ -146,7 +149,13 @@ def compare_branch(request: Request, branch_id: str):
 
 def _comparison_run(state, episode_id):
     events = state.store.events(episode_id)
-    state.review.expose(episode_id, "branch_comparison", outcome_seen=True, model_identity_seen=True, max_event_seen=len(events) - 1)
+    state.review.expose(
+        episode_id,
+        "branch_comparison",
+        outcome_seen=True,
+        model_identity_seen=True,
+        max_event_seen=len(events) - 1,
+    )
     return {
         "episode_id": episode_id,
         "summary": state.store.summary(episode_id),
@@ -166,21 +175,16 @@ def _comparison_run(state, episode_id):
 
 @router.get("/api/review/annotations")
 def legacy_annotations(request: Request, token=Depends(require_session)):
-    state = request.app.state
-    session = state.review.session(token)[1]
-    review = state.review if session["mode"] == "retrospective" else state.workbench
-    view = review.explore_view(token) if session["mode"] == "retrospective" else review.view(token)
-    return review.annotations(view["episode_id"])
+    review = request.app.state.workbench
+    view = review.view(token)
+    return review.annotations_for_view(view)
 
 
 @router.post("/api/review/annotations")
 def legacy_annotate(request: Request, data: dict, token=Depends(require_session)):
     from balatro_horizons.contracts import AnnotationInput
 
-    state = request.app.state
-    session = state.review.session(token)[1]
-    review = state.review if session["mode"] == "retrospective" else state.workbench
-    return review.annotate(token, AnnotationInput.model_validate(data))
+    return request.app.state.workbench.annotate(token, AnnotationInput.model_validate(data))
 
 
 @router.get("/api/operator/human", dependencies=[Depends(require_operator)])
@@ -193,7 +197,9 @@ def human(request: Request):
             request.app.state.runs.active_id,
             "human_control",
             model_identity_seen=True,
-            max_event_seen=len(request.app.state.store.events(request.app.state.runs.active_id)) - 1,
+            max_event_seen=(
+                len(request.app.state.store.events(request.app.state.runs.active_id)) - 1
+            ),
         )
     return {"waiting": True, **human_policy.current}
 
@@ -208,12 +214,3 @@ def human_action(request: Request, data: dict):
     except queue.Full:
         raise ValueError("ACTION_ALREADY_QUEUED") from None
     return {"queued": True}
-
-
-@router.post("/api/operator/episodes/{episode_id}/continue-budget", dependencies=[Depends(require_operator)])
-def continue_budget(request: Request, episode_id: str, data: BudgetContinuationInput):
-    return {
-        "episode_id": request.app.state.runs.continue_budget(
-            episode_id, data.combined_cap_usd, expected_head=data.parent_terminal_hash
-        )
-    }

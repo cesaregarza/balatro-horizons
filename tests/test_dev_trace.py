@@ -102,12 +102,12 @@ def test_retries_invalid_multiple_calls_and_future_decision_isolation(recording,
     assert "LATER_DECISION_ONLY" not in json.dumps(trace) and "not public" not in json.dumps(trace)
 
 
-def test_trace_requires_retrospective_session_even_after_exposure(recording, store, config):
+def test_trace_requires_retrospective_session_even_after_exposure(recording, store, workbench_config):
     eid, review, token, _ = recording
     prospective = review.open(eid)["review_token"]
     with pytest.raises(ReviewError, match="RETROSPECTIVE_REVIEW_REQUIRED"):
         decision_trace(review, prospective, 67)
-    with TestClient(create_app(store.root, config)) as client:
+    with TestClient(create_app(store.root, workbench_config)) as client:
         path = "/api/review/decisions/67/trace"
         assert client.get(path).status_code == 403
         denied = client.get(path, headers={"X-Review-Token": prospective})

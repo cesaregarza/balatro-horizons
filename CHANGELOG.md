@@ -72,6 +72,9 @@
   retrospective annotations available by default; staged review, branches,
   takeover, and verification remain workbench-only. Budget continuation belongs
   to PR #25 and is not enabled by this restructure.
+- Action descriptions changed from `Face X` to `Select X`, `Choose X` to
+  `Choose X from pack`, `Buy Joker and use immediately` to `Buy & use Joker`,
+  and `model_turn` to `Model calls before game action`.
 
 ## 2026-09-20 — Game boundary (PR #28; `21f7486`)
 

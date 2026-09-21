@@ -18,8 +18,11 @@ def block_real_http(monkeypatch):
 
 @pytest.fixture
 def config():
-    # Frozen review/workbench cases explicitly opt into the new default-off
-    # router while ordinary app construction still exercises the safe default.
+    return Config()
+
+
+@pytest.fixture
+def workbench_config():
     return Config(workbench_enabled=True)
 
 
@@ -34,3 +37,11 @@ def episode(store, config):
     return Runner(store, config, FakeGame(private["seed"]), Baseline("heuristic")).run(
         private=private
     )["episode_id"]
+
+
+@pytest.fixture
+def workbench_episode(store, workbench_config):
+    private = {"seed": "DO_NOT_EXPORT_THIS_SEED", "config": workbench_config.model_dump()}
+    return Runner(
+        store, workbench_config, FakeGame(private["seed"]), Baseline("heuristic")
+    ).run(private=private)["episode_id"]

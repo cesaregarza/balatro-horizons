@@ -28,6 +28,7 @@ class ReviewService:
         self.store = store
         self.root = store.root / "review"
         self.root.mkdir(exist_ok=True)
+        self.session_root = self.root
 
     def _append(self, path, row):
         with locked(path.with_suffix(".lock")):
@@ -57,7 +58,7 @@ class ReviewService:
         )
 
     def session(self, token):
-        path = self.root / (identifier(token) + ".json")
+        path = self.session_root / (identifier(token) + ".json")
         if not path.is_file():
             raise ReviewError("UNKNOWN_REVIEW_SESSION")
         return path, json.loads(path.read_text())
@@ -81,7 +82,7 @@ class ReviewService:
         )
         if prior_seed_exposure:
             self.expose(eid, "prior_seed_exposure", prior_seed_exposure=True)
-        atomic_json(self.root / (token + ".json"), session, immutable=True)
+        atomic_json(self.session_root / (token + ".json"), session, immutable=True)
         if not any(event["type"] == "observation" for event in self.store.events(eid)):
             return {"review_token": token, "view": None}
         return {"review_token": token, "view": self.explore_view(token)}
@@ -126,47 +127,79 @@ class ReviewService:
             if event["sequence"] <= max_seen
         ]
 
-    def _view(self, session):
+    def _build_view(self, session, *, staged=False):
         events, observations, start, segment = self._decision(session)
+        stage = session["stage"] if staged else "transition"
         eid = session["episode_id"]
         manifest = self.store.manifest(eid)
         result = {
             "episode_id": eid,
             "decision": start["observation_id"],
-            "stage": "transition",
+            "stage": stage,
             "observation": start["payload"],
             "evidence_kind": manifest["evidence_kind"],
             "evaluation_eligible": manifest.get("evaluation_eligible", False),
             "fixture": manifest.get("fixture"),
-            "action_events": self._action_events(segment),
         }
-        index = session["decision_index"]
         max_seen = start["sequence"]
-        if index + 1 < len(observations):
-            result["transition"] = observations[index + 1]["payload"]
-            max_seen = observations[index + 1]["sequence"]
-            result["can_advance"] = False
-        else:
-            result["terminal"] = self.store.summary(eid)
-            result["can_advance"] = False
+        if stage in ("action", "transition"):
+            result["action_events"] = self._action_events(segment)
+            if staged:
+                max_seen = max(
+                    [max_seen] + [event["sequence"] for event in result["action_events"]]
+                )
+        if stage == "transition":
+            index = session["decision_index"]
+            if index + 1 < len(observations):
+                result["transition"] = observations[index + 1]["payload"]
+                max_seen = observations[index + 1]["sequence"]
+                result["can_advance"] = staged
+            else:
+                result["terminal"] = self.store.summary(eid)
+                result["can_advance"] = False
+                if staged and result["terminal"]:
+                    self.expose(
+                        eid,
+                        "terminal_revealed",
+                        outcome_seen=True,
+                        max_event_seen=len(events) - 1,
+                    )
         result["trajectory"] = self._trajectory(observations, max_seen)
-        self.expose(
-            eid,
-            "retrospective_detail",
-            max_event_seen=max_seen,
-            outcome_seen=bool(result.get("terminal")),
-            model_identity_seen=True,
-        )
+        if staged:
+            self.expose(eid, "review_" + stage, max_event_seen=max_seen)
+        else:
+            self.expose(
+                eid,
+                "retrospective_detail",
+                max_event_seen=max_seen,
+                outcome_seen=bool(result.get("terminal")),
+                model_identity_seen=True,
+            )
         exposure = self.exposure(eid)
         result["exposure"] = {key: value for key, value in exposure.items() if key != "records"}
-        result["review_mode"] = "retrospective"
+        result["review_mode"] = (
+            "retrospective"
+            if session["mode"] == "retrospective"
+            else "mixed"
+            if exposure["outcome_seen"]
+            or exposure["prior_seed_exposure"]
+            or exposure["max_event_seen"] > max_seen
+            else "prospective"
+        )
         return result
+
+    def _view(self, session):
+        return self._build_view(session)
 
     def explore_view(self, token):
         _, session = self.session(token)
         if session["mode"] != "retrospective":
             raise ReviewError("RETROSPECTIVE_REVIEW_REQUIRED")
         return self._view(session)
+
+    def view(self, token):
+        """Return the current read-only view for annotation and route callers."""
+        return self.explore_view(token)
 
     def decisions(self, token):
         """Return the public ledger without widening the session capability."""
@@ -196,6 +229,14 @@ class ReviewService:
         path = self.root / (identifier(eid) + "-annotations.jsonl")
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
+    def annotations_for_view(self, view):
+        """Return only annotations whose end is already visible in a view."""
+        return [
+            annotation
+            for annotation in self.annotations(view["episode_id"])
+            if annotation["end_decision"] <= view["decision"]
+        ]
+
     def _annotation_record(self, data, aid, eid, revisions, view):
         return {
             **data.model_dump(),
@@ -204,18 +245,19 @@ class ReviewService:
             "reviewer_id": "local-owner",
             "revision": len(revisions) + 1,
             "created_at": now(),
-            "review_mode": "retrospective",
+            "review_mode": view["review_mode"],
             "exposure": view["exposure"],
             "stage": view["stage"],
         }
 
     def annotate(self, token, data: AnnotationInput):
         _, session = self.session(token)
-        if session["mode"] != "retrospective":
-            raise ReviewError("RETROSPECTIVE_REVIEW_REQUIRED")
         if data.start_decision > data.end_decision:
             raise ReviewError("ANNOTATION_OUTSIDE_REVEALED_RANGE")
-        view = self._view(self._at_decision(session, data.end_decision))
+        if session["mode"] == "retrospective":
+            view = self._view(self._at_decision(session, data.end_decision))
+        else:
+            view = self.view(token)
         eid = session["episode_id"]
         if not 0 <= data.start_decision <= data.end_decision <= view["decision"]:
             raise ReviewError("ANNOTATION_OUTSIDE_REVEALED_RANGE")

@@ -273,11 +273,12 @@ def test_skill_settings_roundtrip_preserves_omitted_choice(store, config):
         assert client.get("/api/bootstrap").json()["config"]["skills"] == "none"
 
 
-def test_branch_capability_requires_knowledge_snapshot(store, config, episode):
+def test_branch_capability_requires_knowledge_snapshot(store, workbench_config, episode):
     from fastapi.testclient import TestClient
 
     from balatro_horizons.api import create_app
 
+    config = workbench_config
     verify_checkpoint(store, config, episode, 0, repetitions=3)
     with TestClient(create_app(store.root, config)) as client:
         op = {"X-BH-Operator": client.get("/api/bootstrap").json()["operator_token"]}

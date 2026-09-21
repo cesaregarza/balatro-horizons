@@ -12,7 +12,8 @@ explicitly enables it. The ordinary
 dashboard always mounts the run library, live status, decision exploration,
 cost/model-budget settings, batches, reports, and cheap append-only
 retrospective annotations under the `/api/explore...` and core namespaces.
-These surfaces remain usable when the flag is off.
+These surfaces remain usable when the flag is off: 23 mounted routes including
+the root page, versus 39 with the 16 workbench routes enabled.
 
 The workbench owns staged reveal/review, branching and comparison, human
 takeover, and verification. Its `/api/review*`,
@@ -29,11 +30,14 @@ on loopback behind Tailscale Serve. `--public-origin` names that exact trusted
 Tailscale HTTPS origin. Credentials belong in the backend
 environment, never browser settings. Private run directories, raw observations,
 seeds, saves, provider requests, and reviewer identity are not browser data.
+The trusted public origin must be HTTPS on a `.ts.net` hostname.
 
 The server projects exact public schemas for JSON and JSONL exports and scans
 them before writing. A browser cannot reconstruct an export from detail records.
-Action labels come from the shared descriptor table used by API summaries and
-TypeScript presentation. Route names and accessible labels are versioned UI
+Decision downloads use GET `/api/explore/export/{format}` or its workbench
+`/api/review/export/{format}` counterpart; no client-supplied ledger is accepted.
+Action labels come from the single packaged `review/action_descriptors.json`,
+also imported by TypeScript. Route names and accessible labels are versioned UI
 contracts; changes require matching browser coverage.
 Unknown edition text is escaped and never used as a CSS class. Browser decision
 numbers start at 1; journal observation IDs are zero-based.
@@ -67,6 +71,9 @@ and appends annotation revisions. Prospective annotations are filtered to the
 revealed decision boundary. Budget continuation is deferred to PR #25; there is
 no `continue-budget` route in this cutover. Loopback and route isolation apply
 equally to operator controls.
+Explore and staged-review tokens use separate stores: an explore token cannot
+advance a workbench cursor. Retrospective annotation lists use the explicitly
+selected decision boundary without mutating the read-only explore cursor.
 
 `bh summarize --episode-id EPISODE_ID --output summary.json
 --markdown-output summary.md` writes a new public JSON decision ledger and an

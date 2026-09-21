@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { advanceReview, branchCapability, createBranch, listAnnotations, verifyContinuation, type Action, type View } from "../api/client";
+import { advanceReview, branchCapability, createBranch, listReviewAnnotations, verifyContinuation, type Action, type View } from "../api/client";
 import { Board } from "../Board";
 import { ReasoningSummaries } from "./ReasoningSummaries";
 import { Trajectory } from "./Trajectory";
@@ -16,7 +16,7 @@ export function Review({ token, initial, onBranch, onExplore }: { token: string;
 
   useEffect(() => {
     branchCapability(token).then(setCapability).catch(() => {});
-    listAnnotations(token).then(setAnnotations).catch(() => {});
+    listReviewAnnotations(token).then(setAnnotations).catch(() => {});
   }, [token, view]);
   async function run(task: () => Promise<void>) {
     setBusy(true); setError("");
@@ -38,7 +38,7 @@ export function Review({ token, initial, onBranch, onExplore }: { token: string;
     {view.transition && <section className="panel"><h3>After the action</h3><div className="stats">{["money", "hands", "discards", "chips"].map((key) => <div key={key}><small>{key}</small><strong>{view.observation.state.resources[key] ?? "?"} → {view.transition!.state.resources[key] ?? "?"}</strong></div>)}</div><Board observation={view.transition} /></section>}
     {view.terminal && <section className="panel"><h3>Run ended</h3><pre>{JSON.stringify(view.terminal, null, 2)}</pre></section>}
     <Trajectory points={view.trajectory || []} />
-    <Annotate key={`${token}:${view.decision}`} token={token} view={view} annotations={annotations} setAnnotations={setAnnotations} busy={busy} run={run} />
+    <Annotate key={`${token}:${view.decision}`} token={token} view={view} annotations={annotations} setAnnotations={setAnnotations} busy={busy} run={run} route="review" />
     <div className="review-footer"><button className="primary" disabled={busy || (view.stage === "transition" && !view.can_advance)} onClick={() => run(async () => setView(await advanceReview(token)))}>{view.stage === "observation" ? "Reveal agent action" : view.stage === "action" ? "Reveal consequences" : "Next decision"}</button><select aria-label="Restoration method" value={replayMode} onChange={(e) => setReplayMode(e.target.value)}><option value="checkpoint">Native save</option><option value="seed_prefix">Seed-prefix replay</option></select><button disabled={busy} onClick={() => run(async () => { const cert = await verifyContinuation({ episode_id: view.episode_id, decision: view.decision, mode: replayMode }); setCapability({ enabled: cert.status === "passed", reason: cert.status === "passed" ? "" : "Replay diverged; branching remains disabled." }); })}>Verify continuation</button><button disabled={busy || !capability.enabled} onClick={() => setBranching(!branching)}>Explore an alternative</button></div>
     {!capability.enabled && <p className="muted">{capability.reason}</p>}
     {branching && <section className="panel"><h3>Branch from this decision</h3><p>The original run stays unchanged. Choose one alternative action below, or resume control.</p><div className="actions"><button onClick={() => branch("agent_continue")}>Resume agent</button><button onClick={() => branch("human_takeover")}>Take over</button><button onClick={() => branch("short_human_sequence")}>Play 3 actions, then resume agent</button></div><Board observation={view.observation} onAction={(action) => branch("single_action_override", [action])} /></section>}

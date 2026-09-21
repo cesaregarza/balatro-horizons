@@ -90,7 +90,13 @@ def require_session(request: Request, x_review_token: str = Header(default="")):
     try:
         request.app.state.review.session(x_review_token)
     except (ValueError, FileNotFoundError):
-        raise HTTPException(403, "REVIEW_TOKEN_REQUIRED") from None
+        workbench = getattr(request.app.state, "workbench", None)
+        if workbench is None:
+            raise HTTPException(403, "REVIEW_TOKEN_REQUIRED") from None
+        try:
+            workbench.session(x_review_token)
+        except (ValueError, FileNotFoundError):
+            raise HTTPException(403, "REVIEW_TOKEN_REQUIRED") from None
     return x_review_token
 
 
