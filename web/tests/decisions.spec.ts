@@ -204,6 +204,28 @@ test("live explorer appends decisions, preserves the selected board, retries and
       },
     });
   });
+  await page.route("**/api/explore/export/jsonl", async (route) => {
+    const response = await route.fetch();
+    const rows = (await response.text())
+      .trimEnd()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    const snapshot = rows.slice(0, count).map((row) => ({
+      ...row,
+      snapshot_status: finished ? row.snapshot_status : "in_progress",
+      run_summary: finished ? row.run_summary : null,
+      source_journal_head: `live-${count}-${finished}`,
+    }));
+    await route.fulfill({
+      status: response.status(),
+      headers: {
+        ...response.headers(),
+        "content-disposition": `attachment; filename="balatro-${eid}-decisions${finished ? "" : "-partial"}.jsonl"`,
+      },
+      body: snapshot.map((row) => JSON.stringify(row)).join("\n") + "\n",
+    });
+  });
   await page.goto(`/#explore/${eid}`);
   const list = page.getByRole("region", { name: "Recorded choices" });
   const detail = page.getByRole("region", { name: "Decision details" });

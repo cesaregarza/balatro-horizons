@@ -1,6 +1,25 @@
 import { test, expect } from "@playwright/test";
 import { awaitIdleWorker } from "./runHelpers";
 
+function addPublicInformation(state: any) {
+  state.revealed_blinds[0].status = "SELECT";
+  state.revealed_blinds[0].disabled = true;
+  state.revealed_blinds[0].skip_reward = {
+    label: "Investment Tag",
+    effects: ["After defeating the Boss Blind, gain $25"],
+    acquisition_condition: "skip_this_blind",
+  };
+  state.owned_vouchers = [
+    { label: "Seed Money", effects: ["Raise interest cap to $10"] },
+  ];
+  state.pending_tags = [
+    {
+      label: "Double Tag",
+      effects: ['<img src=x onerror="window.injected=true">'],
+    },
+  ];
+}
+
 test("review distinguishes skip offers from owned effects and escapes descriptions", async ({
   page,
 }) => {
@@ -12,23 +31,17 @@ test("review distinguishes skip offers from owned effects and escapes descriptio
       return;
     }
     const data = await response.json();
-    const state = data.view.observation.state;
-    state.revealed_blinds[0].status = "SELECT";
-    state.revealed_blinds[0].disabled = true;
-    state.revealed_blinds[0].skip_reward = {
-      label: "Investment Tag",
-      effects: ["After defeating the Boss Blind, gain $25"],
-      acquisition_condition: "skip_this_blind",
-    };
-    state.owned_vouchers = [
-      { label: "Seed Money", effects: ["Raise interest cap to $10"] },
-    ];
-    state.pending_tags = [
-      {
-        label: "Double Tag",
-        effects: ['<img src=x onerror="window.injected=true">'],
-      },
-    ];
+    addPublicInformation(data.view.observation.state);
+    await route.fulfill({ response, json: data });
+  });
+  await page.route(/\/api\/explore\/decisions\/\d+$/, async (route) => {
+    const response = await route.fetch();
+    if (!response.ok()) {
+      await route.fulfill({ response });
+      return;
+    }
+    const data = await response.json();
+    addPublicInformation(data.observation.state);
     await route.fulfill({ response, json: data });
   });
   await page.goto("/");
