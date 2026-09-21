@@ -47,10 +47,14 @@
   size and function metrics during the restructure; the bounded review was
   completed and the one-shot reporter has no runtime consumer.
 - Moved `decision_summary.py` and `summarize_run.py` into the `bh summarize`
-  package command and moved `native_patches.py` to `game/patches.py`.
+  package command, including descriptors in the installed wheel, and moved
+  `native_patches.py` to `game/patches.py`.
 - Four load-bearing operational exceptions remain separate:
   `configure_workbench_session.py`, `diagnose_native_startup.py`,
   `install_candidate.py`, and `verify_browser_native.mjs`.
+- Nine retained operational-script tests still load their script boundary
+  directly. Replacing those workflows is deferred rather than deleting their
+  coverage or broadening this collapse beyond its two authorized package moves.
 
 ## 2026-09-21 — Native evidence pipeline (`fd316c1`)
 

@@ -34,6 +34,28 @@ Action labels come from the shared descriptor table used by API summaries and
 TypeScript presentation. Route names and accessible labels are versioned UI
 contracts; changes require matching browser coverage.
 
+Status polling reads a compact per-episode cache, not the full journal on every
+request. Device, inode, size, modification time, or change time invalidates the
+entry; concurrent readers share verification and changing journals are read
+under the writer lock. The cache retains no observations or provider bodies.
+Terminal journal facts override a lagging SQLite index, pending reservations
+remain in costs, and unchanged polls append no duplicate exposure. Browser polls
+never overlap, stop when hidden or disabled, and event-stream work stays off the
+server event loop. Use `scripts/workbench_status.py --timing` for a bounded check.
+
+After WSL or service recreation, preview and then apply only the required Windows
+session variables from a connected WSL shell:
+
+```bash
+uv run scripts/configure_workbench_session.py
+uv run scripts/configure_workbench_session.py --apply
+```
+
+The apply step writes a service-only drop-in and restarts the idle service; it
+rejects a busy native worker and never imports shell credentials, proxies, or the
+general environment. Reapply after the service is recreated. Loopback plus an
+operator-configured Tailscale Serve endpoint remain the supported remote path.
+
 ## Review and continuation
 
 The workbench records exposure before a reveal, keeps cursor movement explicit,

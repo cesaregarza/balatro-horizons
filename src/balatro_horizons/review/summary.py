@@ -3,11 +3,13 @@
 import html
 import json
 from collections import Counter
+from importlib.resources import files
 from itertools import groupby
-from pathlib import Path
 
 DESCRIPTORS = json.loads(
-    (Path(__file__).resolve().parents[3] / "web/src/actionDescriptors.json").read_text()
+    files("balatro_horizons.review")
+    .joinpath("action_descriptors.json")
+    .read_text(encoding="utf-8")
 )
 
 

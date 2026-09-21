@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from balatro_horizons.api import create_app
 from balatro_horizons.config import Config
 from balatro_horizons.contracts import Action
+from balatro_horizons.review.export import export_content, export_response
+from balatro_horizons.review.summary import DESCRIPTORS
 
 
 def test_dashboard_surfaces_remain_available_when_workbench_is_off(store, episode):
@@ -58,8 +60,6 @@ def test_dashboard_surfaces_remain_available_when_workbench_is_off(store, episod
 
 
 def test_server_export_projection_omits_private_fields():
-    from balatro_horizons.review.export import export_content, export_response
-
     ledger = {
         "manifest": {
             "episode_id": "e" * 32,
@@ -95,4 +95,5 @@ def test_action_descriptor_covers_contract_actions():
         get_type_hints(action).get("type").__args__[0]
         for action in get_args(Action)
     }
-    assert action_types <= descriptors.keys()
+    assert descriptors == DESCRIPTORS
+    assert action_types <= DESCRIPTORS.keys()
