@@ -91,14 +91,20 @@ export function configureModel(
     );
   if (effort && !effortOptions(model, capabilities).includes(effort))
     throw new Error("Unsupported reasoning effort for this model.");
+  const settings = {
+    ...supportedSettings(model.provider, model.settings, capabilities),
+    ...(model.provider === "openai" && effort
+      ? { reasoning_effort: effort }
+      : {}),
+  };
+  const unsupported = capabilityFor(model, capabilities)?.unsupported_settings ?? {};
+  for (const [key, values] of Object.entries(unsupported)) {
+    if (values.some((value) => (settings as Record<string, unknown>)[key] === value))
+      throw new Error(`Unsupported ${key} setting for this model.`);
+  }
   return {
     ...model,
-    settings: {
-      ...supportedSettings(model.provider, model.settings, capabilities),
-      ...(model.provider === "openai" && effort
-        ? { reasoning_effort: effort }
-        : {}),
-    },
+    settings,
   };
 }
 

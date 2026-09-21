@@ -146,6 +146,7 @@ SPEC = ProviderSpec(
     default_terminal=None,
     success_terminals=frozenset({None, "tool_use"}),
     terminal_detail="provider_stop_reason",
+    clear_terminals=frozenset({"max_tokens", "model_context_window_exceeded", "pause_turn"}),
     endpoint="https://api.anthropic.com/v1/messages",
     key_name="ANTHROPIC_API_KEY",
     headers=lambda key: {"x-api-key": key, "anthropic-version": "2023-06-01"},

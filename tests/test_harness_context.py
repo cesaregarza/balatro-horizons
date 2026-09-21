@@ -199,6 +199,7 @@ def test_disjoint_cache_input_categories_and_worst_case_reservation():
                 "input_tokens_details": {"cached_tokens": 3000, "cache_write_tokens": 1000},
             }
         }
+        # 1k ordinary × $2 + 3k reads × $0.20 + 1k writes × $2.50 + 100 output × $12.
         assert policy.usage_cost(response, 0.2) == pytest.approx(0.0063)
         for details in (
             None,

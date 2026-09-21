@@ -43,6 +43,7 @@ class ProviderSpec:
     default_terminal: Any
     success_terminals: frozenset[Any]
     terminal_detail: str
+    clear_terminals: frozenset[Any]
     endpoint: str
     key_name: str
     headers: Callable[[str], dict[str, str]]
@@ -194,8 +195,8 @@ class Transport:
         terminal = self._terminal_gate(response)
         calls = self._extract_calls(items)
         call = self._single_call(calls, terminal)
-        self._available_call(call)
         self._call_identity(call)
+        self._available_call(call)
         arguments = self._decode_arguments(call)
         return self._decode(call["name"], arguments)
 
@@ -210,10 +211,13 @@ class Transport:
     def _terminal_gate(self, response):
         terminal = response.get(self.spec.terminal_field, self.spec.default_terminal)
         if code := self.spec.terminal_map.get(terminal):
+            if terminal in self.spec.clear_terminals:
+                self.last_provider_turn = None
             details = {self.spec.terminal_detail: terminal}
             details.update(self.spec.terminal_details(response, terminal))
             raise ProtocolFailure(code, **details)
         if terminal not in self.spec.success_terminals and not self.spec.defer_unknown_terminal:
+            self.last_provider_turn = None
             raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
         return terminal
 
@@ -222,7 +226,11 @@ class Transport:
 
     def _single_call(self, calls, terminal):
         if not calls:
-            details = {self.spec.terminal_detail: terminal} if isinstance(terminal, str) else {}
+            details = (
+                {self.spec.terminal_detail: terminal}
+                if terminal not in self.spec.success_terminals and isinstance(terminal, str)
+                else {}
+            )
             raise ProtocolFailure("NO_OPERATION", **details)
         if terminal not in self.spec.success_terminals:
             raise ProtocolFailure(
@@ -237,14 +245,19 @@ class Transport:
             raise ProtocolFailure("UNAVAILABLE_TOOL", attempted_tool=str(call.get("name")))
 
     def _call_identity(self, call):
-        self.spec.validate_call(call)
+        try:
+            self.spec.validate_call(call)
+        except ProtocolFailure:
+            self.last_provider_turn = None
+            raise
         identifier = call.get(self.spec.id_field)
         if not isinstance(identifier, str) or not identifier:
+            self.last_provider_turn = None
             raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
 
     def _decode_arguments(self, call):
         try:
-            return self.spec.decode_arguments(call[self.spec.args_field])
+            return self.spec.decode_arguments(call.get(self.spec.args_field))
         except (ValueError, KeyError, TypeError):
             raise ProtocolFailure("INVALID_OPERATION_JSON") from None
 

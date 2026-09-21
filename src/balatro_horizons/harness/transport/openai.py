@@ -168,7 +168,7 @@ def usage_cost(model, response, reserved):
         return reserved
     input_tokens, output_tokens = totals
     if model.cached_input_usd_per_million is None:
-        return _uncached_cost(model, input_tokens, output_tokens)
+        return _uncategorized_cost(model, usage, input_tokens, output_tokens, reserved)
     details = usage.get("input_tokens_details")
     if not isinstance(details, dict):
         return reserved
@@ -203,9 +203,15 @@ def _usage_totals(usage):
     return input_tokens, output_tokens
 
 
-def _uncached_cost(model, input_tokens, output_tokens):
+def _uncategorized_cost(model, usage, input_tokens, output_tokens, reserved):
+    if usage.get("cache_creation_input_tokens"):
+        return reserved
+    cached = usage.get("cache_read_input_tokens", 0)
+    if type(cached) is not int or cached < 0:
+        return reserved
     return (
-        input_tokens * model.input_usd_per_million + output_tokens * model.output_usd_per_million
+        (input_tokens + cached) * model.input_usd_per_million
+        + output_tokens * model.output_usd_per_million
     ) / 1_000_000
 
 
@@ -244,6 +250,7 @@ SPEC = ProviderSpec(
     default_terminal="completed",
     success_terminals=frozenset({"completed"}),
     terminal_detail="provider_status",
+    clear_terminals=frozenset({"incomplete", "failed", "cancelled", "in_progress", "queued"}),
     endpoint="https://api.openai.com/v1/responses",
     key_name="OPENAI_API_KEY",
     headers=lambda key: {"Authorization": "Bearer " + key},

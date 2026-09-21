@@ -118,6 +118,7 @@ def test_cache_transport_and_accounting_remain_conservative():
             "input_tokens_details": {"cached_tokens": 3000, "cache_write_tokens": 1000},
         }
     }
+    # 1k ordinary × $2 + 3k reads × $0.20 + 1k writes × $2.50 + 100 output × $12.
     assert openai.usage_cost(usage, 1) == pytest.approx(0.0063)
     _, _, anthropic, anthropic_body = initial("anthropic")
     assert "cache_control" not in json.dumps(anthropic_body)

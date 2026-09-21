@@ -108,6 +108,22 @@ test("Sol and Astra expose their supported reasoning choices", () => {
   expect(configureModel(astra, "max", capabilities).settings.reasoning_effort).toBe("max");
 });
 
+test("declared unsupported settings are enforced without model-name rules", () => {
+  const guarded: CapabilityTable = {
+    ...capabilities,
+    models: {
+      ...capabilities.models,
+      [modelKey(terra)]: {
+        ...capabilities.models[modelKey(terra)],
+        unsupported_settings: { reasoning_summary: ["auto"] },
+      },
+    },
+  };
+  expect(() => configureModel(terra, "medium", guarded)).toThrow(
+    "Unsupported reasoning_summary setting for this model.",
+  );
+});
+
 test("model defaults deduplicate aliases without rewriting historical settings", () => {
   const legacy = { ...terra, settings: { reasoning_effort: "medium" } };
   const savedAlias = { ...terra, settings: { ...terra.settings } };
