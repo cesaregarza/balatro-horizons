@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
-import { CallDetails, JsonPanel } from "./DevTraceDetails";
+import { decisionTrace } from "../../api/client";
+import { CallDetails } from "./DevTraceCall";
+import { JsonPanel } from "./DevTraceValues";
 import {
   objectNames,
   resourceChanges,
   type Trace,
-} from "./devTracePresentation";
-import "./devTrace.css";
+} from "../../devTracePresentation";
+import "../../devTrace.css";
 
 export function DevTrace({
   token,
@@ -34,13 +35,7 @@ export function DevTrace({
         return;
       }
       try {
-        const data = await api<Trace>(
-          `/review/decisions/${decision}/trace`,
-          "GET",
-          undefined,
-          token,
-          controller.signal,
-        );
+        const data = await decisionTrace(token, decision, controller.signal) as Trace;
         if (!active) return;
         setTrace(data);
         setError("");

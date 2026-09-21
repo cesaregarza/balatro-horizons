@@ -380,7 +380,7 @@ def main(*, session_factory=NativeSession):
         model_identity_seen=True,
         max_event_seen=len(store.events(gold)) - 1,
     )
-    session = review.open(gold)
+    session = review.open_explorer(gold)
     annotation = review.annotate(
         session["review_token"],
         AnnotationInput.model_validate(

@@ -1,5 +1,17 @@
 # Changelog
 
+## Dashboard cutover (issue #15)
+
+- Split the dashboard into a typed client, screen components, an opt-in
+  workbench, and Python gateway route/factory modules.
+- Add server-owned decision exports, shared action descriptors, loopback bind
+  protection, and flag-off workbench route behavior.
+- Place DevTrace under Decision Explorer and preserve the existing accessible
+  browser test labels and review flow.
+- Update action descriptions shown in the dashboard: `Face X` to `Select X`,
+  `Choose X` to `Choose X from pack`, `Buy Joker and use immediately` to
+  `Buy & use Joker`, and `model_turn` to `Model calls before game action`.
+
 ## Game boundary cutover (issue #8)
 
 - Split the native adapter into `game/` contracts, state, actions, transport,

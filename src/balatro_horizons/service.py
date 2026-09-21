@@ -15,9 +15,9 @@ from balatro_horizons.game.session import NativeGame
 from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
 from balatro_horizons.harness.contract import ProviderPolicy
 from balatro_horizons.harness.transport import DirectProvider
-from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.runner import OperatorAbort, Runner
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
+from balatro_horizons.workbench.branches import prepare_branch
 
 
 class HumanPolicy:

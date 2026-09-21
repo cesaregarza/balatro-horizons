@@ -21,8 +21,8 @@ from balatro_horizons.harness.context.present import PAGE_BYTES
 from balatro_horizons.harness.contract import Operation
 from balatro_horizons.harness.helpers import helper
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure
-from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def config_for(provider="openai"):

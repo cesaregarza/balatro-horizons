@@ -31,17 +31,17 @@ async function setup(page: Page) {
     })
     .toBe("WIN");
   const opened = await (
-    await page.request.post("/api/reviews", {
+    await page.request.post("/api/explore/sessions", {
       headers,
       data: { episode_id, retrospective: true },
     })
   ).json();
   const reviewHeaders = { "X-Review-Token": opened.review_token };
   const ledger = await (
-    await page.request.get("/api/review/decisions", { headers: reviewHeaders })
+    await page.request.get("/api/explore/decisions", { headers: reviewHeaders })
   ).json();
   const view = await (
-    await page.request.get("/api/review/decisions/0", {
+    await page.request.get("/api/explore/decisions/0", {
       headers: reviewHeaders,
     })
   ).json();
@@ -54,7 +54,7 @@ async function setup(page: Page) {
     note: null,
     status: "awaiting_model",
   }));
-  await page.route("**/api/review/decisions", (route) =>
+  await page.route("**/api/explore/decisions", (route) =>
     route.fulfill({
       json: {
         ...ledger,
@@ -65,7 +65,7 @@ async function setup(page: Page) {
       },
     }),
   );
-  await page.route(/\/api\/review\/decisions\/(67|68)$/, (route) =>
+  await page.route(/\/api\/explore\/decisions\/(67|68)$/, (route) =>
     route.fulfill({
       json: {
         ...view,
@@ -155,7 +155,7 @@ test("dev mode lazily reveals full calls on helper-only decisions, including mob
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   let requests = 0;
-  await page.route("**/api/review/decisions/*/trace", (route) => {
+  await page.route("**/api/explore/decisions/*/trace", (route) => {
     requests += 1;
     return route.fulfill({ json: trace(67) });
   });
@@ -217,7 +217,7 @@ test("only incomplete traces poll; disabling dev mode stops its requests", async
 }) => {
   const eid = await setup(page);
   let count = 0;
-  await page.route("**/api/review/decisions/*/trace", (route) => {
+  await page.route("**/api/explore/decisions/*/trace", (route) => {
     count += 1;
     const data = trace(67, false);
     if (count > 1) data.calls[0].tools[0].name = "set_run_note";
@@ -245,12 +245,12 @@ test("changing selection cannot display a late response from the previous decisi
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route("**/api/review/decisions/67/trace", async (route) => {
+  await page.route("**/api/explore/decisions/67/trace", async (route) => {
     started = true;
     await held;
     await route.fulfill({ json: trace(67) }).catch(() => {});
   });
-  await page.route("**/api/review/decisions/68/trace", (route) =>
+  await page.route("**/api/explore/decisions/68/trace", (route) =>
     route.fulfill({ json: trace(68) }),
   );
   await page.goto(`/#explore/${eid}/67`);
@@ -300,7 +300,7 @@ test("prices, model claims, notebook mutations and observed changes remain disti
   ];
   data.observation = { state: { resources: { money: "23" } } };
   data.transition = { state: { resources: { money: "18" } } };
-  await page.route("**/api/review/decisions/*/trace", (route) =>
+  await page.route("**/api/explore/decisions/*/trace", (route) =>
     route.fulfill({ json: data }),
   );
   await page.goto(`/#explore/${eid}/67`);
@@ -342,7 +342,7 @@ test("malformed and multiple calls show rejection, never inferred execution", as
       feedback: { message: "Return one operation" },
     }),
   ];
-  await page.route("**/api/review/decisions/*/trace", (route) =>
+  await page.route("**/api/explore/decisions/*/trace", (route) =>
     route.fulfill({ json: data }),
   );
   await page.goto(`/#explore/${eid}/67`);

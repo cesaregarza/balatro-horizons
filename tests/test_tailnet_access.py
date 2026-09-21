@@ -4,9 +4,9 @@ from fastapi.testclient import TestClient
 from balatro_horizons.api import create_app
 
 
-def test_exact_tailnet_origin_through_loopback_proxy(store, config):
+def test_exact_tailnet_origin_through_loopback_proxy(store, workbench_config):
     origin = "https://workbench.example.ts.net:8443"
-    app = create_app(store.root, config, public_origin=origin)
+    app = create_app(store.root, workbench_config, public_origin=origin)
     with TestClient(app, base_url="http://workbench.example.ts.net:8443") as client:
         boot = client.get("/api/bootstrap")
         assert boot.status_code == 200
