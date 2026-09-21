@@ -36,6 +36,8 @@ The server projects exact public schemas for JSON and JSONL exports and scans
 them before writing. A browser cannot reconstruct an export from detail records.
 Decision downloads use GET `/api/explore/export/{format}` or its workbench
 `/api/review/export/{format}` counterpart; no client-supplied ledger is accepted.
+A download reads the current server snapshot, which may be newer than the last
+browser poll; its source journal head identifies the exported snapshot.
 Action labels come from the single packaged `review/action_descriptors.json`,
 also imported by TypeScript. Route names and accessible labels are versioned UI
 contracts; changes require matching browser coverage.
