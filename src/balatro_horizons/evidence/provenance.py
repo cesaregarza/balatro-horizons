@@ -10,7 +10,7 @@ IMPLEMENTATION_FILES = (
     "contracts.py",
     "runner.py",
     "service.py",
-    "review/branches.py",
+    "workbench/branches.py",
     "evaluation/scheduling.py",
 )
 IMPLEMENTATION_DIRECTORIES = (
@@ -21,8 +21,8 @@ IMPLEMENTATION_DIRECTORIES = (
     "agents",
     "storage",
     "harness",
-    "workbench",
 )
+NATIVE_COMPONENT_DIRECTORIES = ("game", "observations", "actions", "storage")
 
 
 def source_files(root=ROOT):
@@ -44,17 +44,27 @@ def fingerprint_sources(sources):
     })
 
 
-def native_implementation_fingerprint(sources=None):
-    """Hash native execution files directly now that ``game/`` owns the boundary."""
+def native_component_manifest(sources=None):
+    """Return the per-file native identity held constant by a reuse receipt."""
     sources = source_files(ROOT) if sources is None else sources
-    prefix = "src/balatro_horizons/game/"
-    return digest(
-        {
-            name: hashlib.sha256(content).hexdigest()
-            for name, content in sources.items()
-            if name.startswith(prefix) and name.endswith(".py") and name != prefix + "fake.py"
-        }
-    )
+    prefix = "src/balatro_horizons/"
+    excluded = {"game/fake.py"}
+    return {
+        name: hashlib.sha256(content).hexdigest()
+        for name, content in sources.items()
+        if name.startswith(prefix)
+        and name.endswith(".py")
+        and (
+            name[len(prefix):] == "contracts.py"
+            or name[len(prefix):].split("/")[0] in NATIVE_COMPONENT_DIRECTORIES
+        )
+        and name[len(prefix):] not in excluded
+    }
+
+
+def native_implementation_fingerprint(sources=None):
+    """Hash the native contract and execution/visibility/storage files."""
+    return digest(native_component_manifest(sources))
 
 
 def accepted_source_matches(record):

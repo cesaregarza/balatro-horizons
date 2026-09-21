@@ -16,6 +16,7 @@ from balatro_horizons.evidence.collect import (
     prefix,
     runs,
     runtime,
+    settlement,
 )
 from balatro_horizons.game.contract import NativeFailure
 
@@ -173,7 +174,7 @@ def _environment(stake):
 
 
 def test_plan_has_five_field_schema_and_frozen_totals():
-    expected = {"name", "launches", "reasons", "collector", "artifact"}
+    expected = {"name", "launches", "game_resets", "reasons", "collector", "artifact"}
     cases = [
         ({}, (12, 22)),
         ({"gameplay_only": True}, (1, 8)),
@@ -184,7 +185,10 @@ def test_plan_has_five_field_schema_and_frozen_totals():
         plan = stages.plan(**options)
         assert all(set(stage) == expected for stage in plan["stages"])
         assert (plan["expected_physical_launches"], plan["expected_game_resets"]) == totals
-        assert all(stage["launches"] >= 0 and stage["reasons"] for stage in plan["stages"])
+    assert all(
+        stage["launches"] >= 0 and stage["game_resets"] >= 0 and stage["reasons"]
+        for stage in plan["stages"]
+    )
 
 
 def test_cli_plan_and_action_table_match_goldens(capsys):
@@ -196,7 +200,45 @@ def test_cli_plan_and_action_table_match_goldens(capsys):
     assert action_table.shop_action_types() == expected_actions
 
 
-def test_plan_is_nonexecuting_and_from_stage_selects_a_suffix(tmp_path):
+@pytest.mark.parametrize(
+    ("flag", "totals"),
+    [("--resume-actions", (11, 16)), ("--resume-certification", (11, 11))],
+)
+def test_cli_plan_exposes_resume_modes(capsys, flag, totals):
+    assert cli_main(["evidence", "plan", flag]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert (plan["expected_physical_launches"], plan["expected_game_resets"]) == totals
+
+
+def test_plan_is_nonexecuting_and_from_stage_selects_a_suffix(tmp_path, monkeypatch, capsys):
+    def fail_if_touched(*_args, **_kwargs):
+        raise AssertionError("evidence plan touched an execution dependency")
+
+    monkeypatch.setattr("balatro_horizons.cli.commands.Store", fail_if_touched)
+    monkeypatch.setattr("balatro_horizons.config.load_config", fail_if_touched)
+    monkeypatch.setattr(
+        "balatro_horizons.evidence.provenance.implementation_fingerprint",
+        fail_if_touched,
+    )
+    for name in (
+        "implementation_fingerprint",
+        "load_config",
+        "NativeSession",
+        "collect_functional_cases",
+        "collect_gameplay_only",
+        "collect_profiles_and_functionals",
+    ):
+        monkeypatch.setattr(orchestrator, name, fail_if_touched)
+
+    for argv in (
+        ["evidence", "plan"],
+        ["evidence", "plan", "--gameplay-only"],
+        ["evidence", "plan", "--resume-actions"],
+        ["evidence", "plan", "--resume-certification"],
+    ):
+        assert cli_main(argv) == 0
+        assert json.loads(capsys.readouterr().out)["stages"]
+
     before = tuple(tmp_path.iterdir())
     plan = stages.plan()
     after = tuple(tmp_path.iterdir())
@@ -254,6 +296,52 @@ def test_from_stage_dispatches_to_package_collector(monkeypatch, tmp_path):
     }
     with pytest.raises(ValueError, match="UNKNOWN_EVIDENCE_STAGE"):
         stages.from_stage("missing stage")
+
+
+def test_gameplay_stage_requires_explicit_gameplay_only_flag(tmp_path):
+    with pytest.raises(ValueError, match="GAMEPLAY_ONLY_REQUIRES_FLAG"):
+        orchestrator.collect(from_stage=stages.GAMEPLAY_COLLECTION_ONLY, root=tmp_path)
+
+
+def test_gameplay_only_writes_one_collection_artifact_and_skips_certification(
+    monkeypatch, tmp_path
+):
+    writes = []
+
+    def fail_certification(*_args, **_kwargs):
+        raise AssertionError("gameplay-only collection invoked certification")
+
+    monkeypatch.setattr(certification, "certify_release", fail_certification)
+    monkeypatch.setattr(orchestrator, "implementation_fingerprint", lambda: "source")
+    monkeypatch.setattr(orchestrator, "lock_digest", lambda root: "environment")
+    monkeypatch.setattr(orchestrator, "load_config", lambda path: SimpleNamespace(environment=None))
+    monkeypatch.setattr(
+        orchestrator,
+        "collect_gameplay_only",
+        lambda config, smoke, factory: {
+            "invalid": {"unchanged": True},
+            "actions": {"actions": []},
+            "win": {"outcome": "WIN"},
+            "runs": {"pilot": {"outcome": "WIN"}},
+            "reorder": {"status": "passed"},
+            "faults": {"tests": []},
+        },
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "atomic_json",
+        lambda path, result, **kwargs: writes.append((path, result, kwargs)),
+    )
+    result = orchestrator.collect(gameplay_only=True, root=tmp_path)
+    assert len(writes) == 1
+    path, artifact, kwargs = writes[0]
+    assert path.name.startswith("native-gameplay-collection-")
+    assert kwargs["immutable"] is True
+    assert artifact["evidence_scope"] == "gameplay_collection_only"
+    assert artifact["native_release_evidence"] is False
+    assert artifact["capability_certificates_created"] is False
+    assert artifact["restoration_certification_included"] is False
+    assert result["collection_only_artifact"] == str(path)
 
 
 def test_profiles_and_functionals_reuse_processes_and_cleanup(monkeypatch):
@@ -357,3 +445,108 @@ def test_failed_continuation_probe_stops_certification(monkeypatch):
         certification.continuation_probe(
             object(), object(), "episode", restoration="seed_prefix"
         )
+
+
+def test_failed_direct_checkpoint_probe_is_recorded_and_tolerated(monkeypatch):
+    monkeypatch.setattr(
+        certification,
+        "verify_checkpoint",
+        lambda *args, **kwargs: {"status": "failed", "mode": "checkpoint"},
+    )
+    assert certification.continuation_probe(
+        object(), object(), "episode", restoration="checkpoint"
+    )["status"] == "failed"
+
+
+@pytest.mark.parametrize("prefix_status", ["passed", "failed"])
+def test_release_keeps_prefix_branch_after_failed_direct_proof(monkeypatch, tmp_path, prefix_status):
+    reports = tmp_path / "reports/verification"
+    certification.atomic_json(
+        reports / "native-fixtures-final.json",
+        {"actions": {"episode_id": "fixture"}, "win": {"outcome": "WIN"}},
+    )
+    certification.atomic_json(reports / "native-runs.json", {"pilot": {"episode_id": "gold"}})
+    store = SimpleNamespace(manifest=lambda *_: {"config": certification.Config().model_dump()})
+    monkeypatch.setattr(certification, "Store", lambda _: store)
+    monkeypatch.setattr(certification, "implementation_fingerprint", lambda: "source")
+    monkeypatch.setattr(certification, "lock_digest", lambda _: "environment")
+    monkeypatch.setattr(prefix, "certify_prefix", lambda *_: {"status": prefix_status})
+    failed_direct = {"status": "failed", "mode": "checkpoint"}
+    monkeypatch.setattr(certification, "verify_checkpoint", lambda *_, **__: failed_direct)
+    branches = []
+    monkeypatch.setattr(
+        certification, "_branch_restoration",
+        lambda *args: branches.append(args) or ("child", {"outcome": "WIN"}, "annotation"),
+    )
+    monkeypatch.setattr(certification, "_settlement_evidence", lambda *_: None)
+    release_path = reports / "native-release.json"
+    if prefix_status == "failed":
+        with pytest.raises(ValueError, match="CONTINUATION_CERTIFICATION_FAILED"):
+            certification.certify_release(tmp_path)
+        assert branches == [] and not release_path.exists()
+    else:
+        assert certification.certify_release(tmp_path)["branch"] == "child"
+        assert len(branches) == 1
+        assert json.loads(release_path.read_text())["direct_checkpoint"] == failed_direct
+
+
+@pytest.mark.parametrize("defect, code", [
+    ("source", "STALE_SETTLEMENT_SOURCE"),
+    ("environment", "STALE_SETTLEMENT_ENVIRONMENT"),
+])
+def test_settlement_evidence_binds_every_episode_checkpoint(monkeypatch, tmp_path, defect, code):
+    reports = tmp_path / "reports/verification"
+    reports.mkdir(parents=True)
+    source = "source"
+    environment = {"runtime": "pinned"}
+    environment_hash = certification.digest(environment)
+    release = {
+        "fixture": {"episode_id": "fixture"},
+        "ordinary_runs": {"pilot": {"episode_id": "pilot"}},
+        "implementation_hash": source,
+        "environment_hash": environment_hash,
+    }
+    (reports / "native-faults.json").write_text(
+        json.dumps({"tests": [{"episode_id": "fault"}]})
+    )
+    (reports / "native-reorder.json").write_text(
+        json.dumps({
+            "episode_id": "reorder",
+            "implementation_hash": source,
+            "environment_hash": environment_hash,
+        })
+    )
+    episode_ids = {"fixture", "pilot", "fault", "reorder"}
+    bad_id = "pilot" if defect == "source" else "fault"
+
+    def checkpoint(_store, episode_id, _decision):
+        return {
+            "implementation_hash": source,
+            "game": {"environment": environment},
+        }
+
+    monkeypatch.setattr(certification, "read_checkpoint", checkpoint)
+    monkeypatch.setattr(settlement, "verify", lambda _store, ids: {"episodes": ids})
+    result = certification._settlement_evidence(tmp_path, object(), release)
+    assert result["status"] == "passed"
+    assert set(result["checks"]["episodes"]) == episode_ids
+
+    if defect == "source":
+        def checkpoint(_store, episode_id, _decision):
+            return {
+                "implementation_hash": "changed" if episode_id == bad_id else source,
+                "game": {"environment": environment},
+            }
+    else:
+        def checkpoint(_store, episode_id, _decision):
+            return {
+                "implementation_hash": source,
+                "game": {
+                    "environment": {"runtime": "changed"}
+                    if episode_id == bad_id
+                    else environment
+                },
+            }
+    monkeypatch.setattr(certification, "read_checkpoint", checkpoint)
+    with pytest.raises(ValueError, match=code):
+        certification._settlement_evidence(tmp_path, object(), release)

@@ -108,6 +108,8 @@ def add_evidence_commands(sub):
     operations = parser.add_subparsers(dest="evidence_operation", required=True)
     plan = operations.add_parser("plan")
     plan.add_argument("--gameplay-only", action="store_true")
+    plan.add_argument("--resume-actions", action="store_true")
+    plan.add_argument("--resume-certification", action="store_true")
     collect = operations.add_parser("collect")
     collect.add_argument("--from-stage")
     collect.add_argument("--episode-id")

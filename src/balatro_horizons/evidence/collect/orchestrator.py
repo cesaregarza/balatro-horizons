@@ -8,6 +8,13 @@ from balatro_horizons.config import ROOT, load_config
 from balatro_horizons.evidence.collect import acceptance, faults, invalid, runs, runtime
 from balatro_horizons.evidence.lock import lock_digest
 from balatro_horizons.evidence.provenance import implementation_fingerprint
+from balatro_horizons.evidence.stages import (
+    FUNCTIONAL_COLLECTION,
+    GAMEPLAY_COLLECTION_ONLY,
+    REORDER_ACCEPTANCE_FIXTURE,
+    RESUMED_FUNCTIONAL_COLLECTION,
+    STARTUP_PROFILE_STABILITY,
+)
 from balatro_horizons.evidence.stages import from_stage as stage_suffix
 from balatro_horizons.game.session import NativeSession
 from balatro_horizons.storage.journal import Store, atomic_json, digest
@@ -152,6 +159,8 @@ def collect(*, from_stage=None, gameplay_only=False, action_episode_id=None,
             session_factory=NativeSession, root=ROOT):
     """Execute the requested plan suffix without hidden retries or relaunches."""
     root = Path(root).resolve()
+    if from_stage == GAMEPLAY_COLLECTION_ONLY and not gameplay_only:
+        raise ValueError("GAMEPLAY_ONLY_REQUIRES_FLAG")
     options = {"gameplay_only": gameplay_only}
     selected = stage_suffix(from_stage, **options) if from_stage and gameplay_only else (
         stage_suffix(from_stage) if from_stage else None
@@ -167,13 +176,13 @@ def collect(*, from_stage=None, gameplay_only=False, action_episode_id=None,
     if gameplay_only:
         functional = collect_gameplay_only(config, smoke, session_factory)
         return _write_gameplay(root, source, functional)
-    if first == "resumed functional collection":
+    if first == RESUMED_FUNCTIONAL_COLLECTION:
         functional = _resume_actions(
             root, config, smoke, session_factory, action_episode_id
         )
-    elif first == "reorder acceptance fixture":
+    elif first == REORDER_ACCEPTANCE_FIXTURE:
         return _resume_certification(root, smoke, session_factory)
-    elif first == "functional collection":
+    elif first == FUNCTIONAL_COLLECTION:
         _validate_prior_profiles(root)
         functional = _collect_functional_stage(root, config, smoke, session_factory)
     else:
@@ -195,7 +204,7 @@ def collect(*, from_stage=None, gameplay_only=False, action_episode_id=None,
         raise ValueError("SOURCE_CHANGED_DURING_COLLECTION")
     return {
         "native_collection": "complete",
-        "from_stage": first or "startup profile stability",
+        "from_stage": first or STARTUP_PROFILE_STABILITY,
         "implementation_hash_at_start": source,
         "implementation_hash_after_collection": current_source,
         "artifacts": {

@@ -12,6 +12,8 @@ Inspect the non-executing plan first:
 ```bash
 uv run bh evidence plan
 uv run bh evidence plan --gameplay-only
+uv run bh evidence plan --resume-actions
+uv run bh evidence plan --resume-certification
 ```
 
 The cold plan has 12 physical launches and 22 resets. Startup profile stability
@@ -34,6 +36,8 @@ named stage with matching prerequisites, and identify the episode when resuming
 an action fixture using `bh evidence collect --from-stage "resumed functional
 collection" --episode-id EPISODE_ID`. A stage name selects the remaining suffix;
 it never turns missing prerequisite artifacts into completed evidence.
+The resume plans report 11 launches / 16 resets for actions, or 11 / 11 for
+certification. Selecting the gameplay-only stage requires `--gameplay-only`.
 
 ```bash
 uv run bh evidence collect
@@ -52,12 +56,15 @@ private artifact and failed immutable record; an old pass is never rewritten.
 The failure artifact is `divergence-*.json`. Inspect its boundary summary with
 `bh evidence inspect PATH --limit 20`; raw private divergence values stay private.
 `private/capability-certificate.json` selects the active immutable certificate.
+Seed-prefix failure aborts certification; direct-checkpoint failure is recorded
+in `native-release.json` while the passing seed-prefix capability remains usable.
 
 Every non-calibration launch needs a certificate matching source, environment,
 deck, stake, injector, bridge, and full mod tree. Filename classification alone
 cannot establish scope: the manifest's explicit runtime/source scope and
-fingerprint must be checked. Missing artifacts are named as skipped, never
-counted as passing evidence. Headless and accelerated modes remain uncertified.
+fingerprint must be checked. Absent evidence is named as skipped, never counted
+as passing; a passed record naming a missing artifact fails as corrupt.
+Headless and accelerated modes remain uncertified.
 
 ## Acceptance map
 
@@ -83,6 +90,7 @@ certificate, unchanged `contracts.py`, `game/` (except `fake.py`), `observations
 artifacts, and a matching offline report. Reuse records the original native
 identity, candidate identity, parent certificate, and zero native launches; it
 does not migrate checkpoint certificates or frozen protocol snapshots.
+The receipt includes the per-file native manifest as well as the aggregate hash.
 
 From the candidate checkout, first create its source-bound offline report, then
 use the baseline checkout holding the immutable certificate and native artifacts.

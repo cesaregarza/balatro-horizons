@@ -20,6 +20,11 @@ def test_archived_full_fingerprint_matches_working_tree_identity():
     assert provenance.fingerprint_sources(provenance.source_files(ROOT)) == provenance.implementation_fingerprint()
 
 
+def test_every_implementation_fingerprint_file_exists():
+    base = ROOT / "src/balatro_horizons"
+    assert all((base / path).is_file() for path in provenance.IMPLEMENTATION_FILES)
+
+
 def test_certified_revision_resolves_an_exact_source_identity():
     revision, source = reuse.revision_sources(ROOT, 'HEAD')
     expected = provenance.fingerprint_sources(source)
@@ -42,6 +47,7 @@ def test_harness_only_edits_change_full_identity_but_not_native_game_identity():
 
 @pytest.mark.parametrize('path', [
     'game/session.py', 'game/state/normalize.py', 'game/replay.py', 'game/new_native_module.py',
+    'contracts.py', 'observations/projection.py', 'actions/validation.py', 'storage/journal.py',
 ])
 def test_native_edits_additions_and_removals_invalidate_compatibility(path):
     source = provenance.source_files(ROOT)
@@ -110,6 +116,10 @@ def test_reuse_preserves_original_evidence_and_does_not_migrate_checkpoints(migr
     assert cert['reuse']['native_launches'] == 0
     assert cert['reuse']['checkpoint_certificates_migrated'] is False
     assert cert['reuse']['parent_certificate_hash'] == digest(old)
+    assert cert['native_component_manifest'] == provenance.native_component_manifest(
+        provenance.source_files(ROOT)
+    )
+    assert cert['reuse']['native_component_manifest'] == cert['native_component_manifest']
     with pytest.raises(ValueError, match='CANDIDATE_NOT_INSTALLED'):
         reuse.activate(root, candidate, cert, evidence)
     shutil.copytree(candidate/'src', root/'src', dirs_exist_ok=True)

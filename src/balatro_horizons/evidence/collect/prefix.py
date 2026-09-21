@@ -33,6 +33,12 @@ def _derived_certificate(store: Store, episode_id: str, decision: int, cert: dic
 
 
 def certify_prefix(store: Store, episode_id: str, *, emit: bool = False) -> dict:
+    """Certify a seed-prefix replay and return its failure for the sole caller.
+
+    ``continuation_probe`` is the only caller; it converts a failed prefix
+    certificate into a certification error while direct-checkpoint failures
+    remain recorded and tolerated.
+    """
     config = Config.model_validate(store.manifest(episode_id, True)["config"])
     cert = verify_checkpoint(store, config, episode_id, 0, mode="seed_prefix")
     if emit:
@@ -40,6 +46,8 @@ def certify_prefix(store: Store, episode_id: str, *, emit: bool = False) -> dict
     if cert["status"] != "passed":
         return cert
     steps = steps_for(store, episode_id)
+    # Each boundary was compared during all three complete seed replays.
+    # No new untested native-save capability is inferred from this proof.
     for path in sorted(store.episode_path(episode_id, True).glob("checkpoint-*.json")):
         decision = int(path.stem.split("-")[1])
         suffix = [step for step in steps if step["observation"]["observation_id"] > decision]
