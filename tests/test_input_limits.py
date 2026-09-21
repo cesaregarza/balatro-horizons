@@ -9,10 +9,10 @@ from test_provider_continuations import model
 from balatro_horizons.agents.budget import reservation_usd
 from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.input_limits import count_payload, request_size
-from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import Limits
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.transport import DirectProvider
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])

@@ -114,6 +114,7 @@ export type DecisionLedger = {
       deck?: string;
       stake?: string;
       models?: Record<string, import("./modelSelection").ModelConfig>;
+      model_capabilities?: import("./modelSelection").CapabilityTable;
     };
   };
   summary: { outcome?: string; reason?: string; cost_usd?: number } | null;

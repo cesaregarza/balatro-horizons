@@ -9,11 +9,11 @@ import argparse
 import json
 from pathlib import Path
 
-from balatro_horizons.agents.providers import context_payload
 from balatro_horizons.config import ROOT
 from balatro_horizons.contracts import ActionEnvelope, Observation
 from balatro_horizons.evidence.provenance import implementation_fingerprint
 from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.transport import context_payload
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.storage.journal import Store, atomic_json
 

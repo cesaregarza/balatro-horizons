@@ -19,11 +19,11 @@ from test_openai_luna import luna, response
 from balatro_horizons import service as service_module
 from balatro_horizons.agents.baselines import Baseline
 from balatro_horizons.agents.budget import BudgetExhausted, Spending, reservation_usd
-from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.evaluation.batches import plan_batch
 from balatro_horizons.evaluation.reports import export_batch, report_batch, scan
 from balatro_horizons.evaluation.scheduling import batch_attempts, read_stop, record_stop
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.transport import DirectProvider
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService
 from balatro_horizons.storage.journal import Store

@@ -8,6 +8,7 @@ import { ModelControls } from "./ModelControls";
 import { usePolling } from "./usePolling";
 import {
   configureModel,
+  EMPTY_CAPABILITIES,
   effortDefault,
   harnessLabel,
   modelCatalog,
@@ -76,15 +77,16 @@ export default function App() {
   } | null>(null);
   const [credentials, setCredentials] = useState<Record<string, boolean>>({});
   const catalog = modelCatalog(config?.models ?? {});
+  const capabilities = config?.model_capabilities ?? EMPTY_CAPABILITIES;
   const selectedModel = catalog[agent];
   const selectedModelSupported =
     !selectedModel ||
     selectedModel.provider !== "openai" ||
-    supportsCachedHarness(selectedModel);
+    supportsCachedHarness(selectedModel, capabilities);
   function selectAgent(value: string) {
     setAgent(value);
     if (catalog[value]) {
-      setEffort(effortDefault(catalog[value]));
+      setEffort(effortDefault(catalog[value], capabilities));
     }
   }
   async function saveModelDefaults() {
@@ -93,7 +95,7 @@ export default function App() {
     const current = modelCatalog(latest.models)[agent];
     if (!current)
       throw new Error("Model is no longer configured. Refresh the workbench.");
-    const chosen = configureModel(current, effort);
+    const chosen = configureModel(current, effort, latest.model_capabilities);
     const key = modelKey(chosen);
     setConfig(
       await api("/settings", "PUT", {
@@ -286,7 +288,7 @@ export default function App() {
                       <optgroup label="Models">
                         {Object.entries(catalog).map(([key, value]) => (
                           <option key={key} value={key}>
-                            {modelLabel(value)}
+                            {modelLabel(value, capabilities)}
                           </option>
                         ))}
                       </optgroup>
@@ -318,6 +320,7 @@ export default function App() {
                       model={selectedModel}
                       effort={effort}
                       onEffort={setEffort}
+                      capabilities={capabilities}
                       disabled={busy}
                     />
                     <button
@@ -420,7 +423,7 @@ export default function App() {
                       <p key={r.episode_id}>
                         <b>
                           {config.models[r.agent]
-                            ? modelLabel(config.models[r.agent])
+                            ? modelLabel(config.models[r.agent], capabilities)
                             : r.agent}
                         </b>{" "}
                         ·{" "}
@@ -836,6 +839,7 @@ export default function App() {
                                 ...(latest.models[key]?.settings ?? {}),
                                 ...JSON.parse(modelSettings),
                               },
+                              latest.model_capabilities,
                             ),
                           },
                         },
@@ -860,7 +864,7 @@ export default function App() {
                 </p>
                 {Object.entries(catalog).map(([name, value]) => (
                   <p key={name}>
-                    <b>{modelLabel(value)}</b>
+                    <b>{modelLabel(value, capabilities)}</b>
                     {" · "}
                     {harnessLabel()}{" "}
                     <button
@@ -1002,7 +1006,7 @@ export default function App() {
                     ["random_legal", "Random legal baseline"],
                     ...Object.entries(catalog).map(([key, value]) => [
                       key,
-                      modelLabel(value),
+                      modelLabel(value, capabilities),
                     ]),
                   ].map(([key, label]) => (
                     <label key={key} className="check">
@@ -1043,7 +1047,8 @@ export default function App() {
                         );
                       chosen[key] = configureModel(
                         available[key],
-                        effortDefault(available[key]),
+                        effortDefault(available[key], latest.model_capabilities),
+                        latest.model_capabilities,
                       );
                     }
                     setConfig(

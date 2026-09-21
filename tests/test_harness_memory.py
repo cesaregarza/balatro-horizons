@@ -10,7 +10,6 @@ from test_boundary import project
 from test_harness_tools import config_for
 from test_provider_continuations import model
 
-from balatro_horizons.agents.providers import DirectProvider, context_payload
 from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.config import WORKING_MEMORY_BYTES, WORKING_MEMORY_DECISIONS
 from balatro_horizons.contracts import Observation
@@ -28,6 +27,7 @@ from balatro_horizons.harness.context.memory import (
 )
 from balatro_horizons.harness.contract import ActionResult
 from balatro_horizons.harness.helpers import helper
+from balatro_horizons.harness.transport import DirectProvider, context_payload
 from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner

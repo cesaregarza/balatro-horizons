@@ -16,7 +16,6 @@ from balatro_horizons.agents.budget import (
     validate_paid_configuration,
 )
 from balatro_horizons.agents.failures import HarnessFailure
-from balatro_horizons.agents.providers import ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import prepare_rules, read_guide, restore_knowledge
 from balatro_horizons.agents.tool_interface import ACTION_MODELS
 from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT
@@ -50,6 +49,7 @@ from balatro_horizons.harness.contract import (
     RoutedPolicy,
 )
 from balatro_horizons.harness.helpers import helper
+from balatro_horizons.harness.transport import ProtocolFailure, ProviderFailure
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 from balatro_horizons.storage.journal import digest

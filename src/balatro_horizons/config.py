@@ -99,13 +99,9 @@ class ModelConfig(Options):
             raise ValueError("configure both cache read and write rates")
         if self.cached_input_usd_per_million is not None and self.provider != "openai":
             raise ValueError("category cache pricing is currently OpenAI-only")
-        allowed = (
-            {"temperature", "reasoning_effort", "reasoning_summary"}
-            if self.provider == "openai"
-            else {"temperature", "thinking_budget"}
-        )
-        if set(self.settings) - allowed:
-            raise ValueError("unsupported provider setting")
+        from balatro_horizons.harness.transport import validate_settings
+
+        validate_settings(self.provider, self.model, self.settings)
         date.fromisoformat(self.pricing_date)
         if self.model != self.model.strip() or not self.model.strip():
             raise ValueError("explicit model identifier required")
@@ -132,9 +128,6 @@ class ModelConfig(Options):
             "detailed",
         ):
             raise ValueError("invalid reasoning summary")
-        if self.provider == "openai" and self.model == "gpt-5.6-luna":
-            if self.settings.get("reasoning_effort") == "minimal":
-                raise ValueError("Luna does not support minimal reasoning effort")
         if "thinking_budget" in self.settings and (
             type(self.settings["thinking_budget"]) is not int
             or self.settings["thinking_budget"] < 1024
@@ -175,6 +168,8 @@ class Config(Options):
         return self
 
     def public(self):
+        from balatro_horizons.harness.transport import public_capability_table
+
         return {
             "benchmark": self.benchmark,
             "skills": self.skills,
@@ -182,6 +177,7 @@ class Config(Options):
             "stake": self.environment.stake,
             "budgets": self.budgets.model_dump(),
             "models": {k: v.model_dump() for k, v in self.models.items()},
+            "model_capabilities": public_capability_table(self.models),
         }
 
 

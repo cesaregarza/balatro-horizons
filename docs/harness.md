@@ -31,6 +31,42 @@ prior model claim and linked note edit when matching journal events exist;
 missing or pruned evidence stays null. The model, not the harness, reconciles
 its notes with the observed outcome.
 
+## Providers
+
+Both direct providers use `harness/transport/base.py` for request admission,
+HTTP delivery, response classification, the six-stage tool-call parser,
+continuation capture, and conservative usage settlement. `openai.py` and
+`anthropic.py` supply immutable specs rather than alternate state machines.
+Each spec declares its terminal field and mapping, call item type, identifier
+and argument fields, result item type, and cache options.
+
+Provider modules also own their supported settings and model capabilities.
+OpenAI declares cache-diagnostic eligibility, explicit-cache eligibility,
+unsupported setting values, display names, and verified reasoning efforts;
+Anthropic declares thinking-budget support. `ModelConfig` validates through
+those tables, and `/api/bootstrap` publishes the same declarations to the
+workbench. The browser does not infer compatibility from model names. Unknown
+models and missing declarations fail closed for cache-dependent launches.
+
+OpenAI uses Responses with encrypted reasoning continuations, explicit prompt
+cache accounting, and disjoint ordinary/read/write input categories. Anthropic
+uses Messages with native thinking blocks and conservatively retains the full
+reservation when cache-write usage cannot be priced. Every provider retains the
+reservation when usage is missing or malformed. Paid execution remains disabled
+by default; credentials stay in the backend environment and are never serialized
+into run configuration.
+
+Tests inject `httpx.MockTransport` into `Transport`; this HTTP seam covers real
+request bodies, status handling, parsing, continuation, and accounting without
+patching transport internals or making provider calls. New runs save a canonical
+provider/model key and freeze exact settings and prices. Historical aliases and
+recorded runs remain readable, while the workbench deduplicates aliases for new
+selection. The smoke preset remains `configs/luna-smoke.yaml`; retired interfaces
+and historical live-check results are archived in the changelog and verification
+artifacts rather than maintained as a second harness guide.
+
+## Context limits
+
 The notebook has model-chosen keys and a total character bound. Gameplay tools
 may attach one nullable `note_update` without a helper call; separate set/delete
 helpers remain available. Action and edit are both validated before execution.

@@ -177,7 +177,7 @@ Read the generated [native diagnostic report](../reports/verification/native-dia
 
 ## OpenAI harness follow-up (2026-09-14)
 
-The [Luna harness](openai-harness.md) now has a pinned preset, optional returned
+The [current harness](harness.md#providers) has a pinned Luna preset, optional returned
 reasoning summaries, standard-tier requests with caching disabled for Luna,
 explicit long-context pricing rejection, incomplete-response rejection, and safe
 quota diagnostics with bounded retries. The browser reveals summaries and provider

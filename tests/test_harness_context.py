@@ -11,7 +11,6 @@ from test_harness_tools import config_for
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.agents.budget import reservation_usd
-from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import load_guide
 from balatro_horizons.agents.tool_interface import ACTION_MODELS
 from balatro_horizons.config import (
@@ -37,6 +36,7 @@ from balatro_horizons.harness.context.present import (
 )
 from balatro_horizons.harness.contract import Operation
 from balatro_horizons.harness.helpers import helper
+from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure, ProviderFailure
 
 
 def read(raw, obs, events=(), rules=None):
@@ -199,9 +199,7 @@ def test_disjoint_cache_input_categories_and_worst_case_reservation():
                 "input_tokens_details": {"cached_tokens": 3000, "cache_write_tokens": 1000},
             }
         }
-        assert policy.usage_cost(response, 0.2) == pytest.approx(
-            (1000 * 2 + 3000 * 0.2 + 1000 * 2.5 + 100 * 12) / 1_000_000
-        )
+        assert policy.usage_cost(response, 0.2) == pytest.approx(0.0063)
         for details in (
             None,
             {},

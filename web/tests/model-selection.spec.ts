@@ -6,6 +6,7 @@ import {
   modelLabel,
   modelCatalog,
   modelKey,
+  type CapabilityTable,
   type ModelConfig,
 } from "../src/modelSelection";
 import { awaitIdleWorker } from "./runHelpers";
@@ -49,25 +50,68 @@ const astra: ModelConfig = {
   cache_write_input_usd_per_million: 12.5,
 };
 
+const capabilities: CapabilityTable = {
+  providers: {
+    openai: {
+      supported_settings: ["temperature", "reasoning_effort", "reasoning_summary"],
+    },
+    anthropic: { supported_settings: ["temperature", "thinking_budget"] },
+  },
+  models: {
+    [modelKey(terra)]: {
+      display_name: "GPT-5.6 Terra",
+      prompt_cache_diagnostics: true,
+      explicit_cache_mode: true,
+      supported_settings: ["temperature", "reasoning_effort", "reasoning_summary"],
+      unsupported_settings: {},
+      reasoning_efforts: ["none", "low", "medium", "high", "xhigh", "max"],
+    },
+    [modelKey(sol)]: {
+      display_name: "GPT-5.6 Sol",
+      prompt_cache_diagnostics: true,
+      explicit_cache_mode: true,
+      supported_settings: ["temperature", "reasoning_effort", "reasoning_summary"],
+      unsupported_settings: {},
+      reasoning_efforts: ["none", "low", "medium", "high", "xhigh", "max"],
+    },
+    [modelKey(astra)]: {
+      display_name: "GPT-6 Astra",
+      prompt_cache_diagnostics: true,
+      explicit_cache_mode: true,
+      supported_settings: ["temperature", "reasoning_effort", "reasoning_summary"],
+      unsupported_settings: {},
+      reasoning_efforts: ["low", "medium", "high", "xhigh", "max"],
+    },
+    [modelKey(luna)]: {
+      display_name: "GPT-5.6 Luna",
+      prompt_cache_diagnostics: true,
+      explicit_cache_mode: true,
+      supported_settings: ["temperature", "reasoning_effort", "reasoning_summary"],
+      unsupported_settings: { reasoning_effort: ["minimal"] },
+      reasoning_efforts: ["none", "low", "medium", "high", "xhigh", "max"],
+    },
+  },
+};
+
 test("Sol and Astra expose their supported reasoning choices", () => {
-  expect(modelLabel(sol)).toBe("GPT-5.6 Sol · OpenAI");
-  expect(modelLabel(astra)).toBe("GPT-6 Astra · OpenAI");
-  expect(effortOptions(sol)).toContain("none");
-  expect(effortOptions(astra)).toEqual([
+  expect(modelLabel(sol, capabilities)).toBe("GPT-5.6 Sol · OpenAI");
+  expect(modelLabel(astra, capabilities)).toBe("GPT-6 Astra · OpenAI");
+  expect(effortOptions(sol, capabilities)).toContain("none");
+  expect(effortOptions(astra, capabilities)).toEqual([
     "low",
     "medium",
     "high",
     "xhigh",
     "max",
   ]);
-  expect(() => configureModel(astra, "none")).toThrow();
-  expect(configureModel(astra, "max").settings.reasoning_effort).toBe("max");
+  expect(() => configureModel(astra, "none", capabilities)).toThrow();
+  expect(configureModel(astra, "max", capabilities).settings.reasoning_effort).toBe("max");
 });
 
 test("model defaults deduplicate aliases without rewriting historical settings", () => {
   const legacy = { ...terra, settings: { reasoning_effort: "medium" } };
   const savedAlias = { ...terra, settings: { ...terra.settings } };
-  const currentAlias = configureModel(terra, "medium");
+  const currentAlias = configureModel(terra, "medium", capabilities);
   const models = {
     "terra-current": currentAlias,
     "terra-saved": savedAlias,
@@ -86,21 +130,35 @@ test("model defaults deduplicate aliases without rewriting historical settings",
   expect(harnessLabel("retired-recording", false)).toBe(
     "Legacy harness (retired-recording)",
   );
-  const selected = configureModel(terra, "high");
+  const selected = configureModel(terra, "high", capabilities);
   expect(
     modelCatalog({ ...models, [modelKey(terra)]: selected })[modelKey(terra)],
   ).toEqual(selected);
   expect(terra.settings.reasoning_effort).toBe("medium");
   expect(selected.cached_input_usd_per_million).toBe(0.2);
-  expect(() => configureModel(terra, "minimal")).toThrow();
-  expect(() => configureModel(luna, "medium")).toThrow();
+  expect(() => configureModel(terra, "minimal", capabilities)).toThrow();
+  expect(() => configureModel(luna, "medium", capabilities)).toThrow();
   const anthropic: ModelConfig = {
     ...luna,
     provider: "anthropic",
     model: "pinned-anthropic",
     settings: { thinking_budget: 2048 },
   };
-  expect(configureModel(anthropic, "").settings).toEqual({
+  const anthropicCapabilities: CapabilityTable = {
+    ...capabilities,
+    models: {
+      ...capabilities.models,
+      [modelKey(anthropic)]: {
+        display_name: "pinned-anthropic",
+        prompt_cache_diagnostics: false,
+        explicit_cache_mode: false,
+        supported_settings: ["temperature", "thinking_budget"],
+        unsupported_settings: {},
+        reasoning_efforts: [],
+      },
+    },
+  };
+  expect(configureModel(anthropic, "", anthropicCapabilities).settings).toEqual({
     thinking_budget: 2048,
   });
 });
@@ -318,6 +376,7 @@ test("a settings rejection prevents a run from starting", async ({ page }) => {
     const response = await route.fetch();
     const body = await response.json();
     body.config.models = { "terra-cache": terra };
+    body.config.model_capabilities = capabilities;
     await route.fulfill({ json: body });
   });
   let launches = 0;

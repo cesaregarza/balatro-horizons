@@ -5,8 +5,8 @@ import sys
 import pytest
 from test_cache_probe import load_probe, probe_config, source
 
-from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import ROOT
+from balatro_horizons.harness.transport import DirectProvider
 
 
 def test_probe_scans_candidate_before_preflight_or_provider_send(store, tmp_path, monkeypatch):

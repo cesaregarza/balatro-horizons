@@ -148,7 +148,7 @@ def context_bound(context, exchanges):
 
     Fixed settings/framing padding covers request bytes outside those payloads.
     """
-    from balatro_horizons.agents.providers import context_payload
+    from balatro_horizons.harness.transport import context_payload
 
     return (
         max(len(json.dumps(context_payload(context, exchanges, provider),

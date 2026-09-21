@@ -148,7 +148,8 @@ actual delivered context expand on demand. See [the dev inspector](docs/dev-insp
 
 The [skill-enabled harness](docs/harness-skills.md) gives new runs a compact catalog of twelve Balatro skills and on-demand chapter reads. The default is the canonical guide; **Models & budgets → Game knowledge** offers a native-rules-only comparison. Knowledge is frozen per run and inherited by branches.
 
-The [OpenAI/Luna harness guide](docs/openai-harness.md) includes the pinned smoke preset and a one-run command with a persistent campaign spending ledger.
+The [current harness provider guide](docs/harness.md#providers) documents the
+shared transport, capability declarations, mock seam, and pinned smoke preset.
 
 The current harness provides direct gameplay tools, on-demand inspection,
 provider continuation, an editable run notebook, and bounded recent working
@@ -283,7 +284,7 @@ current harness includes on-demand details, provider continuation within each
 decision, and prompt caching for supported OpenAI models. Historical interface
 assets are archived rather than selectable in the app. Configure provider models
 and verified pricing in **Models & budgets**; credentials stay in the backend
-environment. See [model selection](docs/model-selection.md) and [cache
+environment. See [provider selection](docs/harness.md#providers) and [cache
 validation](docs/cache-fix-2026-09-15.md). Presets keep paid calls disabled.
 
 The current harness also receives the short

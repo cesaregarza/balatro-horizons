@@ -50,6 +50,19 @@ def revision_sources(root, revision):
     return commit, sources
 
 
+def certified_revision(root, expected, revisions=None):
+    if revisions is None:
+        revisions = subprocess.check_output(
+            ['git', '-C', str(root), 'rev-list', '--all', '--', 'src/balatro_horizons'],
+            text=True,
+        ).splitlines()
+    for revision in revisions:
+        commit, sources = revision_sources(root, revision)
+        if fingerprint_sources(sources) == expected:
+            return commit
+    raise ValueError('CERTIFIED_BASELINE_REVISION_NOT_FOUND')
+
+
 def prepare(root, candidate, baseline, offline_report):
     root, candidate = native_path(root), native_path(candidate)
     old = json.loads((root/'private/capability-certificate.json').read_text())
@@ -59,6 +72,10 @@ def prepare(root, candidate, baseline, offline_report):
             'INVALID_CERTIFICATE_ID')
     original = json.loads((root/'private'/f'capability-record-{identifier}.json').read_text())
     require(original == old, 'ACTIVE_CERTIFICATE_RECORD_MISMATCH')
+    if baseline == 'auto':
+        baseline = certified_revision(
+            root, old.get('accepted_implementation_hash', old.get('implementation_hash'))
+        )
     commit, before = revision_sources(root, baseline)
     baseline_hash = fingerprint_sources(before)
     require(old.get('accepted_implementation_hash', old.get('implementation_hash')) == baseline_hash,
@@ -121,7 +138,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', required=True, type=Path, help='Live Linux workbench')
     parser.add_argument('--candidate', required=True, type=Path, help='Tested Linux source')
-    parser.add_argument('--baseline', required=True, help='Previously accepted Git revision')
+    parser.add_argument(
+        '--baseline', required=True,
+        help="Previously accepted Git revision, or 'auto' to resolve the active source identity",
+    )
     parser.add_argument('--offline-report', required=True, type=Path)
     parser.add_argument('--apply', action='store_true', help='Activate only after installing the candidate while idle')
     args = parser.parse_args()
