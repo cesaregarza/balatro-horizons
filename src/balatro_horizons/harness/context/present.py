@@ -3,16 +3,12 @@
 import json
 from copy import deepcopy
 
-from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.tool_interface import INSPECT_SECTIONS, tool
 from balatro_horizons.config import (
     AUTOMATIC_PUBLIC_EVENT_COUNT,
-    CONTEXT_FRAMING_BYTES,
-    CONTEXT_SETTINGS_BYTES,
     EVENT_SUMMARY_CHARACTERS,
 )
 from balatro_horizons.config import HELPER_PAGE_BYTES as PAGE_BYTES
-from balatro_horizons.config import RETAINED_HELPER_RESULTS as RETAINED_RESULTS
 
 CARD_DEFAULTS = {
     "face_down": False,
@@ -183,178 +179,58 @@ def history_digest(event, offset):
     return result
 
 
+def _history_page(operation, history):
+    page = []
+    for i in range(operation.offset, min(len(history), operation.offset + operation.limit)):
+        row = history_digest(history[i], i)
+        if len(encode(page + [row]).encode()) > PAGE_BYTES:
+            if not page:
+                page.append({
+                    "offset": i, "event_id": history[i]["event_id"],
+                    "type": history[i]["type"], "detail_available": True,
+                })
+            break
+        page.append(row)
+    end = operation.offset + len(page)
+    return {"events": page, "next_offset": end if end < len(history) else None,
+            "game_advanced": False}
+
+
+def _rule_page(operation, rules):
+    key, separator, cursor = operation.key.partition("#offset=")
+    offset = int(cursor) if separator else 0
+    key = rules.get("aliases", {}).get(key.casefold(), key)
+    entries = rules.get("entries", rules)
+    if key.startswith("guide/"):
+        return None  # Existing frozen guide reader owns its continuation keys.
+    value = sorted(entries) if key == "index" else entries.get(key)
+    if value is None:
+        return {"error": "UNKNOWN_RULE", "key": key, "game_advanced": False}
+    page = text_page(value, offset, key=key, reference="frozen_rules")
+    page["next_key"] = (
+        key + "#offset=" + str(page["next_offset"])
+        if page.get("next_offset") is not None else None
+    )
+    return page
+
+
 def focused_helper(operation, events, rules, observation):
     if operation.kind == "inspect_page":
         public = observation.model_dump(mode="json")
         section = operation.section
-        value = (
-            public[section]
-            if section in ("recent_public_events", "action_constraints", "last_action")
-            else public["state"][section]
-        )
-        return text_page(
-            value,
-            operation.offset,
-            section=section,
-            observation_id=observation.observation_id,
-            format="json",
-        )
+        value = (public[section]
+                 if section in ("recent_public_events", "action_constraints", "last_action")
+                 else public["state"][section])
+        return text_page(value, operation.offset, section=section,
+                         observation_id=observation.observation_id, format="json")
     if operation.kind in ("history", "history_detail"):
         history = public_history(events, observation)
         if operation.kind == "history_detail":
             if operation.offset >= len(history):
                 return {"error": "UNKNOWN_PUBLIC_EVENT", "game_advanced": False}
-            return text_page(
-                history[operation.offset],
-                operation.byte_offset,
-                history_offset=operation.offset,
-                format="json",
-            )
-        page = []
-        for i in range(operation.offset, min(len(history), operation.offset + operation.limit)):
-            row = history_digest(history[i], i)
-            if len(encode(page + [row]).encode()) > PAGE_BYTES:
-                if not page:
-                    page.append(
-                        {
-                            "offset": i,
-                            "event_id": history[i]["event_id"],
-                            "type": history[i]["type"],
-                            "detail_available": True,
-                        }
-                    )
-                break
-            page.append(row)
-        end = operation.offset + len(page)
-        return {
-            "events": page,
-            "next_offset": end if end < len(history) else None,
-            "game_advanced": False,
-        }
+            return text_page(history[operation.offset], operation.byte_offset,
+                             history_offset=operation.offset, format="json")
+        return _history_page(operation, history)
     if operation.kind == "rules":
-        key, separator, cursor = operation.key.partition("#offset=")
-        offset = int(cursor) if separator else 0
-        key = rules.get("aliases", {}).get(key.casefold(), key)
-        entries = rules.get("entries", rules)
-        if key.startswith("guide/"):
-            return None  # Existing frozen guide reader owns its continuation keys.
-        value = sorted(entries) if key == "index" else entries.get(key)
-        if value is None:
-            return {"error": "UNKNOWN_RULE", "key": key, "game_advanced": False}
-        page = text_page(value, offset, key=key, reference="frozen_rules")
-        page["next_key"] = (
-            key + "#offset=" + str(page["next_offset"])
-            if page.get("next_offset") is not None
-            else None
-        )
-        return page
+        return _rule_page(operation, rules)
     return None
-
-
-def context_bound(ctx, exchanges):
-    # Measure actual provider message/schema serialization, including escaping.
-    # Settings padding covers fixed model/settings fields; the provider checks the final
-    # configured body too. Taking the max keeps pruning shared across providers.
-    from balatro_horizons.agents.providers import context_payload
-
-    return (
-        max(
-            len(
-                json.dumps(
-                    context_payload(ctx, exchanges, provider),
-                    ensure_ascii=False,
-                ).encode()
-            )
-            for provider in ("openai", "anthropic")
-        )
-        + CONTEXT_FRAMING_BYTES
-        + CONTEXT_SETTINGS_BYTES
-    )
-
-
-def working_context(ctx, exchanges, byte_limit):
-    """Keep a bounded working set, with explicit reload receipts and immutable source logs."""
-    delivered = deepcopy(exchanges)
-    indices = list(range(len(delivered)))
-    cleared = []
-    preserve_turns = True
-
-    def clear_at(position):
-        exchange = delivered[position]
-        index = indices[position]
-        operation = exchange["operation"]
-        reference = {
-            k: operation[k]
-            for k in ("kind", "key", "name", "section", "offset", "byte_offset", "limit",
-                      "decision_id", "episode_id")
-            if k in operation
-        }
-        if operation.get("kind") in ("set_run_note", "delete_run_note"):
-            # A note acknowledgment is disposable. Its mutation must never be replayed
-            # as a reload hint; the latest state remains in the dynamic notebook.
-            reference = {"source": "run_notebook", "mutation_already_recorded": True}
-        cleared.append({"exchange_index": index, "reload": reference})
-        if preserve_turns and exchange.get("provider_turn"):
-            exchange["result"] = {
-                "context_cleared": True,
-                "game_advanced": False,
-                "reload": reference,
-            }
-        else:
-            delivered.pop(position)
-            indices.pop(position)
-
-    def loaded_positions():
-        return [
-            i
-            for i, exchange in enumerate(delivered)
-            if not (
-                isinstance(exchange.get("result"), dict)
-                and exchange["result"].get("context_cleared") is True
-            )
-        ]
-
-    while len(loaded_positions()) > RETAINED_RESULTS:
-        clear_at(loaded_positions()[0])
-
-    def update_metadata():
-        if "working_memory" in ctx:
-            from balatro_horizons.agents.working_memory import maintenance
-
-            maintenance(ctx, len(loaded_positions()))
-        metadata = {
-            "policy": "bounded_recent_results_provider_turns_retained"
-            if preserve_turns
-            else "bounded_recent_results",
-            "cleared": deepcopy(cleared),
-            "loaded_exchange_indices": [indices[i] for i in loaded_positions()],
-        }
-        ctx["observation"]["retrieval_context"] = metadata
-        ctx["context_delivery"] = deepcopy(metadata)
-        return metadata
-
-    update_metadata()
-    while context_bound(ctx, delivered) > byte_limit:
-        from balatro_horizons.agents.working_memory import trim_oldest
-
-        loaded = loaded_positions()
-        if trim_oldest(ctx):
-            update_metadata()
-        elif loaded:
-            clear_at(loaded[0])
-            update_metadata()
-        elif ctx["observation"]["recent_public_events"]:
-            ctx["omitted_event_ids"].append(
-                ctx["observation"]["recent_public_events"].pop(0)["event_id"]
-            )
-        else:
-            raise HarnessFailure(
-                "LOCAL_CONTEXT_LIMIT",
-                stage="helper_followup" if exchanges else "initial_request",
-                request_bytes=context_bound(ctx, delivered), byte_limit=byte_limit,
-                retained_provider_turns=sum(bool(e.get("provider_turn")) for e in delivered),
-                retained_helper_results=len(loaded_positions()),
-            )
-    update_metadata()
-    ctx["context_bytes_upper_bound"] = context_bound(ctx, delivered)
-    return ctx, delivered

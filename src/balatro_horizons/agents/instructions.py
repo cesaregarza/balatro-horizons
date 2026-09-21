@@ -29,6 +29,9 @@ def load_prompt(root):
     try:
         source = (root / "configs/prompts/ALWAYS-LOADED.md").read_text(encoding="utf-8")
         rendered = render(raw.decode("utf-8"), source).encode("utf-8")
+        from balatro_horizons.harness.context.render import validate_prompt_template
+
+        validate_prompt_template(raw.decode("utf-8"))
     except (OSError, ValueError):
         raise HarnessFailure(
             "PERSISTENT_INSTRUCTIONS_INVALID", stage="protocol_freeze"

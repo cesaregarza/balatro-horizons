@@ -14,11 +14,11 @@ from pydantic import ValidationError
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.agents.budget import Spending
 from balatro_horizons.agents.failures import HarnessFailure
-from balatro_horizons.agents.protocol import Operation
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
 from balatro_horizons.config import load_config
 from balatro_horizons.evaluation.reports import scan
 from balatro_horizons.evidence.provenance import implementation_fingerprint
+from balatro_horizons.harness.contract import Operation
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.storage.journal import atomic_json, digest, locked
 

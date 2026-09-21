@@ -4,9 +4,18 @@ import hashlib
 import json
 from copy import deepcopy
 
+from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.agents.instructions import load_prompt
-from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, ROOT
+from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, RETAINED_HELPER_RESULTS, ROOT
 from balatro_horizons.evidence.provenance import implementation_fingerprint
+from balatro_horizons.harness.context.memory import working_memory_policy
+from balatro_horizons.harness.context.present import PAGE_BYTES
+from balatro_horizons.harness.context.render import (
+    render_prompt,
+    rules_kernel,
+    tool_catalog,
+    validate_prompt_template,
+)
 from balatro_horizons.harness.contract import NamedPolicy, Policy
 from balatro_horizons.storage.journal import digest
 
@@ -19,31 +28,22 @@ def episode_limits(config):
 
 
 def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
-    from balatro_horizons.agents.focused import PAGE_BYTES, RETAINED_RESULTS, focused_tools
-    from balatro_horizons.agents.notebook import notebook_tools
-    from balatro_horizons.agents.protocol import KERNEL
-    from balatro_horizons.agents.skills import discovery
-    from balatro_horizons.agents.tool_interface import stable_tools
-
-    raw = load_prompt(ROOT) if prompt_bytes is None else prompt_bytes
+    template = load_prompt(ROOT) if prompt_bytes is None else prompt_bytes
+    try:
+        validate_prompt_template(template.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise HarnessFailure("PERSISTENT_INSTRUCTIONS_INVALID", stage="protocol_freeze") from None
+    raw = render_prompt(template)
     skills = rules.get("skills", [])
-    kernel = (
-        "Resolve scores in native order. Read the available skills and linked rules when useful."
-        if skills
-        else KERNEL
-    )
     from balatro_horizons.agents.outcomes import VERSION as outcome_version
-    tools = notebook_tools(
-        focused_tools(stable_tools(skills=skills, target_guidance=True)), action_notes=True
-    )
-    from balatro_horizons.agents.working_memory import policy as working_memory_policy
+    tools = tool_catalog(skills)
     model = policy.model if isinstance(policy, Policy) else None
     return {
         "version": "agent-protocol-v1",
         "interface": FROZEN_INTERFACE,
         "prompt_utf8": raw.decode("utf-8"),
         "prompt_sha256": hashlib.sha256(raw).hexdigest(),
-        "rules_kernel": kernel + discovery(skills),
+        "rules_kernel": rules_kernel(skills),
         "tool": None,
         "tool_catalog": tools,
         "tool_policy": "stable_catalog_local_phase_rejection",
@@ -56,7 +56,7 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         "memory_policy": {
             "across_actions": "run-notebook-v1-and-" + working_memory_policy()["version"],
             "recent_public_events": RECENT_PUBLIC_EVENT_LIMIT,
-            "retained_results": RETAINED_RESULTS,
+            "retained_results": RETAINED_HELPER_RESULTS,
             "page_bytes": PAGE_BYTES,
             "provider_continuation": "within_decision_only",
             "context_bound": "request_bytes_and_provider_tokens_v2",

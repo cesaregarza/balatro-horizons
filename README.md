@@ -154,7 +154,7 @@ The current harness provides direct gameplay tools, on-demand inspection,
 provider continuation, an editable run notebook, and bounded recent working
 context across actions. Models receive notebook-maintenance guidance and
 can attach a note edit to an action without another provider call.
-[Working context and notebook maintenance](docs/working-memory-v1.md) describes
+[Current harness](docs/harness.md#what-the-model-receives) describes
 the limits, validation and branch boundaries. Retired prompts and configurations
 are archived in the [changelog](CHANGELOG.md), not kept as runtime choices. Each
 native installation needs certification matching its executable source.
@@ -268,7 +268,7 @@ review affected prompt text when changing a protocol allowance or retention rule
 The **32,768-token allowance** is separate from `max_request_bytes` (262,144 by
 default). Complete provider input is counted before generation, while spending
 reservations retain the full configured token ceilings and maximum input price.
-See [persistent instructions](docs/persistent-instructions.md#separate-transport-token-and-spending-controls)
+See [the current harness](docs/harness.md#what-the-model-receives)
 and the [reliability change record](docs/harness-reliability.md) for the controls,
 safe failure diagnostics, and pending native/provider deployment gates.
 
@@ -289,7 +289,7 @@ validation](docs/cache-fix-2026-09-15.md). Presets keep paid calls disabled.
 The current harness also receives the short
 [ALWAYS-LOADED.md](configs/prompts/ALWAYS-LOADED.md) mechanics reference on every
 call. Its contents are embedded in the frozen prompt and shared by both provider
-adapters. See [persistent instructions](docs/persistent-instructions.md) for editing,
+adapters. See [the current harness](docs/harness.md#what-the-model-receives) for editing,
 the prompt sync command, admission freshness checks, and byte/token limits.
 
 New observations use [public information contract 1.1](docs/public-information-v1.1.md):

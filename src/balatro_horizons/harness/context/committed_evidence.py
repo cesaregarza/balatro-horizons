@@ -1,7 +1,7 @@
 """Join a committed action to its public evidence within the supplied branch cutoff."""
 
-from balatro_horizons.agents.focused import public_history, text_page
 from balatro_horizons.contracts import ActionEnvelope, Observation
+from balatro_horizons.harness.context.present import public_history, text_page
 
 
 def reference(event):

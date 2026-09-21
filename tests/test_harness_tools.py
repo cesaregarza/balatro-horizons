@@ -11,14 +11,16 @@ from test_boundary import project
 
 from balatro_horizons.actions.validation import validate_action
 from balatro_horizons.agents.baselines import Baseline, baseline_observation, candidates
-from balatro_horizons.agents.focused import PAGE_BYTES
 from balatro_horizons.agents.input_limits import request_size
-from balatro_horizons.agents.protocol import Operation, context, decision_context, helper
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure
 from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.config import ROOT, ModelConfig, load_config
 from balatro_horizons.contracts import ActionEnvelope, RecentPublicEvent
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import context, decision_context
+from balatro_horizons.harness.context.present import PAGE_BYTES
+from balatro_horizons.harness.contract import Operation
+from balatro_horizons.harness.helpers import helper
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
 

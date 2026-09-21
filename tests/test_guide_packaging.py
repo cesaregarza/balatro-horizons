@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from balatro_horizons.agents.protocol import Rules, helper
+from balatro_horizons.harness.contract import Rules
+from balatro_horizons.harness.helpers import helper
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/package_balatro_guide.py"
 SPEC = importlib.util.spec_from_file_location("package_balatro_guide", SCRIPT)

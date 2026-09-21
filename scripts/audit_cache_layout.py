@@ -7,11 +7,11 @@ from pathlib import Path
 
 from audit_transcript_efficiency import audit, size, stats
 
-from balatro_horizons.agents.protocol import decision_context
 from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.agents.skills import load_guide
 from balatro_horizons.config import load_config
 from balatro_horizons.contracts import Observation
+from balatro_horizons.harness.context.build import decision_context
 from balatro_horizons.storage.journal import Store, digest
 
 

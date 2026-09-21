@@ -17,7 +17,7 @@ use next_key. A page is only a fragment until complete is true. calculate suppor
 restricted arithmetic. Helpers do not advance the game; you may use them before
 acting, up to the per-decision allowance shown by remaining_budget.
 
-Only the latest three helper or error results stay loaded, fewer when needed to
+Only the latest {retained_helper_results} helper or error results stay loaded, fewer when needed to
 fit the context budget. retrieval_context lists cleared results and how to reload
 them. Provider protocol blocks may remain around a cleared-result receipt so the
 same decision can continue safely; the old result itself is no longer loaded.
@@ -33,7 +33,7 @@ a hypothesis, even if you wrote it in a note. Preserve useful findings before
 their supporting context leaves the active window. Choose your own note keys
 and strategy. Save entries with
 set_run_note(key,text), or delete an entry with delete_run_note(key). Keys are
-yours to choose (1-64 characters, no control characters). The total Unicode
+yours to choose ({notebook_key_min}-{notebook_key_max} characters, no control characters). The total Unicode
 character count of keys plus text is limited by run_notebook.character_limit.
 Oversized edits leave all existing notes unchanged. Edits consume a helper call
 but do not advance the game. Current observations remain authoritative; saved

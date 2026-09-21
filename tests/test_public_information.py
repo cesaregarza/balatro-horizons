@@ -10,7 +10,6 @@ from test_provider_continuations import model
 
 from balatro_horizons.actions.validation import validate_action
 from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.protocol import Operation, decision_context, helper
 from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import Limits
 from balatro_horizons.contracts import ActionEnvelope, Observation
@@ -18,6 +17,9 @@ from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.evidence.certification import verify_checkpoint
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.state import normalize
+from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.contract import Operation
+from balatro_horizons.harness.helpers import helper
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer
 from balatro_horizons.review.service import ReviewService

@@ -7,11 +7,11 @@ from provider_transport import with_input_count
 from test_boundary import project
 from test_harness_tools import config_for
 
-from balatro_horizons.agents.protocol import decision_context
 from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure
 from balatro_horizons.config import Limits, ModelConfig
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import decision_context
 from balatro_horizons.runner import Runner
 
 

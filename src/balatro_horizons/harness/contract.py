@@ -1,5 +1,7 @@
 """The policy boundary and the single surviving operation schema."""
 
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass, field, fields
 from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
 from pydantic import Field, TypeAdapter
@@ -93,12 +95,50 @@ OperationValue = (
 )
 Operation = TypeAdapter(Annotated[OperationValue, Field(discriminator="kind")])
 
-# The context remains a dictionary until #12. Its current public keys are:
-# prompt, rules_kernel, interface_version, tools, current_costs, observation,
-# omitted_event_ids, run_notebook, working_memory, previous_action_outcome,
-# allowed_tools, helper_status, notebook_maintenance, context_delivery,
-# context_bytes_upper_bound, and skill_catalog_delivery.
-Context = dict[str, Any]
+
+@dataclass(kw_only=True)
+class Context(Mapping[str, Any]):
+    """Typed delivery fields; the mapping view contains only delivered fields."""
+
+    prompt: str
+    rules_kernel: str
+    interface_version: str
+    tools: list[dict[str, Any]]
+    current_costs: dict[str, Any]
+    observation: dict[str, Any]
+    omitted_event_ids: list[str]
+    run_notebook: dict[str, Any]
+    working_memory: dict[str, Any]
+    previous_action_outcome: dict[str, Any] | None = None
+    allowed_tools: list[str]
+    helper_status: dict[str, Any]
+    notebook_maintenance: dict[str, Any] | None = None
+    context_delivery: dict[str, Any] | None = None
+    context_bytes_upper_bound: int | None = None
+    skill_catalog_delivery: str | None = None
+    # A current outcome is delivered even when it is null; older frozen bundles omit it.
+    deliver_previous_action_outcome: bool = field(default=False, repr=False, compare=False)
+
+    def __iter__(self) -> Iterator[str]:
+        for item in fields(self):
+            if item.name == "deliver_previous_action_outcome":
+                continue
+            if item.name == "previous_action_outcome":
+                if not self.deliver_previous_action_outcome:
+                    continue
+            elif item.default is None and getattr(self, item.name) is None:
+                continue
+            yield item.name
+
+    def __getitem__(self, key: str) -> Any:
+        if key not in tuple(self):
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
+
+
 Exchanges = list[dict[str, Any]]
 RawOperation = dict[str, Any]
 

@@ -1,6 +1,7 @@
 """The declared policy and game seams, with synthetic-only delivery."""
 
 import threading
+from types import SimpleNamespace
 
 from test_openai_luna import luna
 
@@ -42,7 +43,7 @@ def test_interventions_switch_from_human_or_scripted_to_metered_provider():
         sequence.on_commit()
         assert sequence.active_policy is override
         assert not isinstance(override.active_policy, ProviderPolicy)
-        override.decide({"observation": {"observation_id": 0}}, [])
+        override.decide(SimpleNamespace(observation={"observation_id": 0}), [])
         assert override.active_policy is provider
         assert isinstance(override.active_policy, ProviderPolicy)
     finally:
@@ -62,7 +63,7 @@ def test_committed_action_ends_provider_continuation_once(store):
             if ctx["observation"]["observation_id"] == 1:
                 assert self.last_provider_turn is None
                 assert self.last_tool_call is None
-            return {"context": ctx, "exchanges": exchanges}
+            return {"context": dict(ctx), "exchanges": exchanges}
 
         def check_input(self, body):
             return None

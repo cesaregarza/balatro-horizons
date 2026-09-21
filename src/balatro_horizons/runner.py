@@ -16,13 +16,9 @@ from balatro_horizons.agents.budget import (
     validate_paid_configuration,
 )
 from balatro_horizons.agents.failures import HarnessFailure
-from balatro_horizons.agents.frozen import freeze_protocol, restore_protocol
-from balatro_horizons.agents.notebook import RunNotebook, restore_notebook
-from balatro_horizons.agents.protocol import KERNEL, decision_context, helper
 from balatro_horizons.agents.providers import ProtocolFailure, ProviderFailure
 from balatro_horizons.agents.skills import prepare_rules, read_guide, restore_knowledge
 from balatro_horizons.agents.tool_interface import ACTION_MODELS
-from balatro_horizons.agents.working_memory import WorkingMemory, restore_working_memory
 from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT
 from balatro_horizons.contracts import Observation, RecentPublicEvent, RemainingBudget
 from balatro_horizons.evidence.provenance import (
@@ -36,6 +32,15 @@ from balatro_horizons.game.contract import (
     NativeFailure,
     NativeRejected,
 )
+from balatro_horizons.harness.context.build import HELPER_EXHAUSTED_MESSAGE, decision_context
+from balatro_horizons.harness.context.freeze import freeze_protocol, restore_protocol
+from balatro_horizons.harness.context.memory import (
+    RunNotebook,
+    WorkingMemory,
+    restore_notebook,
+    restore_working_memory,
+)
+from balatro_horizons.harness.context.render import KERNEL
 from balatro_horizons.harness.contract import (
     EnvironmentLockedGame,
     NamedPolicy,
@@ -44,6 +49,7 @@ from balatro_horizons.harness.contract import (
     ProviderPolicy,
     RoutedPolicy,
 )
+from balatro_horizons.harness.helpers import helper
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 from balatro_horizons.storage.journal import digest
@@ -206,16 +212,16 @@ class Runner:
                 ),
                 working_memory=self.working_memory.view(),
             )
-            ctx["observation"]["remaining_budget"]["provider_calls"] = (
+            ctx.observation["remaining_budget"]["provider_calls"] = (
                 self.limits.max_provider_calls - self.calls
             )
-            ctx["observation"]["remaining_budget"]["helper_calls_this_decision"] = helper_count
-            ctx["observation"]["remaining_budget"]["helper_calls_remaining"] = max(
+            ctx.observation["remaining_budget"]["helper_calls_this_decision"] = helper_count
+            ctx.observation["remaining_budget"]["helper_calls_remaining"] = max(
                 0, self.limits.max_helper_calls_per_decision - helper_count
             )
             self.log(
                 "agent_context",
-                {"context": ctx, "exchanges": delivered_exchanges},
+                {"context": dict(ctx), "exchanges": delivered_exchanges},
                 actor="agent",
                 observation_id=observation.observation_id,
             )
@@ -298,7 +304,7 @@ class Runner:
                     and error.code == "UNAVAILABLE_TOOL"
                     and helper_count >= self.limits.max_helper_calls_per_decision
                     and error.details.get("attempted_tool") in {
-                        tool["name"] for tool in ctx["tools"]
+                        tool["name"] for tool in ctx.tools
                         if tool["name"] not in ACTION_MODELS and tool["name"] != "abort_run"
                     }
                 ):
@@ -315,7 +321,7 @@ class Runner:
                 feedback = self._tool_feedback(error, code, observation)
                 if code == "HELPER_LIMIT_REACHED":
                     feedback.update(helper_calls_remaining=0,
-                                    message="Helper allowance exhausted. Choose a permitted gameplay action or abort_run.")
+                                    message=HELPER_EXHAUSTED_MESSAGE)
                 self.log(
                     "action_rejected",
                     {"code": code, "consecutive_invalid": invalid, "feedback": feedback},
@@ -329,7 +335,7 @@ class Runner:
     def _fit_guide_result(self, observation, exchanges, raw, result):
         # A shared conservative byte bound keeps paging independent of provider transport.
         key = result["key"] + "#offset=" + str(result["offset"])
-        from balatro_horizons.agents.focused import PAGE_BYTES
+        from balatro_horizons.harness.context.present import PAGE_BYTES
 
         return read_guide(self.rules, key, PAGE_BYTES)
 
@@ -403,7 +409,7 @@ class Runner:
             else freeze_protocol(self.config, self.policy, self.rules, prompt_bytes=self.prompt_bytes)
         )
         if resume:
-            from balatro_horizons.agents.frozen import episode_limits
+            from balatro_horizons.harness.context.freeze import episode_limits
 
             if self.protocol["episode_limits"] != episode_limits(self.config):
                 raise ValueError("AGENT_PROTOCOL_CONFIGURATION_CHANGED")

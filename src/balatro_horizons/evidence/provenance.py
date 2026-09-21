@@ -10,7 +10,9 @@ IMPLEMENTATION_FILES = (
     "config.py", "contracts.py", "runner.py", "service.py", "review/branches.py",
     "evaluation/scheduling.py",
 )
-IMPLEMENTATION_DIRECTORIES = ("game", "evidence", "observations", "actions", "agents", "storage")
+IMPLEMENTATION_DIRECTORIES = (
+    "game", "evidence", "observations", "actions", "agents", "storage", "harness"
+)
 
 
 def source_files(root=ROOT):
@@ -100,9 +102,8 @@ def accepted_source_matches(record):
 
 def implementation_fingerprint():
     base = ROOT / "src/balatro_horizons"
-    # Native fidelity depends on the game boundary, projection, action policy, runner,
-    # storage, and branch restoration. Presentation and report-only edits do not
-    # invalidate native continuation evidence; their own tests cover those layers.
+    # Full source acceptance covers native execution and the harness that prepares
+    # model context. Native-component identity is checked separately below.
     paths = [base / name for name in IMPLEMENTATION_FILES]
     for directory in IMPLEMENTATION_DIRECTORIES:
         paths.extend(sorted((base / directory).rglob("*.py")))
