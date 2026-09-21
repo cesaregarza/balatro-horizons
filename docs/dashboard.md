@@ -21,6 +21,8 @@ JSONL with GET from `/api/explore/export/{format}` (or the staged
 records. The shared action descriptor table at
 `web/src/actionDescriptors.json` feeds both the Python summary and TypeScript
 presentation labels.
+A download reads the current server snapshot, which may be newer than the last
+browser poll; its source journal head identifies the exported snapshot.
 
 DevTrace is reached from Decision Explorer's development toggle.
 
