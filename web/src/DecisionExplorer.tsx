@@ -290,6 +290,7 @@ export function DecisionExplorer({
               {ledger.manifest.config?.models?.[ledger.manifest.agent]
                 ? modelLabel(
                     ledger.manifest.config.models[ledger.manifest.agent],
+                    ledger.manifest.config.model_capabilities,
                   )
                 : ledger.manifest.agent}
             </strong>

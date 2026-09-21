@@ -6,10 +6,10 @@ from types import SimpleNamespace
 from test_openai_luna import luna
 
 from balatro_horizons.agents.baselines import Baseline, ScriptedPolicy
-from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.game.contract import GameSession
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.contract import Policy, ProviderPolicy
+from balatro_horizons.harness.transport import DirectProvider
 from balatro_horizons.runner import Runner
 from balatro_horizons.service import HumanPolicy, HumanSequencePolicy, InterventionPolicy
 

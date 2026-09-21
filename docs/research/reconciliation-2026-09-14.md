@@ -24,11 +24,11 @@ Existing annotation tags must not be retroactively relabeled with the new blind/
 
 ## Reasoning-capture audit
 
-Historical audit at research intake. The subsequent [OpenAI harness work](../openai-harness.md) adds explicit summary requests and a returned-summary viewer; the limits concerning internal reasoning and explicit memory still apply.
+Historical audit at research intake. The subsequent [provider harness work](../harness.md#providers) adds explicit summary requests and a returned-summary viewer; the limits concerning internal reasoning and explicit memory still apply.
 
 Inspected source:
 
-- `src/balatro_horizons/agents/providers.py`: request, send, parse, and canonical-message construction.
+- `src/balatro_horizons/harness/transport/`: request, send, parse, and canonical-message construction.
 - `src/balatro_horizons/config.py`: allowed provider settings.
 - `src/balatro_horizons/runner.py`: provider response logging before operation parsing.
 - `src/balatro_horizons/contracts.py`: optional `decision_note` and `memory_update`.

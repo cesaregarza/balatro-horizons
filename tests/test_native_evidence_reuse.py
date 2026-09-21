@@ -25,6 +25,14 @@ def test_archived_full_fingerprint_matches_working_tree_identity():
     assert provenance.fingerprint_sources(provenance.source_files(ROOT)) == provenance.implementation_fingerprint()
 
 
+def test_certified_revision_resolves_an_exact_source_identity():
+    revision, source = reuse.revision_sources(ROOT, 'HEAD')
+    expected = provenance.fingerprint_sources(source)
+    assert reuse.certified_revision(ROOT, expected, ['HEAD']) == revision
+    with pytest.raises(ValueError, match='CERTIFIED_BASELINE_REVISION_NOT_FOUND'):
+        reuse.certified_revision(ROOT, 'absent', ['HEAD'])
+
+
 def test_harness_only_edits_change_full_identity_but_not_native_components():
     before = provenance.source_files(ROOT)
     after = deepcopy(before)
