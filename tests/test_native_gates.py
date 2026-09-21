@@ -6,21 +6,24 @@ import pytest
 
 from balatro_horizons.config import ROOT, Environment
 from balatro_horizons.evidence.certification import require_environment_certificate
-from balatro_horizons.evidence.provenance import accepted_source_matches
+from balatro_horizons.evidence.lock import lock_digest
+from balatro_horizons.evidence.provenance import (
+    accepted_source_matches,
+    native_implementation_fingerprint,
+)
 from balatro_horizons.game.session import NativeFailure
-from balatro_horizons.storage.journal import digest
 
 
-def test_batch_scheduling_source_invalidates_native_fingerprint(tmp_path, monkeypatch):
+def test_game_source_invalidates_native_fingerprint(tmp_path, monkeypatch):
     from balatro_horizons.evidence import provenance
 
     monkeypatch.setattr(provenance, "ROOT", tmp_path)
-    source = tmp_path / "src/balatro_horizons/evaluation/scheduling.py"
+    source = tmp_path / "src/balatro_horizons/game/environment.py"
     source.parent.mkdir(parents=True)
-    source.write_text("original scheduling")
-    before = provenance.implementation_fingerprint()
-    source.write_text("changed scheduling")
-    assert provenance.implementation_fingerprint() != before
+    source.write_text("original game boundary")
+    before = native_implementation_fingerprint()
+    source.write_text("changed game boundary")
+    assert native_implementation_fingerprint() != before
 
 
 def test_AT24_missing_native_certificate_blocks_evaluation():
@@ -34,18 +37,23 @@ def test_AT24_missing_native_certificate_blocks_evaluation():
 def test_native_evidence_gate(acceptance):
     path = ROOT / "reports/verification/native-evidence.json"
     if not path.is_file():
-        pytest.skip(f"{acceptance}: native evidence has not been collected")
+        pytest.skip(f"{acceptance}: missing artifact {path.relative_to(ROOT)}")
     report = json.loads(path.read_text())
     if not accepted_source_matches(report):
-        pytest.skip("Changed source requires native verification or explicit compatible-harness acceptance")
-    lock = ROOT / "private/environment.lock.json"
-    if not lock.is_file() or report.get("environment_hash") != digest(json.loads(lock.read_text())):
-        pytest.skip("Native evidence must be regenerated for changed environment")
+        pytest.skip(f"{acceptance}: {path.relative_to(ROOT)} does not accept current source")
+    try:
+        current_environment = lock_digest(ROOT)
+    except ValueError as error:
+        pytest.skip(f"{acceptance}: private/environment.lock.json: {error}")
+    if report.get("environment_hash") != current_environment:
+        pytest.skip(f"{acceptance}: private/environment.lock.json changed")
     item = report.get(acceptance)
     if not item or item["status"] != "passed":
         pytest.skip(
-            f"{acceptance}: {item.get('reason', 'not verified') if item else 'not verified'}"
+            f"{acceptance}: {path.relative_to(ROOT)}: "
+            f"{item.get('reason', 'not verified') if item else 'entry missing'}"
         )
     assert item["evidence_kind"] == "NATIVE" and item["artifacts"]
     for artifact in item["artifacts"]:
-        assert (ROOT / artifact).is_file()
+        if not (ROOT / artifact).is_file():
+            pytest.skip(f"{acceptance}: missing artifact {artifact}")

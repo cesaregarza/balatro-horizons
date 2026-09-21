@@ -1,17 +1,27 @@
 """Source and private continuation fingerprints used to invalidate stale evidence."""
 
-import ast
 import hashlib
 
 from balatro_horizons.config import ROOT
 from balatro_horizons.storage.journal import digest
 
 IMPLEMENTATION_FILES = (
-    "config.py", "contracts.py", "runner.py", "service.py", "review/branches.py",
+    "config.py",
+    "contracts.py",
+    "runner.py",
+    "service.py",
+    "review/branches.py",
     "evaluation/scheduling.py",
 )
 IMPLEMENTATION_DIRECTORIES = (
-    "game", "evidence", "observations", "actions", "agents", "storage", "harness"
+    "game",
+    "evidence",
+    "observations",
+    "actions",
+    "agents",
+    "storage",
+    "harness",
+    "workbench",
 )
 
 
@@ -34,62 +44,17 @@ def fingerprint_sources(sources):
     })
 
 
-def native_components(sources=None):
-    """Native mechanics/visibility/transport identity, separate from harness behavior.
-
-    Gate/provenance code is validated offline, not by replaying the game. Runner,
-    model and branch policy still require a separately accepted full source hash.
-    Actual game/mod/bridge files are independently verified against the runtime lock.
-    """
+def native_implementation_fingerprint(sources=None):
+    """Hash native execution files directly now that ``game/`` owns the boundary."""
     sources = source_files(ROOT) if sources is None else sources
-    prefix = "src/balatro_horizons/"
-    excluded = {"game/fake.py"}
-    result = {}
-    for name, content in sources.items():
-        relative = name.removeprefix(prefix)
-        if name.startswith(prefix) and relative not in excluded and (
-            relative == "contracts.py"
-            or relative.split("/")[0] in ("game", "observations", "actions", "storage")
-        ):
-            result[name] = hashlib.sha256(content).hexdigest()
-    # Config combines unrelated model budgets with the native Environment binding.
-    # Hash that binding and its dependencies, not unrelated budget defaults.
-    tree = ast.parse(sources[prefix + "config.py"])
-    bindings = {}
-    for node in tree.body:
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            bindings[node.name] = node
-        elif isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                bindings[alias.asname or alias.name] = node
-        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                for part in ast.walk(target):
-                    if isinstance(part, ast.Name):
-                        bindings[part.id] = node
-    required = {"Environment", "ROOT"}
-    if not required <= bindings.keys():
-        raise ValueError("NATIVE_CONFIG_BOUNDARY_CHANGED")
-    pending, selected = list(required), set()
-    while pending:
-        node = bindings[pending.pop()]
-        if node in selected:
-            continue
-        selected.add(node)
-        pending.extend(part.id for part in ast.walk(node)
-                       if isinstance(part, ast.Name) and isinstance(part.ctx, ast.Load)
-                       and part.id in bindings and bindings[part.id] not in selected)
-    selected = [node for node in tree.body
-                if node in selected or isinstance(node, (ast.Import, ast.ImportFrom))]
-    result[prefix + "config.py:native"] = hashlib.sha256(
-        ast.dump(ast.Module(body=selected, type_ignores=[]), include_attributes=False).encode()
-    ).hexdigest()
-    return result
-
-
-def native_implementation_fingerprint():
-    return digest(native_components())
+    prefix = "src/balatro_horizons/game/"
+    return digest(
+        {
+            name: hashlib.sha256(content).hexdigest()
+            for name, content in sources.items()
+            if name.startswith(prefix) and name.endswith(".py") and name != prefix + "fake.py"
+        }
+    )
 
 
 def accepted_source_matches(record):

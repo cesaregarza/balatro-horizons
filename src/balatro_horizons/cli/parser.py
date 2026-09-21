@@ -12,6 +12,7 @@ def build_parser():
     sub = parser.add_subparsers(dest="command", required=True)
     add_runtime_commands(sub)
     add_review_commands(sub)
+    add_evidence_commands(sub)
     add_data_commands(sub)
     return parser
 
@@ -83,3 +84,25 @@ def add_data_commands(sub):
     parser.add_argument("--action-file", type=Path)
     parser = sub.add_parser("native")
     parser.add_argument("operation", choices=["launch", "stop", "status"])
+
+
+def add_evidence_commands(sub):
+    parser = sub.add_parser("evidence")
+    operations = parser.add_subparsers(dest="evidence_operation", required=True)
+    plan = operations.add_parser("plan")
+    plan.add_argument("--gameplay-only", action="store_true")
+    collect = operations.add_parser("collect")
+    collect.add_argument("--from-stage")
+    collect.add_argument("--episode-id")
+    collect.add_argument("--gameplay-only", action="store_true")
+    operations.add_parser("certify")
+    operations.add_parser("publish")
+    reuse = operations.add_parser("reuse")
+    reuse.add_argument("--root", required=True, type=Path)
+    reuse.add_argument("--candidate", required=True, type=Path)
+    reuse.add_argument("--baseline", default="auto")
+    reuse.add_argument("--offline-report", required=True, type=Path)
+    reuse.add_argument("--apply", action="store_true")
+    inspect = operations.add_parser("inspect")
+    inspect.add_argument("artifact", type=Path)
+    inspect.add_argument("--limit", type=int, default=20)

@@ -1,4 +1,4 @@
-> Historical planning snapshot. The owner subsequently authorized implementation. Current behavior and evidence are documented in [the README](../README.md), [native audit](native-audit.md), and [verification report](verification.md). Earlier pause statements and defaults below are superseded.
+> Historical planning snapshot. The owner subsequently authorized implementation. Current behavior and evidence are documented in [the README](../README.md), [native audit](native-audit.md), and [evidence guide](evidence.md). Earlier pause statements and defaults below are superseded.
 
 # Balatro Horizons: handoff and Claude input reconciliation
 

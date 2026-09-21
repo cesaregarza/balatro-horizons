@@ -1,24 +1,25 @@
-#!/usr/bin/env python3
-"""Prove rejected native consumable selections leave the game unchanged."""
+"""Collect rejection evidence for disabled and wrongly-targeted consumables."""
+
+from __future__ import annotations
 
 import json
 import uuid
-
-from native_acceptance import Audit
+from typing import Any
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
-from balatro_horizons.config import ROOT, load_config
+from balatro_horizons.config import ROOT
 from balatro_horizons.contracts import ActionEnvelope
+from balatro_horizons.evidence.collect.acceptance import Audit
 from balatro_horizons.evidence.provenance import continuation_fingerprint
 from balatro_horizons.game.contract import NativeRejected
-from balatro_horizons.game.session import NativeSession
 from balatro_horizons.storage.journal import atomic_json
 
 
-def collect(config, *, game_factory=None):
+def collect(config: Any, *, game_factory=None) -> dict:
     audit = Audit(config, "invalid_consumables", game_factory=game_factory)
     try:
-        audit.take({"type": "select_blind", "blind_id": audit.obs.state.revealed_blinds[0].id})
+        blind = audit.obs.state.revealed_blinds[0].id
+        audit.take({"type": "select_blind", "blind_id": blind})
         audit.fixture("invalid_consumables")
         ankh, aura = audit.obs.state.consumables
         assert not ankh.usable and aura.usable
@@ -28,11 +29,7 @@ def collect(config, *, game_factory=None):
                 "action": {"type": "use_consumable", "consumable_id": ankh.id, "target_ids": []},
             }
         )
-        try:
-            validate_action(invalid, audit.obs)
-            raise AssertionError("Disabled Ankh was allowed")
-        except InvalidAction:
-            pass
+        _assert_disabled_rejected(invalid, audit)
         before = continuation_fingerprint(audit.game.observe_private())
         wrong_target = ActionEnvelope.model_validate(
             {
@@ -46,9 +43,10 @@ def collect(config, *, game_factory=None):
         )
         try:
             audit.game.apply_public_action(wrong_target.action, audit.issuer, uuid.uuid4().hex)
-            raise AssertionError("Editioned Aura target was allowed")
         except NativeRejected:
             pass
+        else:
+            raise AssertionError("Editioned Aura target was allowed")
         audit.game.wait_ready()
         assert continuation_fingerprint(audit.game.observe_private()) == before
         result = {
@@ -66,13 +64,9 @@ def collect(config, *, game_factory=None):
         raise
 
 
-def main(*, game_factory=None, session_factory=NativeSession):
-    config = load_config(ROOT / "configs/smoke.yaml")
-    if game_factory is None:
-        with session_factory(config.environment, reason="startup") as session:
-            return collect(config, game_factory=session.new_game)
-    return collect(config, game_factory=game_factory)
-
-
-if __name__ == "__main__":
-    main()
+def _assert_disabled_rejected(envelope: ActionEnvelope, audit: Audit) -> None:
+    try:
+        validate_action(envelope, audit.obs)
+    except InvalidAction:
+        return
+    raise AssertionError("Disabled Ankh was allowed")

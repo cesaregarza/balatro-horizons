@@ -117,7 +117,7 @@ Review advances through available information, agent action, and consequences. Y
 
 ```bash
 uv run python scripts/bootstrap_native.py
-uv run python scripts/audit_runtime.py
+uv run bh evidence plan
 uv run bh doctor --json
 ```
 
@@ -234,19 +234,20 @@ GitHub CI runs separate Python and web lanes, and both must pass.
 uv run pytest -q
 uv run ruff check src tests scripts
 npm --prefix web test
-# These launch and control the dedicated Windows runtime; run serially:
-uv run python scripts/native_acceptance.py --case all
-uv run python scripts/native_faults.py
-uv run python scripts/certify_prefix.py EPISODE_ID
+# These launch and control the dedicated Windows runtime; inspect the plan first:
+uv run bh evidence plan
+uv run bh evidence collect
+uv run bh evidence certify
+uv run bh evidence publish
 ```
 
-`native_acceptance.py` uses named evaluator fixtures to reach edge cases. Their manifests have `evaluation_eligible: false`; the easy-blind and win-setup fixtures alter test setup and are never benchmark performance evidence. The default native run path does not enable these fixtures.
+`bh evidence collect` uses named evaluator fixtures to reach edge cases. Their manifests have `evaluation_eligible: false`; the easy-blind and win-setup fixtures alter test setup and are never benchmark performance evidence. The default native run path does not enable these fixtures.
 
 See [native audit](docs/native-audit.md), [third-party notices](docs/THIRD_PARTY.md), and the [original contract](docs/contract/balatro_horizons_spec/BALATRO_HORIZONS_SPEC.md). The owner's implementation plan overrides earlier handoff defaults and the historical planning pause.
 
-The private calibration panel contains fixed regression seeds selected for short diagnostic runs. It is excluded from study performance estimates and is separate from generated development panels and any held-out panel. Native regression cases share one owned process and start new games between cases. Inspect `scripts/verify_release.py --gameplay-only --plan` for the focused collection, or `--plan` for full startup/restoration certification, before executing a native suite. Its named fixtures and baseline calibration runs make no provider calls. See [native test lifecycle](docs/native-test-lifecycle.md) for expected launch counts and the staged validation boundary.
+The private calibration panel contains fixed regression seeds selected for short diagnostic runs. It is excluded from study performance estimates and is separate from generated development panels and any held-out panel. Native regression cases share one owned process and start new games between cases. Inspect `bh evidence plan --gameplay-only` for the focused collection, or `bh evidence plan` for full startup/restoration certification, before executing a native suite. Its named fixtures and baseline calibration runs make no provider calls. See [evidence and native certification](docs/evidence.md) for expected launch counts and the staged validation boundary.
 
-After `verify_release.py` passes, run `uv run python scripts/finalize_evidence.py` to validate the collected evidence, activate matching native capabilities, and write the sanitized diagnostic report. `verify_release.py --resume-certification` reuses completed collection for the same pinned runtime and repeats certification plus the branch test.
+After collection and certification pass, run `uv run bh evidence publish` to validate the collected evidence, activate matching native capabilities, and write the sanitized diagnostic report. Resume a failed collection from its named stage with `bh evidence collect --from-stage NAME`; resuming an existing action fixture also requires its explicit `--episode-id`.
 
 ## Configure shared defaults
 

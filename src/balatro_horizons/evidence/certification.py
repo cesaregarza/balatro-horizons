@@ -2,8 +2,11 @@
 
 import json
 import uuid
+from pathlib import Path
 
-from balatro_horizons.config import ROOT
+from balatro_horizons.config import ROOT, Config
+from balatro_horizons.contracts import AnnotationInput
+from balatro_horizons.evidence.lock import lock_digest, read_lock
 from balatro_horizons.evidence.provenance import (
     accepted_source_matches,
     continuation_fingerprint,
@@ -18,7 +21,7 @@ from balatro_horizons.game.replay import (
 )
 from balatro_horizons.game.session import NativeFailure, NativeGame
 from balatro_horizons.observations.projection import HandleIssuer
-from balatro_horizons.storage.journal import atomic_json, digest, locked, now
+from balatro_horizons.storage.journal import Store, atomic_json, digest, locked, now
 
 
 def require_environment_certificate(lock, environment):
@@ -90,6 +93,88 @@ def prefix_snapshot(store, eid, decision, steps):
     }
 
 
+def _failure_record(store, eid, decision, repetition, error):
+    artifact = None
+    if isinstance(error, ReplayDivergence):
+        boundary = error.decision if error.decision is not None else decision
+        artifact = "divergence-" + uuid.uuid4().hex + ".json"
+        expected_path = store.episode_path(eid, True) / f"raw-{boundary}.json"
+        atomic_json(
+            store.episode_path(eid, True) / artifact,
+            {
+                "decision": boundary,
+                "actual": error.actual,
+                "expected": json.loads(expected_path.read_text())
+                if expected_path.exists()
+                else None,
+            },
+            immutable=True,
+        )
+    return {
+        "artifact": artifact,
+        "decision": getattr(error, "decision", decision),
+        "repetition": repetition,
+        "reason": str(error) if str(error).isupper() else type(error).__name__,
+    }
+
+
+def _replay_once(store, config, eid, decision, mode, checkpoint, suffix, snapshot, repetition):
+    game = None
+    try:
+        native = checkpoint["game"]["kind"] == "native"
+        game = NativeGame(config.environment, snapshot["seed"], calibration=True) if native else FakeGame()
+        if mode == "seed_prefix":
+            issuer = restore_seed_prefix(game, snapshot)
+        else:
+            game.restore(snapshot)
+            issuer = HandleIssuer.restore(checkpoint["issuer"])
+        check_private(game, checkpoint.get("continuation_hash") or private_hash(store, eid, decision))
+        replay_steps(game, issuer, suffix, eid)
+        expected_terminal = (store.summary(eid) or {}).get("outcome")
+        if expected_terminal in ("WIN", "GAME_LOSS") and game.terminal_status() != expected_terminal:
+            raise ValueError("TERMINAL_MISMATCH")
+    except (ValueError, RuntimeError, OSError) as error:
+        return _failure_record(store, eid, decision, repetition, error)
+    finally:
+        if game is not None:
+            game.close()
+    return None
+
+
+def _replay_failures(store, config, eid, decision, mode, checkpoint, suffix, snapshot, repetitions):
+    native = checkpoint["game"]["kind"] == "native"
+    lock_path = ROOT / "private/native-worker.lock" if native else store.root / "verification.lock"
+    with locked(lock_path):
+        for repetition in range(repetitions):
+            failure = _replay_once(
+                store, config, eid, decision, mode, checkpoint, suffix, snapshot, repetition
+            )
+            if failure:
+                return [failure]
+    return []
+
+
+def _checkpoint_certificate(store, eid, decision, mode, checkpoint, suffix, snapshot, source, failures):
+    return {
+        "schema_version": 2,
+        "certificate_id": uuid.uuid4().hex,
+        "episode_id": eid,
+        "decision": decision,
+        "mode": mode,
+        "evidence_kind": store.manifest(eid)["evidence_kind"],
+        "status": "failed" if failures else "passed",
+        "repetitions": 3,
+        "phase": checkpoint["observation"]["phase"],
+        "checkpoint_hash": digest(checkpoint),
+        "environment_hash": digest(snapshot.get("environment", {"kind": "synthetic"})),
+        "implementation_hash": source,
+        "recorded_implementation_hash": checkpoint.get("implementation_hash"),
+        "suffix_hash": digest(suffix),
+        "created_at": now(),
+        "failures": failures,
+    }
+
+
 def verify_checkpoint(store, config, eid, decision, *, repetitions=3, mode="checkpoint"):
     if type(repetitions) is not int or repetitions < 3:
         raise ValueError("AT_LEAST_THREE_REPETITIONS_REQUIRED")
@@ -101,88 +186,20 @@ def verify_checkpoint(store, config, eid, decision, *, repetitions=3, mode="chec
     if not any(s["kind"] == "action" for s in suffix):
         raise ValueError("NO_REPLAY_SUFFIX")
     source_hash = implementation_fingerprint()
-    native = checkpoint["game"]["kind"] == "native"
     snapshot = (
         prefix_snapshot(store, eid, decision, steps)
         if mode == "seed_prefix"
         else checkpoint["game"]
     )
-    failures = []
-    lock_path = ROOT / "private/native-worker.lock" if native else store.root / "verification.lock"
-    with locked(lock_path):
-        for repetition in range(repetitions):
-            game = None
-            try:
-                game = (
-                    NativeGame(config.environment, snapshot["seed"], calibration=True)
-                    if native
-                    else FakeGame()
-                )
-                if mode == "seed_prefix":
-                    issuer = restore_seed_prefix(game, snapshot)
-                else:
-                    game.restore(snapshot)
-                    issuer = HandleIssuer.restore(checkpoint["issuer"])
-                check_private(
-                    game, checkpoint.get("continuation_hash") or private_hash(store, eid, decision)
-                )
-                replay_steps(game, issuer, suffix, eid)
-                expected_terminal = (store.summary(eid) or {}).get("outcome")
-                if (
-                    expected_terminal in ("WIN", "GAME_LOSS")
-                    and game.terminal_status() != expected_terminal
-                ):
-                    raise ValueError("TERMINAL_MISMATCH")
-            except (ValueError, RuntimeError, OSError) as error:
-                artifact = None
-                if isinstance(error, ReplayDivergence):
-                    boundary = error.decision if error.decision is not None else decision
-                    artifact = "divergence-" + uuid.uuid4().hex + ".json"
-                    expected_path = store.episode_path(eid, True) / f"raw-{boundary}.json"
-                    atomic_json(
-                        store.episode_path(eid, True) / artifact,
-                        {
-                            "decision": boundary,
-                            "actual": error.actual,
-                            "expected": json.loads(expected_path.read_text())
-                            if expected_path.exists()
-                            else None,
-                        },
-                        immutable=True,
-                    )
-                failures.append(
-                    {
-                        "artifact": artifact,
-                        "decision": getattr(error, "decision", decision),
-                        "repetition": repetition,
-                        "reason": str(error) if str(error).isupper() else type(error).__name__,
-                    }
-                )
-            finally:
-                if game is not None:
-                    game.close()
-            if failures:
-                break
+    failures = _replay_failures(
+        store, config, eid, decision, mode, checkpoint, suffix, snapshot, repetitions
+    )
     if source_hash != implementation_fingerprint():
         failures.append({"reason": "SOURCE_CHANGED_DURING_VERIFICATION"})
-    cert = {
-        "schema_version": 2,
-        "certificate_id": uuid.uuid4().hex,
-        "episode_id": eid,
-        "decision": decision,
-        "mode": mode,
-        "evidence_kind": store.manifest(eid)["evidence_kind"],
-        "status": "failed" if failures else "passed",
-        "repetitions": repetitions,
-        "phase": checkpoint["observation"]["phase"],
-        "checkpoint_hash": digest(checkpoint),
-        "environment_hash": digest(snapshot.get("environment", {"kind": "synthetic"})),
-        "implementation_hash": source_hash,
-        "recorded_implementation_hash": checkpoint.get("implementation_hash"),
-        "suffix_hash": digest(suffix),
-        "created_at": now(),
-        "failures": failures,
-    }
+    cert = _checkpoint_certificate(
+        store, eid, decision, mode, checkpoint, suffix, snapshot, source_hash, failures
+    )
+    cert["repetitions"] = repetitions
     path = certificate_path(store, eid, decision)
     atomic_json(
         path.with_name("certificate-record-" + cert["certificate_id"] + ".json"),
@@ -212,9 +229,155 @@ def require_checkpoint_certificate(store, eid, decision):
     ):
         raise ValueError("CHECKPOINT_CERTIFICATE_INVALID")
     if checkpoint["game"]["kind"] == "native":
-        current = json.loads((ROOT / "private/environment.lock.json").read_text())
+        current = read_lock(ROOT)
         if digest(current) != cert["environment_hash"]:
             raise ValueError("CHECKPOINT_ENVIRONMENT_MISMATCH")
     if cert.get("mode") == "seed_prefix":
         checkpoint["game"] = prefix_snapshot(store, eid, decision, steps_for(store, eid))
     return checkpoint, cert
+
+
+def _implementation_annotation(store, review, eid):
+    review.expose(
+        eid,
+        "implementation_verification",
+        outcome_seen=True,
+        model_identity_seen=True,
+        max_event_seen=len(store.events(eid)) - 1,
+    )
+    session = review.open(eid)
+    annotation = review.annotate(
+        session["review_token"],
+        AnnotationInput.model_validate(
+            {
+                "start_decision": 0,
+                "end_decision": 0,
+                "judgment": "unclear",
+                "confidence": "low",
+                "horizons_in_tension": ["near_term", "long_term"],
+                "mechanism_summary": "Implementation verification annotation, not an expert assessment: compare selecting the blind with a skip continuation.",
+                "alternative_actions": ["Skip the current blind and let the same baseline continue."],
+            }
+        ),
+    )
+    return session, annotation
+
+
+def _branch_restoration(store, config, gold):
+    from balatro_horizons.service import RunService
+    from balatro_horizons.workbench.service import WorkbenchService
+
+    review = WorkbenchService(store)
+    session, annotation = _implementation_annotation(store, review, gold)
+    observation = session["view"]["observation"]
+    before = store.summary(gold)["journal_head"]
+    service = RunService(store, review)
+    child = service.branch(
+        config,
+        gold,
+        0,
+        "single_action_override",
+        [{"type": "skip_blind", "blind_id": observation["state"]["revealed_blinds"][0]["id"]}],
+    )
+    service.thread.join()
+    summary = store.summary(child)
+    if not summary or summary["outcome"] not in ("WIN", "GAME_LOSS"):
+        raise ValueError("BRANCH_NOT_COMPLETE")
+    if store.summary(gold)["journal_head"] != before:
+        raise ValueError("PARENT_JOURNAL_CHANGED")
+    if store.manifest(child)["evaluation_eligible"]:
+        raise ValueError("ASSISTED_BRANCH_SCORED")
+    return child, summary, annotation["annotation_id"]
+
+
+def _settlement_evidence(root, store, release):
+    from balatro_horizons.evidence.collect.settlement import verify
+
+    episode_ids = [release["fixture"]["episode_id"]]
+    episode_ids.extend(run["episode_id"] for run in release["ordinary_runs"].values())
+    faults = json.loads((root / "reports/verification/native-faults.json").read_text())
+    episode_ids.extend(run["episode_id"] for run in faults["tests"])
+    reorder = json.loads((root / "reports/verification/native-reorder.json").read_text())
+    if reorder["implementation_hash"] != release["implementation_hash"]:
+        raise ValueError("STALE_REORDER_SOURCE")
+    if reorder["environment_hash"] != release["environment_hash"]:
+        raise ValueError("STALE_REORDER_ENVIRONMENT")
+    episode_ids.append(reorder["episode_id"])
+    checks = verify(store, episode_ids)
+    result = {
+        "status": "passed",
+        "evidence_kind": "NATIVE_CALIBRATION",
+        "implementation_hash": release["implementation_hash"],
+        "environment_hash": release["environment_hash"],
+        "checks": checks,
+        "provider_calls": 0,
+        "additional_game_launches": 0,
+    }
+    atomic_json(root / "reports/verification/native-settlement.json", result)
+    return result
+
+
+def _restoration_certificates(store, config, fixture, gold, *, branch_only=False):
+    if branch_only:
+        _, direct = require_checkpoint_certificate(store, gold, 0)
+        return direct
+    for episode_id in (fixture["episode_id"], gold):
+        continuation_probe(store, config, episode_id, restoration="seed_prefix")
+    return continuation_probe(store, config, gold, restoration="checkpoint")
+
+
+def continuation_probe(store, config, episode_id, *, decision=0, restoration="checkpoint"):
+    """Require a passing three-process proof for one stopped continuation boundary."""
+    if restoration == "seed_prefix":
+        from balatro_horizons.evidence.collect.prefix import certify_prefix
+
+        certificate = certify_prefix(store, episode_id)
+    elif restoration == "checkpoint":
+        certificate = verify_checkpoint(
+            store, config, episode_id, decision, mode="checkpoint"
+        )
+    else:
+        raise ValueError("UNKNOWN_RESTORATION_MODE")
+    if certificate["status"] != "passed":
+        raise ValueError("CONTINUATION_CERTIFICATION_FAILED")
+    return certificate
+
+
+def certify_release(root=None, *, from_stage=None):
+    """Certify collected restoration boundaries and one immutable-parent branch."""
+    if from_stage not in (None, "fresh-process restoration certification", "branch restoration"):
+        raise ValueError("UNKNOWN_CERTIFICATION_STAGE")
+    root = Path(ROOT if root is None else root).resolve()
+    source = implementation_fingerprint()
+    store = Store(root / "data")
+    collected = json.loads((root / "reports/verification/native-fixtures-final.json").read_text())
+    runs = json.loads((root / "reports/verification/native-runs.json").read_text())
+    fixture, gold = collected["actions"], runs["pilot"]["episode_id"]
+    config = Config.model_validate(store.manifest(gold, True)["config"])
+    direct = _restoration_certificates(
+        store,
+        config,
+        fixture,
+        gold,
+        branch_only=from_stage == "branch restoration",
+    )
+    child, branch, annotation_id = _branch_restoration(store, config, gold)
+    current_source = implementation_fingerprint()
+    if current_source != source:
+        raise ValueError("SOURCE_CHANGED_DURING_CERTIFICATION")
+    result = {
+        "fixture": fixture,
+        "win_fixture": collected["win"],
+        "ordinary_runs": runs,
+        "branch": branch,
+        "parent_episode_id": gold,
+        "parent_unchanged": True,
+        "annotation_id": annotation_id,
+        "direct_checkpoint": direct,
+        "environment_hash": lock_digest(root),
+        "collection_started_with_implementation_hash": source,
+        "implementation_hash": current_source,
+    }
+    atomic_json(root / "reports/verification/native-release.json", result)
+    _settlement_evidence(root, store, result)
+    return {"native_release_evidence": True, "branch": child, "parent": gold}

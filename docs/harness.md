@@ -90,4 +90,4 @@ not change the fixed cached prefix. Offline tests cover both transports,
 byte-bound precedence, branches, note/action failure isolation, and frozen
 delivery. They establish interface behavior, not better gameplay or native
 fidelity. Executable harness changes alter the implementation fingerprint;
-check [native evidence reuse](native-certification-scope.md) before activation.
+check [native evidence reuse](evidence.md) before activation.

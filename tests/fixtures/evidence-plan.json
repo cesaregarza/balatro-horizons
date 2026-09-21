@@ -1,0 +1,54 @@
+{
+  "stages": [
+    {
+      "name": "startup profile stability",
+      "launches": 2,
+      "reasons": [
+        "two fresh-process profile repetitions"
+      ],
+      "collector": "runtime",
+      "artifact": "runtime-audit-{stake}.json"
+    },
+    {
+      "name": "functional collection",
+      "launches": 0,
+      "reasons": [
+        "reuse of the second profile process",
+        "invalid action",
+        "shop action coverage",
+        "terminal fixture",
+        "ordinary WHITE run",
+        "ordinary GOLD run",
+        "reorder boundaries",
+        "lost acknowledgment",
+        "unknown action status (last)"
+      ],
+      "collector": "acceptance",
+      "artifact": "native-fixtures-final.json"
+    },
+    {
+      "name": "fresh-process restoration certification",
+      "launches": 9,
+      "reasons": [
+        "three fresh-process seed-prefix continuation probes for each of two episodes",
+        "three fresh-process direct-checkpoint continuation probes"
+      ],
+      "collector": "certification",
+      "artifact": "certificate-record-*.json"
+    },
+    {
+      "name": "branch restoration",
+      "launches": 1,
+      "reasons": [
+        "explicit child branch launch"
+      ],
+      "collector": "certification",
+      "artifact": "native-release.json"
+    }
+  ],
+  "expected_physical_launches": 12,
+  "expected_game_resets": 22,
+  "native_evidence_collected": false,
+  "release_certification_requested": true,
+  "capability_activation_requested": false
+}

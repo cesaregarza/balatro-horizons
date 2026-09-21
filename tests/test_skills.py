@@ -289,11 +289,9 @@ def test_branch_capability_requires_knowledge_snapshot(store, config, episode):
 
 
 def test_native_calibration_probe_completes_offline_before_native_use(store, config):
-    import runpy
+    from balatro_horizons.evidence.collect.runs import SkillReadBaseline
 
-    from balatro_horizons.config import ROOT
-
-    policy = runpy.run_path(str(ROOT / "scripts/native_runs.py"))["SkillReadBaseline"]()
+    policy = SkillReadBaseline()
     result = Runner(store, config, FakeGame(), policy).run()
     assert result["outcome"] == "WIN" and result["provider_calls"] == 0
     helpers = [e for e in store.events(result["episode_id"]) if e["type"] == "helper_result"]

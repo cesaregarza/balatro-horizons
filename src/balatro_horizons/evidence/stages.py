@@ -1,0 +1,171 @@
+"""The declarative native-evidence plan used by the evidence commands.
+
+The old release driver embedded four almost-identical lists of dictionaries.
+This module keeps the plan data-only so it can be rendered without opening a
+private manifest, reading a seed, or contacting a native runtime.
+"""
+
+from dataclasses import asdict, dataclass
+
+
+@dataclass(frozen=True)
+class Stage:
+    """One evidence stage and the artifact produced by its collector."""
+
+    name: str
+    launches: int
+    reasons: tuple[str, ...]
+    collector: str
+    artifact: str
+
+    def as_dict(self) -> dict:
+        """Return the stable JSON representation used by ``evidence plan``."""
+        value = asdict(self)
+        value["reasons"] = list(self.reasons)
+        return value
+
+
+_FUNCTIONAL_CASES = (
+    "invalid action",
+    "shop action coverage",
+    "terminal fixture",
+    "ordinary WHITE run",
+    "ordinary GOLD run",
+    "reorder boundaries",
+    "lost acknowledgment",
+    "unknown action status (last)",
+)
+
+RESET_COUNTS = {
+    "startup profile stability": 4,
+    "functional collection": 8,
+    "fresh-process restoration certification": 9,
+    "branch restoration": 1,
+    "gameplay collection only": 8,
+    "resumed functional collection": 6,
+    "reorder acceptance fixture": 1,
+}
+
+
+def _full_stages() -> tuple[Stage, ...]:
+    return (
+        Stage(
+            "startup profile stability",
+            2,
+            ("two fresh-process profile repetitions",),
+            "runtime",
+            "runtime-audit-{stake}.json",
+        ),
+        Stage(
+            "functional collection",
+            0,
+            ("reuse of the second profile process", *_FUNCTIONAL_CASES),
+            "acceptance",
+            "native-fixtures-final.json",
+        ),
+        Stage(
+            "fresh-process restoration certification",
+            9,
+            (
+                "three fresh-process seed-prefix continuation probes for each of two episodes",
+                "three fresh-process direct-checkpoint continuation probes",
+            ),
+            "certification",
+            "certificate-record-*.json",
+        ),
+        Stage(
+            "branch restoration",
+            1,
+            ("explicit child branch launch",),
+            "certification",
+            "native-release.json",
+        ),
+    )
+
+
+def _gameplay_stages() -> tuple[Stage, ...]:
+    return (
+        Stage(
+            "gameplay collection only",
+            1,
+            ("startup; one process reused across all eight gameplay cases", *_FUNCTIONAL_CASES),
+            "acceptance",
+            "native-gameplay-collection-*.json",
+        ),
+    )
+
+
+def _resume_action_stages() -> tuple[Stage, ...]:
+    return (
+        Stage(
+            "resumed functional collection",
+            1,
+            ("startup; one session reused across remaining cases",),
+            "acceptance",
+            "native-fixtures-final.json",
+        ),
+        *_full_stages()[2:],
+    )
+
+
+def _resume_certification_stages() -> tuple[Stage, ...]:
+    return (
+        Stage(
+            "reorder acceptance fixture",
+            1,
+            ("startup for a standalone functional collection",),
+            "acceptance",
+            "native-reorder.json",
+        ),
+        *_full_stages()[2:],
+    )
+
+
+def stage_list(
+    *, resume_certification: bool = False,
+    resume_actions: bool = False,
+    gameplay_only: bool = False,
+) -> tuple[Stage, ...]:
+    """Select a non-executing plan, rejecting incompatible resume modes."""
+    selected = sum((resume_certification, resume_actions, gameplay_only))
+    if selected > 1:
+        raise ValueError("RESUME_MODES_ARE_MUTUALLY_EXCLUSIVE")
+    if gameplay_only:
+        return _gameplay_stages()
+    if resume_certification:
+        return _resume_certification_stages()
+    if resume_actions:
+        return _resume_action_stages()
+    return _full_stages()
+
+
+def plan(**options) -> dict:
+    """Render stages plus compatibility totals from the former release plan."""
+    stages = stage_list(**options)
+    resets = sum(RESET_COUNTS[stage.name] for stage in stages)
+    return {
+        "stages": [stage.as_dict() for stage in stages],
+        "expected_physical_launches": sum(stage.launches for stage in stages),
+        "expected_game_resets": resets,
+        "native_evidence_collected": False,
+        "release_certification_requested": not options.get("gameplay_only", False),
+        "capability_activation_requested": False,
+    }
+
+
+def from_stage(name: str, **options) -> tuple[Stage, ...]:
+    """Return a plan suffix beginning at ``name`` for resumable collection."""
+    if any(options.values()):
+        stages = stage_list(**options)
+    elif name == "resumed functional collection":
+        stages = _resume_action_stages()
+    elif name == "reorder acceptance fixture":
+        stages = _resume_certification_stages()
+    elif name == "gameplay collection only":
+        stages = _gameplay_stages()
+    else:
+        stages = _full_stages()
+    for index, stage in enumerate(stages):
+        if stage.name == name:
+            return stages[index:]
+    raise ValueError("UNKNOWN_EVIDENCE_STAGE")

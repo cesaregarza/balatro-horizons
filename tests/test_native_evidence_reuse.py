@@ -1,6 +1,5 @@
 """Evidence reuse needs identical native source and fresh harness validation."""
 
-import importlib.util
 import json
 import shutil
 from copy import deepcopy
@@ -8,13 +7,9 @@ from copy import deepcopy
 import pytest
 
 from balatro_horizons.config import ROOT, Environment
-from balatro_horizons.evidence import certification, provenance
+from balatro_horizons.evidence import certification, provenance, reuse
 from balatro_horizons.game.session import NativeFailure
 from balatro_horizons.storage.journal import digest
-
-SPEC = importlib.util.spec_from_file_location('reuse_native_evidence', ROOT/'scripts/reuse_native_evidence.py')
-reuse = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(reuse)
 
 
 def test_archived_full_fingerprint_matches_working_tree_identity():
@@ -33,47 +28,48 @@ def test_certified_revision_resolves_an_exact_source_identity():
         reuse.certified_revision(ROOT, 'absent', ['HEAD'])
 
 
-def test_harness_only_edits_change_full_identity_but_not_native_components():
+def test_harness_only_edits_change_full_identity_but_not_native_game_identity():
     before = provenance.source_files(ROOT)
     after = deepcopy(before)
     after['src/balatro_horizons/harness/context/memory.py'] += b'\n# changed notebook policy\n'
-    after['src/balatro_horizons/runner.py'] += b'\n# changed harness orchestration\n'
+    after['src/balatro_horizons/service.py'] += b'\n# changed harness orchestration\n'
     assert provenance.fingerprint_sources(before) != provenance.fingerprint_sources(after)
-    assert provenance.native_components(before) == provenance.native_components(after)
+    assert (
+        provenance.native_implementation_fingerprint(before)
+        == provenance.native_implementation_fingerprint(after)
+    )
 
 
 @pytest.mark.parametrize('path', [
-    'game/session.py', 'game/state/normalize.py', 'game/replay.py', 'contracts.py',
-    'observations/projection.py', 'actions/validation.py', 'storage/journal.py',
-    'game/new_native_module.py',
+    'game/session.py', 'game/state/normalize.py', 'game/replay.py', 'game/new_native_module.py',
 ])
 def test_native_edits_additions_and_removals_invalidate_compatibility(path):
     source = provenance.source_files(ROOT)
-    before = provenance.native_components(source)
+    before = provenance.native_implementation_fingerprint(source)
     key = 'src/balatro_horizons/' + path
     source[key] = source.get(key, b'') + b'\n# changed native code\n'
-    assert provenance.native_components(source) != before
+    assert provenance.native_implementation_fingerprint(source) != before
     del source[key]
     if path != 'game/new_native_module.py':
-        assert provenance.native_components(source) != before
+        assert provenance.native_implementation_fingerprint(source) != before
 
 
-def test_config_native_dependencies_are_tracked_but_model_budgets_are_separate():
+def test_game_environment_defaults_are_tracked_but_model_budgets_are_separate():
     source = provenance.source_files(ROOT)
     config_key = 'src/balatro_horizons/config.py'
     key = 'src/balatro_horizons/game/environment.py'
-    before = provenance.native_components(source)
+    before = provenance.native_implementation_fingerprint(source)
     source[config_key] = source[config_key].replace(
         b'WORKING_MEMORY_DECISIONS = 3', b'WORKING_MEMORY_DECISIONS = 4'
     )
-    assert provenance.native_components(source) == before
+    assert provenance.native_implementation_fingerprint(source) == before
     source[key] = source[key].replace(b'port: int = Field(default=12346', b'port: int = Field(default=12347')
-    assert provenance.native_components(source) != before
+    assert provenance.native_implementation_fingerprint(source) != before
     source[key] = source[key].replace(b'port: int = Field(default=12347', b'port: int = Field(default=NATIVE_PORT')
     source[key] += b'\nNATIVE_PORT = 12347\n'
-    before = provenance.native_components(source)
+    before = provenance.native_implementation_fingerprint(source)
     source[key] = source[key].replace(b'NATIVE_PORT = 12347', b'NATIVE_PORT = 12348')
-    assert provenance.native_components(source) != before
+    assert provenance.native_implementation_fingerprint(source) != before
 
 
 @pytest.fixture
@@ -123,7 +119,7 @@ def test_reuse_preserves_original_evidence_and_does_not_migrate_checkpoints(migr
 
 
 @pytest.mark.parametrize('failure,code', [
-    ('native', 'NATIVE_COMPONENTS_CHANGED'), ('report', 'MATCHING_OFFLINE_CHECKS_REQUIRED'),
+    ('native', 'NATIVE_GAME_SOURCE_CHANGED'), ('report', 'MATCHING_OFFLINE_CHECKS_REQUIRED'),
     ('environment', 'NATIVE_ENVIRONMENT_CHANGED'), ('baseline', 'BASELINE_NOT_CERTIFIED'),
     ('record', 'ACTIVE_CERTIFICATE_RECORD_MISMATCH'),
 ])
