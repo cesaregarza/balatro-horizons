@@ -1,6 +1,6 @@
 import type { DecisionRow } from "./api";
 import { cardLabel } from "./cardPresentation";
-import descriptors from "./actionDescriptors.json" with { type: "json" };
+import descriptors from "../../src/balatro_horizons/review/action_descriptors.json" with { type: "json" };
 
 export function humanize(value: string) {
   return value.replaceAll("_", " ").toLowerCase();

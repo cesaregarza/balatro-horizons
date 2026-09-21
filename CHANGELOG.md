@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-09-21 — Documentation consolidation (#17; `5afe41f`, `e2ffc92`)
+## 2026-09-21 — Documentation consolidation (PR #39; issue #17)
 
 - Consolidated the README, architecture, game-interface, harness, dashboard,
   and evidence guides; historical records now live here newest-first.
@@ -10,16 +10,15 @@
   `frozen-agent-protocol`, `harness-efficiency-audit`, `harness-reliability`,
   `harness-skills`, `implementation-handoff`, `input-reconciliation`,
   `live-decision-explorer`, `native-audit`, `native-mod-feasibility`,
-  `public-information-v1.1`, and `release-2026-09-16`); net docs delta is
-  **-2,003 lines** (504 added, 2,507 deleted).
+  `public-information-v1.1`, and `release-2026-09-16`). PR #39 records the final
+  per-package line totals against its reviewed base.
 - Preserved the contract, Balatro guide, third-party notice, and research
   reconciliation/return handoff files byte-for-byte. The observer UX proposal
   remains parked and was not silently adopted or dropped.
-- Carried forward only Part B4 (UI-equivalent hand preview) and B5 (context,
-  memory, and note experiments) from the implementation handoff; B1–B3 and B6
-  are implemented or shipped. The script/source/test collapse is recorded below.
+- B1–B3 are implemented. B4/B5 and the unfinished B6 items remain in the
+  implementation-handoff backlog below; the script collapse is recorded here.
 
-## 2026-09-21 — Script collapse (#17; `5afe41f`, `e2ffc92`)
+## 2026-09-21 — Script collapse (PR #39; issue #17)
 
 - `probe_prompt_cache.py` (introduced 2026-09-15, `f85b348`) asked whether a
   bounded API-only probe demonstrated reusable prompt input; recorded traces,
@@ -49,34 +48,36 @@
 - Moved `decision_summary.py` and `summarize_run.py` into the `bh summarize`
   package command, including descriptors in the installed wheel, and moved
   `native_patches.py` to `game/patches.py`.
+- `bh summarize` follows the shared CLI convention: output failures return 1
+  with `SUMMARY_OUTPUT_EXISTS` or `SUMMARY_OUTPUTS_MUST_DIFFER`, and success
+  prints a JSON result instead of the script's `Recorded N actions in …` line.
+- `inspect_divergence.py` moved to `bh evidence inspect` in PR #38; it answers
+  which public boundary first diverged without printing private values.
 - Four load-bearing operational exceptions remain separate:
   `configure_workbench_session.py`, `diagnose_native_startup.py`,
   `install_candidate.py`, and `verify_browser_native.mjs`.
 - Nine retained operational-script tests still load their script boundary
-  directly. Replacing those workflows is deferred rather than deleting their
-  coverage or broadening this collapse beyond its two authorized package moves.
+  directly. Issue #40 owns their package moves, with property-preserving tests.
 
-## 2026-09-21 — Native evidence pipeline (`fd316c1`)
+## 2026-09-21 — Native evidence pipeline (PR #38)
 
 - Moved collection/certification responsibilities behind `EvaluatorSession`,
   preserved public/private evidence separation, and retained explicit reuse
   requirements. Native execution and paid-provider verification remain operator
   work, not documentation acceptance.
 
-## 2026-09-21 — Dashboard and game boundaries (`b6a3f6e`, `21f7486`)
+## 2026-09-21 — Dashboard boundary (PR #37)
 
 - The dashboard split keeps exploration, settings, batches, reports, and
   retrospective annotations available by default; staged review, branches,
-  takeover, verification, and continuation remain workbench-only.
+  takeover, and verification remain workbench-only. Budget continuation belongs
+  to PR #25 and is not enabled by this restructure.
+
+## 2026-09-20 — Game boundary (PR #28; `21f7486`)
+
 - The game boundary uses typed sessions, public action contracts, private raw
   evidence, and explicit native settlement/error taxonomy. Previous native
   certificates require matching source and environment fingerprints.
-
-## 2026-09-21 — Input reconciliation and native feasibility (`fd316c1`)
-
-- Reconciled public-information, settlement, and source-fingerprint findings;
-  the parked native-mod feasibility record remains a research constraint, not
-  an activation claim.
 
 ## 2026-09-18 — Harness interface v7 (`aad111d`)
 
@@ -84,23 +85,55 @@
   capability, memory policy, and delivered limits are captured per episode;
   retired generations remain in the historical section below.
 
-## 2026-09-18 — Defaults refactor and cache diagnostics (`b859d26`)
-
-- Shared harness defaults now have one Python owner, with preset overrides and
-  explicit token/byte/cost distinctions. Cache diagnostics remain measured
-  evidence and do not authorize a paid probe.
-
 ## 2026-09-16 — Release handoff (`31c0822`)
 
-- The release record covers native action/replay/branch evidence, provider
-  smoke, source/runtime fingerprints, and outstanding validation limits.
+- The deployed implementation was
+  `7f1796bdd1e9570d6acbbbfc677680031f4920facb2c1f894d908f69c3009518`;
+  the environment was
+  `ae2d734c8a56587033d6f4b131f2f3c068c5cad47979a1e19cd47f925682ac69`.
+- The operator authorized $5 per run / $10 total including failed attempts in
+  campaign `protocol-release-20260916`, with the shared durable ledger at
+  `private/protocol-release-20260916/spending.json`. This records the historical
+  authorization; it grants no new paid execution.
+- Terra smoke episode `94495564883a4ed3a5a0a3944b3fb2f1` ended `GAME_LOSS` /
+  `VERIFIED_ENGINE_TERMINAL`, with `evaluation_eligible: false`, 86 committed
+  actions, $0.7715538 all-attempt cost, and no unresolved reservations.
+- The rollback source/runtime/evidence set and logs were saved under
+  `private/release-backup-20260916-B3/`. Read-only status is
+  `uv run scripts/smoke_openai.py --status --campaign protocol-release-20260916`;
+  it records review exposure and makes no provider call.
+- Native action/replay/branch and browser evidence passed for that pinned
+  configuration. Anthropic live compatibility, headless equivalence, new
+  checkpoint scope, and scientific evaluation remained separate gates.
 
 ## 2026-09-16 — Implementation handoff (`2ab1730`)
 
 - Part A defined durable campaign funding stops, model-specific reservations,
   episode-versus-campaign outcomes, rerun/crash recovery, and actual export
-  coverage. The carried-forward Part B backlog is recorded in the 2026-09-21
-  documentation entry above; B4 and B5 remain hypotheses, not shipped claims.
+  coverage. B1–B3 shipped; the following backlog remains explicitly separate.
+- B4: a UI-equivalent hand preview may expose only the selected hand's visible
+  name and base chips/multiplier, never a final-score oracle, hidden-card
+  inspector, move ranker, or selection search; native parity and nonmutation
+  evidence are required.
+- B5: context, memory, and note experiments remain hypotheses. Keep byte bounds
+  separate from token limits and funding; never lower a byte threshold on the
+  basis of measured tokenizer counts. Compare validity, coverage, costs, and
+  full-run outcomes under matched conditions.
+- B6: seed-bootstrap diagnostics and public offline CI shipped. Funding
+  amendments and a separate native-release CI lane remain unimplemented;
+  frozen batches still reject changed configuration. Research rubric changes
+  remain versioned operator decisions, never retroactive relabeling.
+
+## 2026-09-16 — Frozen agent protocol (`d7f4265`)
+
+- `agent-protocol.json` freezes delivered prompt, knowledge, settings, and
+  limits; legacy checkpoints missing a snapshot fail closed. Current rules
+  live in `docs/harness.md`; historical prompt text remains below.
+
+## 2026-09-16 — Defaults refactor (`9e51725`)
+
+- Shared defaults have one Python owner, preset overrides, and explicit
+  token/byte/cost distinctions; an override does not rewrite a frozen episode.
 
 ## 2026-09-16 — Campaign budget fix (`2ab1730`)
 
@@ -113,12 +146,12 @@
 - Status reads use cache invalidation at the run boundary, while card modifiers
   retain distinct visual treatment and current public prices.
 
-## 2026-09-16 — Harness reliability (`2e5708f`)
+## 2026-09-16 — Harness reliability (`f5ff6e3`)
 
 - Settlement visibility, omitted-row behavior, absent-interest-as-zero, and
   the `ROUND_EVAL` close event remain explicit evidence invariants.
 
-## 2026-09-16 — Harness efficiency audit (`f5ff6e3`)
+## 2026-09-15 — Harness efficiency audit (`f85b348`)
 
 - **Question:** what measured input or budget friction should be addressed before
   another paid run? **Method:** audit three recorded journal/provider traces,
@@ -133,7 +166,24 @@
 - Prompt-cache handling remains bounded by provider usage categories and
   conservative reservations; old traces are not relabeled as savings evidence.
 
-## 2026-09-14 — Research reconciliation and return handoff (`94c6746`, `f85b348`)
+## 2026-09-15 — Cache diagnostics (`f85b348`)
+
+- Recorded-request comparisons use an episode-local stable-prefix baseline;
+  measured cache categories do not establish savings or authorize a paid probe.
+
+## 2026-09-14 — Input reconciliation (`f85b348`)
+
+- Reconciled the contract and supplied research around full native runs,
+  public observations, prospective review, and certified interventions.
+  Separate mechanics knowledge, trajectory exposure, and harness assistance;
+  automatic horizon scores and broader research claims remained proposals.
+
+## 2026-09-14 — Native mod feasibility (`f85b348`)
+
+- Native mods were a feasibility path for public observations and explicit
+  actions; calibration/debug capabilities remain outside the agent boundary.
+
+## 2026-09-14 — Research reconciliation and return handoff (`f85b348`)
 
 - The full operator decision/reconciliation and return handoff remain verbatim
   at `docs/research/reconciliation-2026-09-14.md` and
@@ -636,129 +686,10 @@ settlement evidence, doctor, and browser review. It made no paid provider reques
 and did not establish gameplay or cost improvement. The former sync option and
 deployment instructions for selecting this retired interface were removed.
 
-### tools_v7 — current as `harness.txt`
+### tools_v7 — current
 
-Last prompt change: `4d64ff892cc90fdfaffad6179c2b35ff549afc0b` (2026-09-17).
-
-```text
-Play this Balatro run. Maximize the chance of the ordinary Ante 8 win within
-the displayed budgets. Choose your own strategy; money and intermediate scores
-are not separate objectives.
-
-The focused view contains the current board, legal actions, resources, visible
-blind effects and your saved notes. Card defaults are declared once in presentation. Counter defaults apply only
-to cards marked counter_defaults_apply; absent counters otherwise remain unknown. Empty effects and
-counters are omitted. All nondefault counters and active effects remain visible.
-Hand levels are automatic while playing a hand and available on demand elsewhere.
-Recent event text may be shortened; a truncated marker means more text is available.
-
-Load information when needed: inspect_state reads one public section, read_history
-browses past events, read_history_detail loads a complete past event, and
-read_skill/read_rules load frozen knowledge. Inspection and history detail return
-JSON text in UTF-8 byte pages; start at offset 0 and follow next_offset. Rule pages
-use next_key. A page is only a fragment until complete is true. calculate supports
-restricted arithmetic. Helpers do not advance the game; you may use them before
-acting, up to the per-decision allowance shown by remaining_budget.
-
-Only the latest three helper or error results stay loaded, fewer when needed to
-fit the context budget. retrieval_context lists cleared results and how to reload
-them. Provider protocol blocks may remain around a cleared-result receipt so the
-same decision can continue safely; the old result itself is no longer loaded.
-Clearing context never deletes the journal. Your run_notebook is automatically
-included in every request, including between helper calls. Maintain a concise
-notebook of your current plan, useful conclusions from prior actions and
-calculations, and unresolved questions. Update it when these change; remove
-obsolete entries. Avoid copying facts already in the current observation or
-unchanged notes. Preserve useful findings before their supporting context leaves
-the active window. Choose your own note keys and strategy. Save entries with
-set_run_note(key,text), or delete an entry with delete_run_note(key). Keys are
-yours to choose (1-64 characters, no control characters). The total Unicode
-character count of keys plus text is limited by run_notebook.character_limit.
-Oversized edits leave all existing notes unchanged. Edits consume a helper call
-but do not advance the game. Current observations remain authoritative; saved
-notes are your own records, not verified game facts.
-You can also attach one edit to a gameplay call with note_update: {key,text} sets
-a note; {key,text:null} deletes it; null leaves notes unchanged. This uses no
-additional helper call. Both the action and edit are validated before either
-executes. A valid edit is journaled before game execution and survives an engine
-failure; it does not claim the action succeeded. Gameplay actions do not accept
-memory_update. There is no requirement to write an unchanged note on every turn.
-
-working_memory automatically carries a bounded set of completed decisions:
-actions, recorded decision notes, observed results, and recent helper receipts.
-These are historical records. Their handles, quotes and counters are NOT current
-action targets or prices. A recorded decision note is an agent account, not a
-verified conclusion. Current observations and current_costs remain authoritative.
-Retention limits and omitted counts are explicit; older records remain in the
-journal. Use retrieve_action_result/read_history for missing public action
-evidence. Historical inspection arguments do not reload the old state: inspect_state
-always reads the CURRENT observation. Frozen rules/skills and arithmetic can be
-requested again. Opaque provider continuation does not cross game actions.
-
-notebook_maintenance warns when the next action or helper may clear older context.
-Save useful conclusions while they are still loaded, using a note helper or
-note_update on the action. At a new round or a change of plan, check whether your
-notes still reflect what you intend. Keep uncertainty explicit. The notebook and
-retained recent history are separate: history may expire; notes persist until edited.
-Do not assume earlier tool text is still loaded.
-
-last_action automatically reports your latest gameplay action's observed changes.
-retrieve_action_result retrieves a committed action and its receipt by decision_id;
-null selects the latest. Use section before/after for the recorded public conditions.
-A returned episode_id identifies inherited actions; historical handles are not
-current action targets. Follow next_offset as byte_offset for complete JSON.
-The recorded_decision_note is your original note, not a verified prediction.
-State changes are not a causal scoring breakdown; a null hand_score is unknown.
-Helpers and note writes never replace the last gameplay action.
-
-permitted_tools lists the tools permitted on this request. When no helpers remain,
-choose a permitted gameplay action or abort_run. Prohibited helper requests receive
-feedback and count toward the bounded invalid-response limit. The harness never
-substitutes a gameplay action.
-
-Call one named gameplay tool when ready, using the current observation ID and
-visible object IDs. Card order is the displayed order; reorder changes it.
-Invalid actions do not execute; use the specific feedback to correct them. There
-is no restart, hidden-state inspection, future information or automatic substitute
-move. decision_note is optional, may be null, and is not graded.
-
-The tool catalog is fixed. Only tools in permitted_tools may be used. Gameplay
-tools must also be named in the current observation's available_action_types.
-Use its observation_id, current visible
-object IDs, and action_constraints for legal selections, counts, targets, and
-reorder areas. Tools for other phases do not become legal merely because their
-schemas are present.
-
-Use current_costs from the current observation for transaction prices. Item
-descriptions explain effects; they do not establish whether a limited-use benefit
-remains available. Quotes refresh after every settled action, including pack
-returns. A null price or remaining-use count is unknown, not zero.
-cash_cost is the upfront quote; recorded rental obligations are separate.
-Affordability does not imply purchase eligibility. Mode checks marked
-requires_targets need a valid target selection before execution.
-last_action.transaction separates the quoted charge from cash before/after.
-An unobserved actual charge remains null; net cash change can include other effects.
-
-<!-- BEGIN ALWAYS-LOADED.md -->
-# Mechanics to retain across decisions
-
-These are ordinary defaults. Current public effects can modify or
-override them.
-
-- Ordinary interest pays $1 per full $5 of eligible cash at settlement,
-  capped at $5. Eligible balances below $5 earn no ordinary interest.
-  Active deck effects, vouchers, and other public effects can change this.
-- Ordinary unused hands pay $1 each at settlement.
-- Borrowing capacity permits spending below $0; it is not additional
-  cash. Money received while your balance is negative first reduces
-  that negative balance.
-- Score beyond the current blind's target does not carry forward.
-- Only scoring cards normally add card chips and trigger "when scored"
-  effects. In Three of a Kind A-A-A-K-Q, only the Aces score; the added
-  King and Queen contribute neither.
-- Money, deck changes, Jokers, and hand upgrades persist across rounds,
-  subject to their effects.
-- Skipping a blind forgoes its normal played-round settlement and shop;
-  the displayed skip tag provides its own reward.
-<!-- END ALWAYS-LOADED.md -->
-```
+The authoritative current prompt is [`configs/prompts/harness.txt`](configs/prompts/harness.txt),
+last changed on main by `5ca5f6e` (PR #34, 2026-09-20). Its placeholders are
+resolved from the frozen episode configuration; a rendered historical snapshot
+must not be presented as the current template. Retired versions above retain
+their exact historical text.

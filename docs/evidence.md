@@ -19,11 +19,21 @@ uses two launches; functional collection reuses the retained process; fresh
 process restoration uses nine launches; branch restoration uses one. Gameplay
 only uses one process and eight resets and does not certify restoration.
 
+| Stage | Launches / resets | Evidence artifact |
+| --- | --- | --- |
+| startup profile stability | 2 / 4 | `runtime-audit-{stake}.json` |
+| functional collection | 0 / 8 | `native-fixtures-final.json` |
+| fresh-process restoration certification | 9 / 9 | `certificate-record-*.json` |
+| branch restoration | 1 / 1 | `native-release.json` |
+| gameplay collection only (alternative plan) | 1 / 8 | `native-gameplay-collection-*.json` |
+
 Collectors use `EvaluatorSession` ownership, public actions, fresh journals,
 handle issuers, and request IDs. Ambiguous execution retires a session; unknown
 status is infrastructure failure and is never silently retried. Resume only a
 named stage with matching prerequisites, and identify the episode when resuming
-an action fixture.
+an action fixture using `bh evidence collect --from-stage "resumed functional
+collection" --episode-id EPISODE_ID`. A stage name selects the remaining suffix;
+it never turns missing prerequisite artifacts into completed evidence.
 
 ```bash
 uv run bh evidence collect
@@ -39,6 +49,9 @@ recorded prefix and suffix; direct-save support is per checkpoint. `publish`
 validates required artifacts and the schema-selected public export before
 activating a pointer to immutable certificate records. A divergence leaves a
 private artifact and failed immutable record; an old pass is never rewritten.
+The failure artifact is `divergence-*.json`. Inspect its boundary summary with
+`bh evidence inspect PATH --limit 20`; raw private divergence values stay private.
+`private/capability-certificate.json` selects the active immutable certificate.
 
 Every non-calibration launch needs a certificate matching source, environment,
 deck, stake, injector, bridge, and full mod tree. Filename classification alone
@@ -65,18 +78,22 @@ or stochastic interaction. Unsupported availability fails closed.
 ## Reuse and publication
 
 Harness-only candidates may reuse evidence only with an immutable parent
-certificate, unchanged native `game/` bytes, the same environment lock, existing
+certificate, unchanged `contracts.py`, `game/` (except `fake.py`), `observations/`,
+`actions/`, and `storage/` bytes, the same environment lock, existing
 artifacts, and a matching offline report. Reuse records the original native
 identity, candidate identity, parent certificate, and zero native launches; it
 does not migrate checkpoint certificates or frozen protocol snapshots.
 
-From the candidate checkout, point to an immutable baseline and the candidate's
-source-bound offline report; omit `--apply` to inspect the refusal or reuse plan:
+From the candidate checkout, first create its source-bound offline report, then
+use the baseline checkout holding the immutable certificate and native artifacts.
+Omit `--apply` to inspect the refusal or reuse plan:
 
 ```bash
+uv run python scripts/check_offline.py --report reports/verification/offline.json
 uv run bh evidence reuse \
   --root ../baseline-checkout \
   --candidate . \
+  --baseline auto \
   --offline-report reports/verification/offline.json \
   --apply
 ```
@@ -84,6 +101,10 @@ uv run bh evidence reuse \
 The command refuses changed native files, environment drift, missing artifacts,
 or a report bound to a different candidate. A success records zero native
 launches and never activates broader restoration scope.
+`--baseline auto` finds the committed revision matching the accepted source hash;
+`CERTIFIED_BASELINE_REVISION_NOT_FOUND` means that revision is absent from local
+history. Recover the matching history or choose a verified explicit baseline;
+do not rewrite the certificate hash.
 
 Public exports are schema-selected and privacy-scanned. Seeds, raw state, saves,
 credentials, private paths, and divergence payloads stay private. Red/White and

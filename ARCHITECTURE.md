@@ -6,12 +6,13 @@ Balatro Horizons has three runtime layers with a narrow typed boundary:
 native game / evaluator
         │ EvaluatorSession + public observations
         ▼
-game contract ── harness tools, providers, budgets, journals
+game/ contract ── harness/ tools, providers, budgets
         │ public API schemas and privacy projection
         ▼
-dashboard client ── exploration, reports, annotations, optional workbench
+api/ + web/ ── exploration, reports, annotations, optional workbench
         │
-        └── evidence records, immutable manifests, private artifacts
+        ├── evidence/ ── certification, provenance, private artifacts
+        └── storage/ ── append-only journals, manifests, rebuildable indexes
 ```
 
 ## Game layer
@@ -40,9 +41,9 @@ The browser uses typed HTTP clients and screen components. The Python gateway
 projects public data and never exposes private run directories. Run library,
 exploration, settings, batches, reports, and append-only retrospective
 annotations are ordinary dashboard surfaces. Staged reveal, branches,
-comparison, human takeover, verification, and budget continuation are the
-opt-in workbench and return 404 when disabled. The loopback bind guard and
-trusted-origin middleware protect every route.
+comparison, human takeover, and verification are the opt-in workbench and
+return 404 when disabled. Budget continuation is deferred to PR #25. The loopback
+bind guard and trusted-origin middleware protect every route.
 
 ## Evidence and storage
 

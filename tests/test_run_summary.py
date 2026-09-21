@@ -70,6 +70,16 @@ def test_summarize_command_writes_package_outputs(recorded_run, tmp_path, capsys
     assert json.loads(capsys.readouterr().out)["recorded_actions"] == 1
 
 
+def test_summarize_help_preserves_operator_contract(capsys):
+    with pytest.raises(SystemExit) as stopped:
+        cli_main(["summarize", "--help"])
+    assert stopped.value.code == 0
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "No game or provider is contacted." in help_text
+    assert "Reading a whole run records review exposure." in help_text
+    assert "Also write an ante-grouped decision recap" in help_text
+
+
 def test_summary_preserves_completed_and_rejected_choices(recorded_run):
     store, eid = recorded_run
     store.finish(eid, {"committed_actions": 1, "outcome": "INVALID_EVALUATION"})

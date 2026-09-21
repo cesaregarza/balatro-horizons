@@ -6,13 +6,18 @@ Balatro run. Models play complete native games; researchers can review decisions
 annotate tradeoffs, and test certified alternative continuations. Red Deck /
 Gold Stake is the evaluation default; Red / White is the plumbing configuration.
 
-## Research focus
+## What this benchmark studies
 
 The question is when an agent applies relevant knowledge and trades present
 resources against future needs. Immediate means this blind, short means this
 ante, and long means the full run. Annotation labels remain versioned until a
 rubric migration is selected. The relationship to scheming is a hypothesis, not
 an interpretation validated by a Balatro score.
+
+The [dashboard and optional workbench](docs/dashboard.md) support review before
+reveal, expert diagnosis with append-only annotations, and testable alternative
+continuations under a matching certificate. `bh summarize` produces a public
+decision ledger and optional Markdown recap, recording retrospective exposure.
 
 | Project | Documented focus | Balatro Horizons emphasis |
 | --- | --- | --- |
@@ -43,9 +48,9 @@ uv run bh review --port 8765
 
 Open `http://127.0.0.1:8765`. The default dashboard keeps run exploration,
 settings, batches, reports, and retrospective annotations available. Staged
-reveal, branches, comparison, human takeover, verification, and budget
-continuation require the explicitly enabled workbench. The server binds to
-loopback unless an operator makes a deliberate, authenticated override.
+reveal, branches, comparison, human takeover, and verification require
+`bh review --workbench`. Budget continuation remains deferred. The server binds
+to loopback; a trusted Tailscale Serve proxy can provide remote access.
 
 Synthetic episodes are application tests and are never native results. Native
 execution requires the operator's licensed installation, matching source and

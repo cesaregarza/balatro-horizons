@@ -52,6 +52,8 @@ class Environment(BaseModel):
     unlock_profile: str = "dedicated_fully_unlocked"
     resolved_manifest: str = "private/environment.lock.json"
     require_live_certification: Literal[True] = True
+    # Operator-overridable defaults for the dedicated licensed Windows runtime;
+    # their presence is configuration, not permission to access mounted paths.
     runtime: str = "/mnt/d/BalatroHorizonsRuntime"
     powershell: str = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
     port: int = Field(default=12346, ge=1024, le=65535)

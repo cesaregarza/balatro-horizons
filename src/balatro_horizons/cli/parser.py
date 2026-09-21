@@ -88,10 +88,18 @@ def add_data_commands(sub):
 
 
 def add_summarize_command(sub):
-    parser = sub.add_parser("summarize")
+    parser = sub.add_parser(
+        "summarize",
+        description=(
+            "Group one public run into rounds, purchases and an action ledger. "
+            "No game or provider is contacted. Reading a whole run records review exposure."
+        ),
+    )
     parser.add_argument("--episode-id", required=True)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--markdown-output", type=Path)
+    parser.add_argument(
+        "--markdown-output", type=Path, help="Also write an ante-grouped decision recap"
+    )
     parser.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS)
 
 

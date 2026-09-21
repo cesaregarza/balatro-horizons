@@ -7,14 +7,15 @@ privacy projection and decision export; the client only triggers a download.
 
 ## Surface boundary
 
-The factory defaults `Config.workbench_enabled` to false. The ordinary
+The factory defaults `Config.workbench_enabled` to false; `bh review --workbench`
+explicitly enables it. The ordinary
 dashboard always mounts the run library, live status, decision exploration,
 cost/model-budget settings, batches, reports, and cheap append-only
 retrospective annotations under the `/api/explore...` and core namespaces.
 These surfaces remain usable when the flag is off.
 
 The workbench owns staged reveal/review, branching and comparison, human
-takeover, verification, and budget continuation. Its `/api/review*`,
+takeover, and verification. Its `/api/review*`,
 `/api/branches*`, `/api/operator/human`, and `/api/verify` routes are absent and
 return 404 when the flag is off. Workbench controls and screens are hidden in
 that mode; exploration and annotation are not. DevTrace is a development
@@ -23,8 +24,9 @@ surface under Decision Explorer, not a separate navigation root.
 ## Runtime and safety
 
 The gateway is assembled from route modules, shared middleware, and a factory.
-The default bind is loopback. Remote binding requires an explicit override,
-HTTPS, and a trusted `.ts.net` origin. Credentials belong in the backend
+The CLI accepts only `--host 127.0.0.1` or `--host localhost`; the backend stays
+on loopback behind Tailscale Serve. `--public-origin` names that exact trusted
+Tailscale HTTPS origin. Credentials belong in the backend
 environment, never browser settings. Private run directories, raw observations,
 seeds, saves, provider requests, and reviewer identity are not browser data.
 
@@ -33,6 +35,8 @@ them before writing. A browser cannot reconstruct an export from detail records.
 Action labels come from the shared descriptor table used by API summaries and
 TypeScript presentation. Route names and accessible labels are versioned UI
 contracts; changes require matching browser coverage.
+Unknown edition text is escaped and never used as a CSS class. Browser decision
+numbers start at 1; journal observation IDs are zero-based.
 
 Status polling reads a compact per-episode cache, not the full journal on every
 request. Device, inode, size, modification time, or change time invalidates the
@@ -59,8 +63,13 @@ operator-configured Tailscale Serve endpoint remain the supported remote path.
 ## Review and continuation
 
 The workbench records exposure before a reveal, keeps cursor movement explicit,
-and appends annotation revisions. A budget continuation is admitted only for a
-terminal parent at cap exhaustion after checkpoint, certificate, protocol,
-knowledge, implementation, and spending-ledger checks. Its combined cap must
-increase; the parent remains immutable and the assisted child is not autonomous
-evidence. Loopback and route isolation apply equally to operator controls.
+and appends annotation revisions. Prospective annotations are filtered to the
+revealed decision boundary. Budget continuation is deferred to PR #25; there is
+no `continue-budget` route in this cutover. Loopback and route isolation apply
+equally to operator controls.
+
+`bh summarize --episode-id EPISODE_ID --output summary.json
+--markdown-output summary.md` writes a new public JSON decision ledger and an
+optional ante-grouped Markdown recap. Reading the whole run records review
+exposure; the command contacts no game or provider and refuses existing output
+files. Recorded model notes remain claims, separate from observed transitions.

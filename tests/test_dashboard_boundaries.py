@@ -1,5 +1,3 @@
-import json
-from pathlib import Path
 from typing import get_args, get_type_hints
 
 import pytest
@@ -89,11 +87,8 @@ def test_dashboard_factory_rejects_remote_bind_by_default(store):
 
 
 def test_action_descriptor_covers_contract_actions():
-    descriptor_path = Path(__file__).parents[1] / "web/src/actionDescriptors.json"
-    descriptors = json.loads(descriptor_path.read_text())
     action_types = {
         get_type_hints(action).get("type").__args__[0]
         for action in get_args(Action)
     }
-    assert descriptors == DESCRIPTORS
     assert action_types <= DESCRIPTORS.keys()
