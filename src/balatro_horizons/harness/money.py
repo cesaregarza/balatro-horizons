@@ -205,7 +205,8 @@ class SchedulingStop(BaseModel):
             if self.terminal is not None or self.recovered:
                 raise ValueError("INVALID_PREFLIGHT_STOP")
         elif (
-            not self.episode_id
+            not refusal["campaign"]
+            or not self.episode_id
             or self.terminal is None
             or self.outcome != refusal["outcome"]
         ):

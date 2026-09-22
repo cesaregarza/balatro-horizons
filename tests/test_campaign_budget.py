@@ -24,6 +24,7 @@ from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.money import (
     REFUSAL_OUTCOMES,
     BudgetExhausted,
+    SchedulingStop,
     Spending,
     batch_attempts,
     read_stop,
@@ -388,6 +389,31 @@ def test_reserve_event_precedes_send_and_unknown_usage_is_retained(harness):
     )
     ledger = json.loads((h.store.root / "batches" / plan["batch_id"] / "spending.json").read_text())
     assert ledger and all(not row["settled"] for row in ledger.values())
+
+
+@pytest.mark.parametrize("retention_error", [KeyError, ValueError])
+def test_retention_failure_preserves_provider_error(harness, monkeypatch, retention_error):
+    h = harness
+    h.config.budgets.max_batch_cost_usd = 0.04
+    h.config.budgets.max_transport_attempts = 1
+    h.failures.append(True)
+    retain = Mock(side_effect=retention_error("inconsistent reservation"))
+    monkeypatch.setattr(Spending, "retain", retain)
+    plan = h.plan(1)
+    h.service().run_batch(h.config, plan["batch_id"], offline=True)
+    attempts = batch_attempts(h.store, plan)
+    assert len(attempts) == len(h.calls) == retain.call_count == 2
+    for attempt in attempts:
+        events = h.store.events(attempt["episode_id"])
+        errors = [event for event in events if event["type"] == "provider_error"]
+        assert len(errors) == 1
+        retain.assert_any_call(errors[0]["request_id"])
+        assert errors[0]["payload"]["code"] == "PROVIDER_TRANSPORT_UNKNOWN"
+        assert errors[0]["payload"]["usage"] == "unknown"
+        assert attempt["summary"]["outcome"] == "INFRASTRUCTURE_FAILURE"
+        assert attempt["summary"]["reason"] == "PROVIDER_TRANSPORT_UNKNOWN"
+
+
 def test_non_cost_limits_authorization_and_baselines_remain_unchanged(harness, monkeypatch):
     h = harness
     h.config.budgets.paid_calls_enabled = False
@@ -428,7 +454,11 @@ def test_stopped_batch_revalidates_configuration_and_evidence_kind(harness):
 
 
 @pytest.mark.parametrize(
-    "corruption", ["truncated", "wrong_batch", "missing_context", "unreadable"]
+    "corruption",
+    [
+        "truncated", "wrong_batch", "missing_context", "unreadable",
+        "EPISODE_COST_CAP", "BUDGET_EXTENSION_PARENT_CHANGED",
+    ],
 )
 def test_corrupt_or_unreadable_stop_fails_closed(harness, monkeypatch, corruption):
     h = harness
@@ -445,6 +475,23 @@ def test_corrupt_or_unreadable_stop_fails_closed(harness, monkeypatch, corruptio
     elif corruption == "missing_context":
         del value["cost_context"]
         path.write_text(json.dumps(value))
+    elif corruption in ("EPISODE_COST_CAP", "BUDGET_EXTENSION_PARENT_CHANGED"):
+        value.update(
+            stage="episode", reason=corruption, outcome="BUDGET_EXHAUSTED",
+            episode_id="b" * 32,
+            terminal={
+                "event_id": "c" * 32, "hash": "d" * 64,
+                "sequence": 1, "timestamp": value["recorded_at"],
+            },
+        )
+        path.write_text(json.dumps(value))
+        # Exercise the semantic guard independently of the Literal field parser.
+        expected = (
+            "INVALID_EPISODE_STOP" if corruption == "EPISODE_COST_CAP"
+            else "UNKNOWN_REFUSAL_REASON"
+        )
+        with pytest.raises(ValueError, match=f"^{expected}$"):
+            SchedulingStop.model_construct(**value).consistent_stage()
     else:
         original_read = type(path).read_text
 
