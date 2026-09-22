@@ -5,6 +5,8 @@
 - Split `RunService` execution preparation/locked lifecycle into
   `service_execution.py`; lock admission, native preflight, game cleanup, and
   terminal failure accounting remain ordered at the service boundary.
+- Moved human and intervention policy wrappers into `workbench/policies.py`;
+  `service.py` keeps the orchestration import and public compatibility names.
 - Split public episode snapshot assembly into `evaluation/export.py`; report
   rendering retains the public privacy scan and provider-payload projection.
 

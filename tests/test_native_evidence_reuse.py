@@ -49,6 +49,7 @@ def test_harness_only_edits_change_full_identity_but_not_native_game_identity():
     'service_execution.py',
     'workbench/budget_continuation.py',
     'workbench/budget_ledger.py',
+    'workbench/policies.py',
 ])
 def test_full_identity_only_files_do_not_change_native_identity(path):
     source = provenance.source_files(ROOT)

@@ -11,6 +11,7 @@ IMPLEMENTATION_FILES = (
     "service.py",
     "service_execution.py",
     "workbench/branches.py",
+    "workbench/policies.py",
     "workbench/budget_continuation.py",
     "workbench/budget_ledger.py",
 )
