@@ -9,6 +9,10 @@
   `service.py` keeps the orchestration import and public compatibility names.
 - Split public episode snapshot assembly into `evaluation/export.py`; report
   rendering retains the public privacy scan and provider-payload projection.
+- A service fallback after `episode_start` now records incomplete accounting;
+  decision exports refuse `EXECUTION_TERMINAL_INCOMPLETE` before exposure instead
+  of reporting a false count mismatch. Share recovery reasons between review
+  accounting and the budget ledger; cover fallback and pre-accounting corruption.
 
 ## 2026-09-22 — Branch review action accounting (#43)
 

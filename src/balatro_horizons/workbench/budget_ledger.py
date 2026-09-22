@@ -2,6 +2,7 @@
 
 import math
 
+from balatro_horizons.harness.terminals import RECOVERY_REASONS
 from balatro_horizons.storage.journal import digest
 
 
@@ -82,7 +83,7 @@ def _child_own_spend(child, events, prior_calls):
     started = any(event["type"] == "episode_start" for event in events)
     recovered = (
         child.get("outcome") == "INFRASTRUCTURE_FAILURE"
-        and child.get("reason") in ("PROCESS_INTERRUPTED", "AMBIGUOUS_ACTION_AFTER_CRASH")
+        and child.get("reason") in RECOVERY_REASONS
     )
     calls = (child["provider_calls"] if not started or recovered
              else child["provider_calls"] - prior_calls)

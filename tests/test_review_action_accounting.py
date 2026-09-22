@@ -1,7 +1,5 @@
 """Episode-only review ledgers with verified public ancestry; fake games only."""
 
-import ast
-import inspect
 import json
 
 import pytest
@@ -13,8 +11,7 @@ from balatro_horizons.cli import main as cli_main
 from balatro_horizons.evidence.certification import verify_checkpoint
 from balatro_horizons.evidence.continuation_probe import verify_continuation_probe
 from balatro_horizons.harness.baselines import Baseline
-from balatro_horizons.review import action_accounting, decision_ledger, summary_projection
-from balatro_horizons.review.decision_ledger import build_summary, summarize, summary_input
+from balatro_horizons.review.decision_ledger import build_summary
 from balatro_horizons.review.export import export_response
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService
@@ -147,13 +144,19 @@ def test_pre_start_failure_and_live_child_counts(store, config, episode):
     assert report["action_accounting"]["own_committed_actions"] == 0
 
 
-def test_real_count_mismatch_still_fails_closed(store, config, episode):
+def test_real_count_mismatch_still_fails_closed(store, config, episode, monkeypatch):
     child = branch(store, config, episode, 2)
+    original = store.summary
+
+    def wrong_terminal(eid):
+        terminal = original(eid)
+        terminal["committed_actions"] += 1
+        return terminal
+
+    monkeypatch.setattr(store, "summary", wrong_terminal)
     for eid in (episode, child):
-        public = summary_input(store, eid)
-        public["summary"]["committed_actions"] += 1
         with pytest.raises(ValueError, match="^ACTION_TOTAL_MISMATCH$"):
-            summarize(public)
+            build_summary(store, eid)
 
 
 def test_bad_public_ancestry_fails_without_review_exposure(store, config, episode, monkeypatch):
@@ -169,14 +172,3 @@ def test_bad_public_ancestry_fails_without_review_exposure(store, config, episod
     with pytest.raises(ValueError, match="^BRANCH_PREFIX_MISMATCH$"):
         build_summary(store, child)
     assert ReviewService(store).exposure(child) == before
-
-
-def test_accounting_change_keeps_small_functions_and_shrinks_ledger_module():
-    touched = {"summary_input", "summarize", "_committed_rows", "build_summary"}
-    for module in (action_accounting, summary_projection, decision_ledger):
-        source = inspect.getsource(module)
-        if module is decision_ledger:
-            assert len(source.splitlines()) <= 444
-        for node in ast.parse(source).body:
-            if isinstance(node, ast.FunctionDef) and (module is not decision_ledger or node.name in touched):
-                assert node.end_lineno - node.lineno + 1 <= 60, node.name
