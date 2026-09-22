@@ -21,8 +21,8 @@ from balatro_horizons.harness.money import (
     validate_paid_configuration,
 )
 from balatro_horizons.harness.transport import DirectProvider
-from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
+from balatro_horizons.workbench.branches import prepare_branch
 
 
 class HumanPolicy:

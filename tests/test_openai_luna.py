@@ -16,7 +16,7 @@ from balatro_horizons.harness.context.build import context
 from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.money import Spending
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure, ProviderFailure
-from balatro_horizons.review.service import ReviewService
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def luna():

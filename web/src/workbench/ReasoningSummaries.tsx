@@ -1,4 +1,4 @@
-import type { View } from "./api";
+import type { View } from "../api/client";
 
 type RecordValue = Record<string, unknown>;
 function record(value: unknown): RecordValue {

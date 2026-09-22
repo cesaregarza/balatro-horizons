@@ -8,7 +8,7 @@ from balatro_horizons.contracts import ActionEnvelope, LastAction, Observation, 
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.game.state import normalize
 from balatro_horizons.observations.deltas import last_action
-from balatro_horizons.review.service import ReviewService
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 @pytest.mark.parametrize("kind", ["buy", "choose_pack", "reroll_shop", "reroll_boss", "sell"])

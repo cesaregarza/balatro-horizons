@@ -23,7 +23,7 @@ from balatro_horizons.harness.input_limits import request_size
 from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure
-from balatro_horizons.review.service import ReviewService
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def config_for(provider="openai"):

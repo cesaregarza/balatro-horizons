@@ -13,8 +13,8 @@ from balatro_horizons.harness.context.freeze import freeze_protocol, restore_pro
 from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.money import Spending
 from balatro_horizons.harness.outcomes import VERSION as ACTION_OUTCOME_VERSION
-from balatro_horizons.review.branches import prepare_branch
 from balatro_horizons.storage.journal import digest
+from balatro_horizons.workbench.branches import prepare_branch
 
 
 def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(

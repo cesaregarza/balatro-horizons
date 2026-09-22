@@ -140,6 +140,9 @@ class ModelConfig(Options):
 
 
 class Config(Options):
+    # Review sessions and intervention controls are an explicit operator
+    # opt-in. The ordinary dashboard remains enabled.
+    workbench_enabled: bool = False
     skills: Literal["balatro-guide-v1", "none"] = "balatro-guide-v1"
     benchmark: dict = Field(
         default_factory=lambda: {
@@ -172,6 +175,7 @@ class Config(Options):
 
         return {
             "benchmark": self.benchmark,
+            "workbench": self.workbench_enabled,
             "skills": self.skills,
             "deck": self.environment.deck,
             "stake": self.environment.stake,

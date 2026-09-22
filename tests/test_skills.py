@@ -21,9 +21,9 @@ from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.money import Spending
 from balatro_horizons.harness.skills import load_guide, prepare_rules, read_guide, restore_knowledge
 from balatro_horizons.harness.transport import DirectProvider
-from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.review.service import ReviewService
 from balatro_horizons.storage.journal import digest
+from balatro_horizons.workbench.branches import prepare_branch
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def test_catalog_has_descriptions_without_loading_bodies_and_provider_parity():
@@ -309,11 +309,12 @@ def test_skill_settings_roundtrip_preserves_omitted_choice(store, config):
         assert client.get("/api/bootstrap").json()["config"]["skills"] == "none"
 
 
-def test_branch_capability_requires_knowledge_snapshot(store, config, episode):
+def test_branch_capability_requires_knowledge_snapshot(store, workbench_config, episode):
     from fastapi.testclient import TestClient
 
     from balatro_horizons.api import create_app
 
+    config = workbench_config
     verify_checkpoint(store, config, episode, 0, repetitions=3)
     with TestClient(create_app(store.root, config)) as client:
         op = {"X-BH-Operator": client.get("/api/bootstrap").json()["operator_token"]}

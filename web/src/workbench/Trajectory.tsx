@@ -1,12 +1,5 @@
 import { useState } from "react";
-import type { Observation } from "./api";
-export type TimelinePoint = {
-  decision: number;
-  phase: string;
-  resources: Observation["state"]["resources"];
-  progress: Observation["state"]["progress"];
-  build: string[];
-};
+import type { TimelinePoint } from "../api/client";
 export function Trajectory({ points }: { points: TimelinePoint[] }) {
   const [metric, setMetric] = useState("money");
   const [selected, setSelected] = useState<number | null>(null);

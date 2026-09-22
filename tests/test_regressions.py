@@ -18,8 +18,8 @@ from balatro_horizons.game.state import normalize
 from balatro_horizons.harness.context.build import context
 from balatro_horizons.harness.money import BudgetExhausted, Spending
 from balatro_horizons.harness.transport import DirectProvider, ProviderFailure
-from balatro_horizons.review.service import ReviewService
 from balatro_horizons.storage.journal import Store
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])

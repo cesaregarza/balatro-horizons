@@ -162,12 +162,15 @@ def label(card):
     return card.get("label", "Unknown object")
 
 
-def action_details(action, state):
-    objects = {
+def _action_objects(state):
+    return {
         obj["id"]: obj
         for area in ("hand", "jokers", "consumables", "offers", "revealed_blinds")
         for obj in state[area]
     }
+
+
+def _common_action_details(action, objects):
     result = {}
     for key in ("blind_id", "offer_id", "owned_id", "consumable_id"):
         if key in action:
@@ -180,15 +183,41 @@ def action_details(action, state):
             result[key.replace("_ids", "s")] = [
                 label(objects.get(handle, {})) for handle in action[key]
             ]
-    if action["type"] == "buy":
-        result["mode"] = action.get("mode", "acquire")
-    if action["type"] == "reorder":
-        result["area"] = action["area"]
-        result["ordering_before"] = [label(obj) for obj in state[action["area"]]]
-        result["ordered_objects"] = [
-            label(objects.get(handle, {})) for handle in action["ordered_ids"]
-        ]
     return result
+
+
+def _buy_details(action, _state, _objects):
+    return {"mode": action.get("mode", "acquire")}
+
+
+def _reorder_details(action, state, objects):
+    return {
+        "area": action["area"],
+        "ordering_before": [label(obj) for obj in state[action["area"]]],
+        "ordered_objects": [label(objects.get(handle, {})) for handle in action["ordered_ids"]],
+    }
+
+
+def _no_action_details(_action, _state, _objects):
+    return {}
+
+
+ACTION_DETAIL_HANDLERS = {
+    action_type: _no_action_details
+    for action_type in (
+        "select_blind", "skip_blind", "play_hand", "discard", "sell", "use_consumable",
+        "reroll_shop", "reroll_boss", "choose_pack", "skip_pack", "leave_shop", "cash_out",
+    )
+}
+ACTION_DETAIL_HANDLERS.update({"buy": _buy_details, "reorder": _reorder_details})
+
+
+def action_details(action, state):
+    objects = _action_objects(state)
+    details = _common_action_details(action, objects)
+    handler = ACTION_DETAIL_HANDLERS[action["type"]]
+    details.update(handler(action, state, objects))
+    return details
 
 
 def uncommitted_actions(events, observations, *, settling=(), live=False):
@@ -229,6 +258,73 @@ def uncommitted_actions(events, observations, *, settling=(), live=False):
             }
         )
     return rows
+
+
+def joker_changes(before, after):
+    before_names = Counter(label(obj) for obj in before["jokers"])
+    after_names = Counter(label(obj) for obj in after["jokers"])
+    return {
+        "jokers_after": list(after_names.elements()),
+        "jokers_added": list((after_names - before_names).elements()),
+        "jokers_removed": list((before_names - after_names).elements()),
+    }
+
+
+def update_round_bookkeeping(rounds, current, kind, row, before, after, after_phase, resources, old_resources):
+    if kind == "select_blind":
+        current = {
+            "ante": row["ante"], "blind": row["item"], "target": resources["target"],
+            "start_action": row["action_number"], "hands_played": 0, "discards_used": 0,
+            "scores": [], "hand_types": [], "cleared": False,
+        }
+        rounds.append(current)
+    elif kind == "play_hand":
+        before_counts, after_counts = played_counts(before), played_counts(after)
+        hand_types = [name for name, count in after_counts.items() if count > before_counts.get(name, 0)]
+        row.update(
+            hand_types=hand_types,
+            score=difference(resources["chips"], old_resources["chips"]),
+            total_chips=resources["chips"],
+        )
+        if current is not None:
+            current["hands_played"] += 1
+            current["scores"].append(row["score"])
+            current["hand_types"].extend(hand_types)
+            current.update(total_chips=resources["chips"], hands_remaining=resources["hands"], discards_remaining=resources["discards"])
+            current["cleared"] = after_phase == "ROUND_EVAL"
+    elif kind == "discard" and current is not None:
+        current["discards_used"] += 1
+    elif kind == "cash_out" and current is not None:
+        current.update(end_action=row["action_number"], cash_out_balance_change=row["money_change"], shop_balance=resources["money"])
+        current = None
+    return current
+
+
+def aggregate_purchase(purchases, kind, row):
+    if kind in ("buy", "sell", "choose_pack", "use_consumable"):
+        purchases.append(row)
+
+
+def token_cost_accounting(events):
+    requests = [event for event in events if event["type"] == "provider_request"]
+    responses = [event for event in events if event["type"] == "provider_response"]
+    usages = [event["payload"]["body"].get("usage", {}) for event in responses]
+    return {
+        "provider_input_tokens": sum(usage.get("input_tokens", 0) for usage in usages),
+        "provider_output_tokens": sum(usage.get("output_tokens", 0) for usage in usages),
+        "offered_tools": [tool.get("name") for tool in requests[0]["payload"]["body"].get("tools", [])]
+        if requests else [],
+        "memory_updates": sum(bool(event["payload"].get("memory_update")) for event in events if event["type"] == "action_commit"),
+    }
+
+
+def reconcile_uncommitted(events, observations, settling, live):
+    return uncommitted_actions(events, observations, settling=settling, live=live)
+
+
+def assert_action_total(summary, ledger):
+    if summary and len(ledger) != summary.get("committed_actions"):
+        raise ValueError("ACTION_TOTAL_MISMATCH")
 
 
 def summarize(public):
@@ -276,73 +372,17 @@ def summarize(public):
             "target_after": resources["target"],
             "hands_after": resources["hands"],
             "discards_after": resources["discards"],
-            "jokers_after": [label(obj) for obj in settled["jokers"]],
-            "jokers_added": list(
-                (
-                    Counter(label(obj) for obj in settled["jokers"])
-                    - Counter(label(obj) for obj in state["jokers"])
-                ).elements()
-            ),
-            "jokers_removed": list(
-                (
-                    Counter(label(obj) for obj in state["jokers"])
-                    - Counter(label(obj) for obj in settled["jokers"])
-                ).elements()
-            ),
+            **joker_changes(state, settled),
         }
         row.update(action_details(action, state))
-        if kind == "select_blind":
-            current_round = {
-                "ante": row["ante"],
-                "blind": row["item"],
-                "target": resources["target"],
-                "start_action": row["action_number"],
-                "hands_played": 0,
-                "discards_used": 0,
-                "scores": [],
-                "hand_types": [],
-                "cleared": False,
-            }
-            rounds.append(current_round)
-        elif kind == "skip_blind":
+        if kind == "skip_blind":
             skipped.append(row)
-        elif kind == "play_hand":
-            before_counts, after_counts = played_counts(state), played_counts(settled)
-            hand_types = [
-                name for name, count in after_counts.items() if count > before_counts.get(name, 0)
-            ]
-            row.update(
-                hand_types=hand_types,
-                score=difference(resources["chips"], old_resources["chips"]),
-                total_chips=resources["chips"],
-            )
-            if current_round is not None:
-                current_round["hands_played"] += 1
-                current_round["scores"].append(row["score"])
-                current_round["hand_types"].extend(hand_types)
-                current_round.update(
-                    total_chips=resources["chips"],
-                    hands_remaining=resources["hands"],
-                    discards_remaining=resources["discards"],
-                )
-                current_round["cleared"] = after["phase"] == "ROUND_EVAL"
-        elif kind == "discard" and current_round is not None:
-            current_round["discards_used"] += 1
-        elif kind == "cash_out" and current_round is not None:
-            current_round.update(
-                end_action=row["action_number"],
-                cash_out_balance_change=row["money_change"],
-                shop_balance=resources["money"],
-            )
-            current_round = None
-        if kind in ("buy", "sell", "choose_pack", "use_consumable"):
-            purchases.append(row)
+        current_round = update_round_bookkeeping(rounds, current_round, kind, row, state, settled, after["phase"], resources, old_resources)
+        aggregate_purchase(purchases, kind, row)
         ledger.append(row)
     last = observations[-1]["payload"]
     summary = public["summary"] or {}
-    requests = [e for e in events if e["type"] == "provider_request"]
-    responses = [e for e in events if e["type"] == "provider_response"]
-    usages = [e["payload"]["body"].get("usage", {}) for e in responses]
+    accounting = token_cost_accounting(events)
     result = {
         "manifest": public["manifest"],
         "summary": summary,
@@ -366,22 +406,12 @@ def summarize(public):
             for e in events
             if e["type"] == "action_rejected"
         ],
-        "provider_input_tokens": sum(u.get("input_tokens", 0) for u in usages),
-        "provider_output_tokens": sum(u.get("output_tokens", 0) for u in usages),
-        "offered_tools": [t.get("name") for t in requests[0]["payload"]["body"].get("tools", [])]
-        if requests
-        else [],
-        "memory_updates": sum(
-            bool(e["payload"].get("memory_update")) for e in events if e["type"] == "action_commit"
-        ),
+        **accounting,
         "actions": ledger,
-        "uncommitted_actions": uncommitted_actions(
-            events, by_id, settling=settling, live=public["summary"] is None
-        ),
+        "uncommitted_actions": reconcile_uncommitted(events, by_id, settling, public["summary"] is None),
         "pending_decisions": pending_decisions(events, by_id, public["summary"] is None),
     }
-    if summary and len(ledger) != summary.get("committed_actions"):
-        raise ValueError("ACTION_TOTAL_MISMATCH")
+    assert_action_total(summary, ledger)
     scan(result)
     return result
 

@@ -23,6 +23,11 @@ def config():
 
 
 @pytest.fixture
+def workbench_config():
+    return Config(workbench_enabled=True)
+
+
+@pytest.fixture
 def store(tmp_path):
     return Store(tmp_path / "data")
 
@@ -42,3 +47,11 @@ def episode(store, config):
     ).run(
         private=private
     )["episode_id"]
+
+
+@pytest.fixture
+def workbench_episode(store, workbench_config):
+    private = {"seed": "DO_NOT_EXPORT_THIS_SEED", "config": workbench_config.model_dump()}
+    return Runner(
+        store, workbench_config, FakeGame(private["seed"]), Baseline("heuristic")
+    ).run(private=private)["episode_id"]

@@ -30,8 +30,8 @@ from balatro_horizons.harness.helpers import helper
 from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.harness.transport import DirectProvider, context_payload
-from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.review.service import ReviewService
+from balatro_horizons.workbench.branches import prepare_branch
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def select(ctx):

@@ -6,21 +6,47 @@ from fastapi.testclient import TestClient
 from balatro_horizons.api import create_app
 from balatro_horizons.contracts import AnnotationInput
 from balatro_horizons.evidence.certification import verify_checkpoint
-from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.review.service import ReviewError, ReviewService
 from balatro_horizons.service import RunService
+from balatro_horizons.workbench.branches import prepare_branch
+from balatro_horizons.workbench.service import ReviewError
+from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
-def test_AT16_cursor_does_not_reveal_future(store, episode, config):
+def test_prospective_open_does_not_claim_model_or_outcome_exposure(store, episode):
+    view = ReviewService(store).open(episode)["view"]
+    assert view["review_mode"] == "prospective"
+    assert view["exposure"]["model_identity_seen"] is False
+    assert view["exposure"]["outcome_seen"] is False
+
+
+def test_AT16_cursor_does_not_reveal_future(store, episode, workbench_config):
+    config = workbench_config
     app = create_app(store.root, config)
     with TestClient(app) as client:
         op = client.get("/api/bootstrap").json()["operator_token"]
+        retrospective = client.post(
+            "/api/reviews",
+            json={"episode_id": episode, "retrospective": True},
+            headers={"X-BH-Operator": op},
+        ).json()
+        retrospective_headers = {"X-Review-Token": retrospective["review_token"]}
+        assert client.post(
+            "/api/review/seek",
+            json={"decision": 4},
+            headers=retrospective_headers,
+        ).status_code == 200
+        assert client.post(
+            "/api/review/annotations",
+            json=annotation(end_decision=4).model_dump(),
+            headers=retrospective_headers,
+        ).status_code == 200
         opened = client.post(
             "/api/reviews", json={"episode_id": episode}, headers={"X-BH-Operator": op}
         )
         assert opened.status_code == 200
         token = opened.json()["review_token"]
         headers = {"X-Review-Token": token}
+        assert client.get("/api/review/annotations", headers=headers).json() == []
         first = client.get("/api/review", headers=headers).json()
         assert "terminal" not in first and "action_events" not in first and "total" not in first
         assert "WIN" not in json.dumps(first)
@@ -72,7 +98,8 @@ def test_AT17_revisions_preserve_original_provenance(store, episode):
         r.annotate(token, annotation(end_decision=3))
 
 
-def test_AT10_AT18_checkpoint_and_immutable_override(store, episode, config):
+def test_AT10_AT18_checkpoint_and_immutable_override(store, episode, workbench_config):
+    config = workbench_config
     before = (store.episode_path(episode) / "events.jsonl").read_bytes()
     cert = verify_checkpoint(store, config, episode, 0, repetitions=3)
     assert cert["status"] == "passed" and cert["evidence_kind"] == "SYNTHETIC_TEST"
@@ -90,13 +117,14 @@ def test_AT10_AT18_checkpoint_and_immutable_override(store, episode, config):
     assert "original future" not in json.dumps(first)
 
 
-def test_AT24_uncertified_branch_is_rejected(store, episode, config):
+def test_AT24_uncertified_branch_is_rejected(store, episode, workbench_config):
+    config = workbench_config
     with pytest.raises(ValueError, match="CHECKPOINT_NOT_CERTIFIED"):
         prepare_branch(store, config, episode, 0, "agent_continue")
 
 
-def test_operator_cross_origin_is_rejected(store, config):
-    with TestClient(create_app(store.root, config)) as client:
+def test_operator_cross_origin_is_rejected(store, workbench_config):
+    with TestClient(create_app(store.root, workbench_config)) as client:
         assert (
             client.get(
                 "/api/bootstrap", headers={"Origin": "https://untrusted.example"}
