@@ -7,10 +7,10 @@ from pathlib import Path
 
 from audit_transcript_efficiency import audit, size, stats
 
-from balatro_horizons.agents.skills import load_guide
-from balatro_horizons.config import load_config
+from balatro_horizons.config import CONTEXT_FRAMING_BYTES, load_config
 from balatro_horizons.contracts import Observation
 from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.skills import load_guide
 from balatro_horizons.harness.transport import DirectProvider
 from balatro_horizons.storage.journal import Store, digest
 
@@ -95,7 +95,8 @@ def compare(store, eid, config, model_name):
             "prefix_bytes": stats([size(p) for p in prefixes]),
             "request_bytes": stats([size(r["body"]) for r in rows]),
             "maximum_conservative_input_bound": max(
-                len(json.dumps(r["body"], ensure_ascii=False).encode()) + 4096 for r in rows
+                len(json.dumps(r["body"], ensure_ascii=False).encode()) + CONTEXT_FRAMING_BYTES
+                for r in rows
             ),
         },
         "rows": [

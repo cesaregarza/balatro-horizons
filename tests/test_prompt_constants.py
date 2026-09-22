@@ -2,16 +2,16 @@
 
 import pytest
 
-from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.config import (
     NOTEBOOK_KEY_MAX,
     NOTEBOOK_KEY_MIN,
     RETAINED_HELPER_RESULTS,
     ROOT,
 )
+from balatro_horizons.harness.baselines import Baseline
 from balatro_horizons.harness.context.freeze import freeze_protocol
 from balatro_horizons.harness.context.render import render_prompt, validate_prompt_template
+from balatro_horizons.harness.failures import HarnessFailure
 
 
 def test_prompt_constants_are_rendered_from_config():

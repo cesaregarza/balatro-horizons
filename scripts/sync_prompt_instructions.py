@@ -6,9 +6,9 @@ import os
 import tempfile
 from pathlib import Path
 
-from balatro_horizons.agents.instructions import BEGIN as BEGIN
-from balatro_horizons.agents.instructions import END as END
-from balatro_horizons.agents.instructions import render as render
+from balatro_horizons.harness.instructions import BEGIN as BEGIN
+from balatro_horizons.harness.instructions import END as END
+from balatro_horizons.harness.instructions import render as render
 
 
 def sync(root: Path, *, write: bool = False) -> bool:

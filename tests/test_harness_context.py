@@ -10,9 +10,6 @@ from test_boundary import project
 from test_harness_tools import config_for
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
-from balatro_horizons.agents.budget import reservation_usd
-from balatro_horizons.agents.skills import load_guide
-from balatro_horizons.agents.tool_interface import ACTION_MODELS
 from balatro_horizons.config import (
     CONTEXT_FRAMING_BYTES,
     CONTEXT_SETTINGS_BYTES,
@@ -36,6 +33,9 @@ from balatro_horizons.harness.context.present import (
 )
 from balatro_horizons.harness.contract import Operation
 from balatro_horizons.harness.helpers import helper
+from balatro_horizons.harness.money import reservation_usd
+from balatro_horizons.harness.skills import load_guide
+from balatro_horizons.harness.tool_interface import ACTION_MODELS
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure, ProviderFailure
 
 

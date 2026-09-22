@@ -9,7 +9,6 @@ import queue
 
 from fastapi import APIRouter, Depends, Request
 
-from balatro_horizons.agents.skills import restore_knowledge
 from balatro_horizons.api.middleware import require_operator, require_session
 from balatro_horizons.api.models import (
     BranchInput,
@@ -22,6 +21,7 @@ from balatro_horizons.evidence.certification import (
     verify_checkpoint,
 )
 from balatro_horizons.harness.context.freeze import restore_protocol
+from balatro_horizons.harness.skills import restore_knowledge
 from balatro_horizons.review.export import export_response
 
 router = APIRouter()

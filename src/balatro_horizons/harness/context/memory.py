@@ -19,7 +19,7 @@ MAX_KEY_CHARACTERS = NOTEBOOK_KEY_MAX
 
 
 def notebook_tools(definitions, *, action_notes=False):
-    from balatro_horizons.agents.tool_interface import ACTION_MODELS, tool
+    from balatro_horizons.harness.tool_interface import ACTION_MODELS, tool
 
     result = deepcopy(definitions)
     for definition in result:
@@ -158,7 +158,7 @@ class WorkingMemory:
     """
 
     def __init__(self):
-        from balatro_horizons.agents.action_notes import ActionNoteLink
+        from balatro_horizons.harness.action_notes import ActionNoteLink
 
         self.frames = []
         self.omitted = 0
