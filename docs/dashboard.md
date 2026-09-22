@@ -38,6 +38,11 @@ The server projects exact public schemas for JSON and JSONL exports and scans
 them before writing. A browser cannot reconstruct an export from detail records.
 Decision downloads use GET `/api/explore/export/{format}` or its workbench
 `/api/review/export/{format}` counterpart; no client-supplied ledger is accepted.
+Decision ledgers and `bh summarize` contain only the selected episode's actions,
+with `action_accounting` separating own, verified inherited, and total commits.
+Runner terminal counts include ancestry; crash recovery and pre-start failures
+count only their own journal, identified by `terminal_count_scope`. Decision IDs
+and stored summaries remain unchanged; parent rows are never silently duplicated.
 A download reads the current server snapshot, which may be newer than the last
 browser poll; its source journal head identifies the exported snapshot.
 Action labels come from the single packaged `review/action_descriptors.json`,
