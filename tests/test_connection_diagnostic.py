@@ -165,9 +165,11 @@ def test_busy_native_lock_prevents_process_creation(harness, monkeypatch):
 
 def test_main_menu_connection_does_not_claim_gameplay_readiness():
     bridge = Mock(env=Environment())
-    result = connection.wait_ready(bridge, {"state": "MENU", "bh": {"ready": False, "busy": False}})
+    bridge.rpc = Mock(side_effect=AssertionError("MENU connection readiness must not poll for gameplay readiness"))
+    state = {"state": "MENU", "bh": {"ready": False, "busy": False}}
+    result = connection.wait_ready(bridge, state)
     assert result == {"phase": "MENU", "gameplay_ready": False}
-    bridge.verify_identity.assert_called_once()
+    bridge.verify_identity.assert_called_once_with(state)
     bridge.rpc.assert_not_called()
 
 

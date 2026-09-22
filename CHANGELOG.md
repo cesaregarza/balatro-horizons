@@ -10,6 +10,36 @@
 - Explicitly exclude actual WSL socket expiry from this partial study; offline
   preflight/cleanup tests do not establish native classification or close #42.
 
+## 2026-09-22 — Shared private-file destination checks (#50)
+
+- Move the credential writer and destination checks to `storage/private_files.py`
+  and use that same owner for Windows session registration; remove its duplicate
+  writer while preserving exact registration bytes and credential apply output.
+- Refuse symlinked ancestors/files and non-directory/nonregular destinations
+  before touching link targets. Preflight session CLI registration and worker-lock
+  paths before lock creation; keep failure output sanitized.
+- Create the private parent with mode 0700 and files with 0600. Frozen credential
+  and session tests remain unchanged; new cases use disposable Linux fixtures.
+
+## 2026-09-22 — Bounded admission and explicit menu regression guards (#51)
+
+- Bound the competing-worker request wait and release its guard before joining
+  the request thread, so blocking admission fails without hanging the suite.
+- Make an unexpected RPC poll from an identity-verified, idle menu fail with an
+  explicit assertion; keep menu readiness distinct from gameplay readiness.
+- Document the connection diagnostic's temporary registration rename and
+  hard-kill recovery window, and the accepted #25 fixture's limited native scope.
+
+## 2026-09-22 — Credential apply failure reporting (#48)
+
+- Preflight both credential and service-drop-in destinations before replacing
+  either file. A refused second destination leaves prior credential bytes intact.
+- Report sanitized per-file replacement state on partial apply, including an
+  error after a rename. Do not promise crash-atomic two-file updates or restart
+  the service automatically; preserve success/preview output and private modes.
+- Pin the five credential refusal codes requested by the #23 owner review and
+  document explicit recovery. Tests use disposable files and fake values only.
+
 ## 2026-09-22 — Run execution and export ownership (issue #44)
 
 - Split `RunService` execution preparation/locked lifecycle into

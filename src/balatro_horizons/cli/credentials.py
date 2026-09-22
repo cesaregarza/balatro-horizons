@@ -2,11 +2,15 @@
 
 import argparse
 import json
-import os
-import tempfile
+import os as os  # Retain the public fault-injection seam used by credential regressions.
 from pathlib import Path
 
 from balatro_horizons.config import ROOT
+from balatro_horizons.storage.private_files import (
+    _check_destination,
+    _WriteFailure,
+    atomic_private,
+)
 
 ALLOWED = frozenset({"OPENAI_API_KEY", "ANTHROPIC_API_KEY"})
 _ERROR_CODES = frozenset(
@@ -59,32 +63,38 @@ def _native(path):
     return resolved
 
 
-def atomic_private(path, data):
-    if path.is_symlink() or path.parent.is_symlink():
-        raise ValueError("SYMLINK_DESTINATION_FORBIDDEN")
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        path.parent.chmod(0o700)
-        fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
+class _PartialApply(ValueError):
+    def __init__(self, reason, progress):
+        super().__init__("CREDENTIAL_APPLY_INCOMPLETE")
+        self.result = {
+            "error": "CREDENTIAL_APPLY_INCOMPLETE", "reason": reason,
+            "applied": False, **progress, "service_restart_required": True,
+            "provider_calls": 0,
+        }
+
+
+def _apply_files(target, data, dropin, settings):
+    progress = {"credentials_written": False, "drop_in_written": False}
+    for path, content, field in ((target, data, "credentials_written"),
+                                 (dropin, settings, "drop_in_written")):
         try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-            path.chmod(0o600)
-        finally:
-            Path(temporary).unlink(missing_ok=True)
-    except OSError:
-        raise ValueError("CREDENTIAL_DESTINATION_UNSAFE") from None
+            atomic_private(path, content)
+        except (OSError, ValueError) as error:
+            progress[field] = isinstance(error, _WriteFailure) and error.replaced
+            # Separate renames cannot promise a crash-atomic two-file transaction.
+            # Preserve the observed write state instead of hiding a partial apply.
+            if any(progress.values()):
+                raise _PartialApply(_safe_error(error), progress) from None
+            raise
+        progress[field] = True
 
 
 def configure(root, unit_dir, source=None, *, apply=False):
     root, unit_dir = _native(root), _native(unit_dir)
     target = root / "private/providers.env"
     dropin = unit_dir / "balatro-horizons.service.d/20-provider-environment.conf"
-    if target.is_symlink() or target.parent.is_symlink():
-        raise ValueError("SYMLINK_DESTINATION_FORBIDDEN")
+    _check_destination(target)
+    _check_destination(dropin)
     if any(character in str(target) for character in ('"', "\\", "%")) or any(
         character.isspace() for character in str(target)
     ):
@@ -107,8 +117,7 @@ def configure(root, unit_dir, source=None, *, apply=False):
         raise ValueError("PROVIDER_CREDENTIAL_MISSING")
     settings = f"[Service]\nEnvironmentFile=\nEnvironmentFile={target}\n".encode()
     if apply:
-        atomic_private(target, data)
-        atomic_private(dropin, settings)
+        _apply_files(target, data, dropin, settings)
     return {
         "applied": apply,
         "credential_names": names,
@@ -143,6 +152,9 @@ def _safe_error(error):
 def run(args):
     try:
         result = configure(args.root, args.unit_dir, args.source, apply=args.apply)
+    except _PartialApply as error:
+        print(json.dumps(error.result, sort_keys=True))
+        return 1
     except (OSError, ValueError) as error:
         print(json.dumps({"error": _safe_error(error)}, sort_keys=True))
         return 1

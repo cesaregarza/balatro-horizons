@@ -9,11 +9,11 @@ import json
 import os
 import re
 import stat
-import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
 from balatro_horizons.config import ROOT
+from balatro_horizons.storage.private_files import atomic_private
 
 WINDOWS_VARIABLES = {
     "SYSTEMROOT": "p", "SYSTEMDRIVE": "", "USERPROFILE": "p", "APPDATA": "p",
@@ -107,17 +107,8 @@ def register_session(source):
     environment = session_environment(source)
     require_socket(environment)
     path = context_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.parent.chmod(0o700)
-    fd, temporary = tempfile.mkstemp(prefix="windows-session-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump({"version": 1, "environment": environment}, stream, sort_keys=True)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+    payload = json.dumps({"version": 1, "environment": environment}, sort_keys=True).encode()
+    atomic_private(path, payload)
 
 
 def connection_status():

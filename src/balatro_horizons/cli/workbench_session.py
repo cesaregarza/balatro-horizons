@@ -14,10 +14,12 @@ from balatro_horizons.config import ROOT
 from balatro_horizons.game.windows_context import (
     SESSION_ERROR_CODES,
     connection_status,
+    context_path,
     register_session,
     require_socket,
     session_environment,
 )
+from balatro_horizons.storage.private_files import _check_destination
 
 
 def configure_parser(parser):
@@ -44,6 +46,9 @@ def run(args):
             )
             return 0
         lock_path = ROOT / "private/native-worker.lock"
+        # Refuse unsafe registration or lock paths before the CLI creates either file.
+        _check_destination(context_path())
+        _check_destination(lock_path)
         lock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with lock_path.open("a") as lock:
             try:
