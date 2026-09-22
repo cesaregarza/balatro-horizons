@@ -259,6 +259,23 @@ class RunService:
             atomic_json(execution_path, {"evidence_kind": evidence}, immutable=True)
         return plan, private
 
+    def _slot_affordable(self, config, plan, slot, spending):
+        amount = self.validate_policy(config, slot["agent"])
+        if amount is None:
+            return True
+        affordable, context = spending.affordability(amount)
+        if not affordable:
+            record_stop(
+                self.store,
+                plan,
+                reason="CAMPAIGN_COST_CAP",
+                stage="preflight",
+                slot_id=slot["slot_id"],
+                agent=slot["agent"],
+                cost_context=context,
+            )
+        return affordable
+
     def _run_batch(self, config, bid, *, offline):
         plan, private = self._freeze_batch(config, bid, offline=offline)
         spending = Spending(
@@ -280,20 +297,8 @@ class RunService:
             ):
                 if self.stop.is_set():
                     break
-                amount = self.validate_policy(config, slot["agent"])
-                if amount is not None:
-                    affordable, context = spending.affordability(amount)
-                    if not affordable:
-                        record_stop(
-                            self.store,
-                            plan,
-                            reason="CAMPAIGN_COST_CAP",
-                            stage="preflight",
-                            slot_id=slot["slot_id"],
-                            agent=slot["agent"],
-                            cost_context=context,
-                        )
-                        return bid
+                if not self._slot_affordable(config, plan, slot, spending):
+                    return bid
                 if not offline:
                     load_session()
                 try:

@@ -7,6 +7,8 @@
   terminal failure accounting remain ordered at the service boundary.
 - Moved human and intervention policy wrappers into `workbench/policies.py`;
   `service.py` keeps the orchestration import and public compatibility names.
+- Extracted batch-slot affordability preflight without changing stop, reservation,
+  session validation, or execution ordering.
 - Split public episode snapshot assembly into `evaluation/export.py`; report
   rendering retains the public privacy scan and provider-payload projection.
 - A service fallback after `episode_start` now records incomplete accounting;
