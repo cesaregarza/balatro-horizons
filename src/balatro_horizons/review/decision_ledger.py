@@ -113,6 +113,8 @@ def summary_input(store, eid):
                 "assistance",
                 "batch_id",
                 "slot_id",
+                "certificate_id",
+                "budget_extension",
             )
             if key in manifest
         },

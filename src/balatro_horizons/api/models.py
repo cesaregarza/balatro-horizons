@@ -55,9 +55,15 @@ class BatchRun(Input):
 
 
 class VerifyInput(Input):
-    mode: Literal["checkpoint", "seed_prefix"] = "checkpoint"
+    mode: Literal["checkpoint", "seed_prefix", "checkpoint_probe"] = "checkpoint"
     episode_id: str
     decision: int = Field(ge=0)
+    probe_action: dict | None = None
+
+
+class BudgetContinuationInput(Input):
+    combined_cap_usd: float = Field(gt=0, allow_inf_nan=False, strict=True)
+    parent_terminal_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class SettingsInput(Input):

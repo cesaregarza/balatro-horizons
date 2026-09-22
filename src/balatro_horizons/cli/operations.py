@@ -1,6 +1,7 @@
 """Register operational commands without changing their output or exit semantics."""
 
 from . import (
+    continue_budget,
     credentials,
     deploy_frontend,
     diagnose_native,
@@ -16,6 +17,7 @@ from . import (
 
 
 def add_operational_commands(sub):
+    continue_budget.configure_parser(sub.add_parser("continue-budget", help="Plan or explicitly fund a budget continuation"))
     credentials.configure_parser(sub.add_parser("credentials", help="Configure private backend credentials"))
     offline.configure_parser(sub.add_parser("offline", help="Run offline checks"))
     smoke.configure_parser(sub.add_parser("smoke", help="Preflight or run a capped smoke"))

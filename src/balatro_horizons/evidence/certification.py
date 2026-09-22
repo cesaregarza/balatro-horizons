@@ -41,6 +41,13 @@ def require_environment_certificate(lock, environment):
 def certificate_path(store, eid, decision):
     return store.episode_path(eid, True) / f"certificate-{decision}.json"
 
+PROBE_SCOPE = "original_state_and_generated_same_action_probe"
+
+
+def continuation_probe_path(store, eid, decision):
+    # Probe evidence cannot replace a replay certificate used by ordinary branches.
+    return store.episode_path(eid, True) / f"continuation-probe-{decision}.json"
+
 def read_checkpoint(store, eid, decision):
     return json.loads((store.episode_path(eid, True) / f"checkpoint-{decision}.json").read_text())
 
@@ -222,14 +229,21 @@ def verify_checkpoint(store, config, eid, decision, *, repetitions=3, mode="chec
     return cert
 
 
-def require_checkpoint_certificate(store, eid, decision):
-    path = certificate_path(store, eid, decision)
+def _require_certificate(store, eid, decision, *, probe):
+    path = continuation_probe_path(store, eid, decision) if probe else certificate_path(
+        store, eid, decision
+    )
     if not path.is_file():
         raise ValueError("CHECKPOINT_NOT_CERTIFIED")
     cert = json.loads(path.read_text())
     checkpoint = read_checkpoint(store, eid, decision)
+    allowed_modes = {"checkpoint_probe"} if probe else {
+        "checkpoint", "seed_prefix"
+    }
     if (
         cert["status"] != "passed"
+        or cert.get("mode") not in allowed_modes
+        or (cert.get("scope") == PROBE_SCOPE) != probe
         or cert["checkpoint_hash"] != digest(checkpoint)
         or cert.get("implementation_hash") != implementation_fingerprint()
     ):
@@ -241,6 +255,16 @@ def require_checkpoint_certificate(store, eid, decision):
     if cert.get("mode") == "seed_prefix":
         checkpoint["game"] = prefix_snapshot(store, eid, decision, steps_for(store, eid))
     return checkpoint, cert
+
+
+def require_checkpoint_certificate(store, eid, decision):
+    """Only suffix-replay evidence authorizes an ordinary branch."""
+    return _require_certificate(store, eid, decision, probe=False)
+
+
+def require_continuation_probe_certificate(store, eid, decision):
+    """Only a same-action probe authorizes an explicit budget intervention."""
+    return _require_certificate(store, eid, decision, probe=True)
 
 
 def continuation_probe(store, config, episode_id, *, decision=0, restoration="checkpoint"):

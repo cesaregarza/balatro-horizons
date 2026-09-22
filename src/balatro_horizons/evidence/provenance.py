@@ -10,11 +10,14 @@ IMPLEMENTATION_FILES = (
     "contracts.py",
     "service.py",
     "workbench/branches.py",
+    "workbench/budget_continuation.py",
+    "workbench/budget_ledger.py",
 )
 IMPLEMENTATION_DIRECTORIES = (
     "game", "evidence", "observations", "actions", "storage", "harness"
 )
 NATIVE_COMPONENT_DIRECTORIES = ("game", "observations", "actions", "storage")
+NATIVE_COMPONENT_FILES = ("evidence/continuation_probe.py",)
 
 
 def source_files(root=ROOT):
@@ -49,6 +52,7 @@ def native_component_manifest(sources=None):
         and (
             name[len(prefix):] == "contracts.py"
             or name[len(prefix):].split("/")[0] in NATIVE_COMPONENT_DIRECTORIES
+            or name[len(prefix):] in NATIVE_COMPONENT_FILES
         )
         and name[len(prefix):] not in excluded
     }

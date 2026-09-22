@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Request
 from balatro_horizons.api.middleware import require_operator, require_session
 from balatro_horizons.api.models import (
     BranchInput,
+    BudgetContinuationInput,
     OpenReview,
     SeekReview,
     VerifyInput,
@@ -21,6 +22,7 @@ from balatro_horizons.evidence.certification import (
     require_checkpoint_certificate,
     verify_checkpoint,
 )
+from balatro_horizons.evidence.continuation_probe import verify_continuation_probe
 from balatro_horizons.game.windows_context import load_session
 from balatro_horizons.harness.context.freeze import restore_protocol
 from balatro_horizons.harness.skills import restore_knowledge
@@ -104,13 +106,29 @@ def verify(request: Request, data: VerifyInput):
         if read_checkpoint(state.store, data.episode_id, data.decision)["game"]["kind"] == "native":
             load_session()
         parent = state.store.manifest(data.episode_id, True)
+        config = state.config.model_validate(parent.get("config", state.config.model_dump()))
+        if data.mode == "checkpoint_probe":
+            if data.probe_action is None:
+                raise ValueError("PROBE_ACTION_REQUIRED")
+            return verify_continuation_probe(
+                state.store, config, data.episode_id, data.decision, data.probe_action,
+            )
+        if data.probe_action is not None:
+            raise ValueError("PROBE_ACTION_REQUIRES_PROBE_MODE")
         return verify_checkpoint(
             state.store,
-            state.config.model_validate(parent.get("config", state.config.model_dump())),
+            config,
             data.episode_id,
             data.decision,
             mode=data.mode,
         )
+
+
+@router.post("/api/operator/episodes/{eid}/continue-budget", dependencies=[Depends(require_operator)])
+def continue_budget(request: Request, eid: str, data: BudgetContinuationInput):
+    return {"episode_id": request.app.state.runs.continue_budget(
+        eid, data.combined_cap_usd, expected_head=data.parent_terminal_hash,
+    )}
 
 
 @router.post("/api/branches", dependencies=[Depends(require_operator)])

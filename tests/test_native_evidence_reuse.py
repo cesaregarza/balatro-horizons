@@ -46,7 +46,31 @@ def test_harness_only_edits_change_full_identity_but_not_native_game_identity():
 
 
 @pytest.mark.parametrize('path', [
-    'game/session.py', 'game/state/normalize.py', 'game/replay.py', 'game/new_native_module.py',
+    'workbench/budget_continuation.py',
+    'workbench/budget_ledger.py',
+])
+def test_budget_workbench_files_are_full_identity_only(path):
+    source = provenance.source_files(ROOT)
+    key = 'src/balatro_horizons/' + path
+    baseline = provenance.fingerprint_sources(source)
+    native = provenance.native_implementation_fingerprint(source)
+
+    edited = {**source, key: source[key] + b'\n# budget identity change\n'}
+    assert provenance.fingerprint_sources(edited) != baseline
+    assert provenance.native_implementation_fingerprint(edited) == native
+
+    deleted = {name: data for name, data in source.items() if name != key}
+    assert provenance.fingerprint_sources(deleted) != baseline
+    assert provenance.native_implementation_fingerprint(deleted) == native
+
+    added = {**deleted, key: source[key] + b'\n# budget identity addition\n'}
+    assert provenance.fingerprint_sources(added) != baseline
+    assert provenance.native_implementation_fingerprint(added) == native
+
+
+@pytest.mark.parametrize('path', [
+    'game/session.py', 'game/state/normalize.py', 'game/replay.py',
+    'evidence/continuation_probe.py', 'game/new_native_module.py',
     'contracts.py', 'observations/projection.py', 'actions/validation.py', 'storage/journal.py',
 ])
 def test_native_edits_additions_and_removals_invalidate_compatibility(path):

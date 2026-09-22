@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-09-22 — Budget continuations ported to the current packages (PR #25)
+
+- Addressed the narrow follow-up bounce: preserve operational probe errors when
+  cleanup also fails, retain sanitized cleanup diagnostics, pin review-export
+  provenance, record the root campaign cap, and compare frozen skill presets.
+  Corrected stale overview links, route counts, and documented continuation limits.
+- Added `bh evidence plan/collect --continuation-only` for a bounded unpaid
+  initial-blind fixture plus three fresh-process probes, without backend
+  deployment. Immutable receipts preserve failures and explicitly exclude
+  cost-stopped-root or later-phase certification.
+- Integrated current main, including #23, without rebasing the published branch.
+  Budget preparation and ledger reconciliation now live in `workbench/`; probe
+  certification and its native identity live in `evidence/`.
+- Preserved all-attempt spend, retained-reservation reconciliation, zero-spend
+  child ordering, strict frozen-protocol identity, and probe/ordinary-certificate
+  isolation. Native admission uses explicit session preflight and the worker's
+  nonblocking reservation. Budget routes exist only with the workbench enabled.
+- Replaced `scripts/continue_budget.py` with `bh continue-budget`. Its read-only
+  plan consumes sanitized saved-versus-certified status, using the probe pointer
+  for cost-stopped roots. Retired the unconsumed latest-model selector and folded
+  the standalone budget guide into the dashboard/evidence layer guides.
+- Ordinary replay failure classification remains unchanged; #42 tracks the
+  ambiguity separately. Offline fixtures and CI do not establish the fresh,
+  source-bound native continuation proof required before this PR leaves draft.
+
 ## 2026-09-22 — Explicit credentials and Windows connection (PR #23)
 
 - Added `bh evidence plan --connection-only` and `bh native diagnose

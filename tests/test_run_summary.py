@@ -8,6 +8,7 @@ from test_boundary import project
 from balatro_horizons.cli import main as cli_main
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.review.decision_ledger import summarize, summary_input
+from balatro_horizons.review.run_status import run_status
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.review.summary import render_decisions
 from balatro_horizons.storage.journal import Store, atomic_json, digest
@@ -212,3 +213,17 @@ def test_cleared_round_keeps_the_target_that_was_played_against(tmp_path):
     report = render_decisions(result)
     assert "+12 chips; 12/10 total" in report
     assert "12/0 total" not in report
+
+
+def test_status_distinguishes_saved_checkpoint_from_certified_restore(recorded_run):
+    store, eid = recorded_run
+    store.private_json(eid, "checkpoint-1.json", {
+        "cost": 4.6, "calls": 146, "game": {"blob": "PRIVATE_SEED_SENTINEL"},
+    })
+    result = run_status(store, eid)
+    assert result["continuation"]["decision"] == 1
+    assert result["continuation"]["checkpoint_saved"] is True
+    assert result["continuation"]["restoration"] == "CHECKPOINT_NOT_CERTIFIED"
+    assert result["continuation"]["protocol"] == "AGENT_PROTOCOL_SNAPSHOT_MISSING"
+    assert result["continuation"]["checkpoint_cost"] == 4.6
+    assert "PRIVATE_SEED_SENTINEL" not in json.dumps(result)

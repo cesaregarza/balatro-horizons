@@ -49,8 +49,8 @@ uv run bh review --port 8765
 Open `http://127.0.0.1:8765`. The default dashboard keeps run exploration,
 settings, batches, reports, and retrospective annotations available. Staged
 reveal, branches, comparison, human takeover, and verification require
-`bh review --workbench`. Budget continuation remains deferred. The server binds
-to loopback; a trusted Tailscale Serve proxy can provide remote access.
+`bh review --workbench`; see [explicit budget continuation](docs/dashboard.md#explicit-budget-continuation).
+The server binds to loopback; a trusted Tailscale Serve proxy can provide remote access.
 
 Synthetic episodes are application tests and are never native results. Native
 execution requires the operator's licensed installation, matching source and

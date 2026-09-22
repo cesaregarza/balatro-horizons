@@ -95,6 +95,53 @@ holds the worker reservation. [Issue #42](https://github.com/cesaregarza/balatro
 tracks evidence-based classification of ambiguous transport loss before any
 change to that conservative certificate-selection policy.
 
+### Cost-stopped continuation probes
+
+A terminal budget boundary may have no recorded replay suffix. Its separate
+`checkpoint_probe` mode compares the original private continuation hash in at
+least three fresh processes, applies the same validated public action each time,
+and compares the resulting hashes. `bh continue-budget EPISODE_ID --plan`
+reports three unpaid verification launches and one separately funded continuation
+launch; it executes neither. Fresh processes are necessary here to test
+restoration, not to retry a failed same-process reset.
+
+Generated actions are private evaluator evidence, never parent history or a
+claim about the parent's unobserved future. Probe records use a separate pointer
+and cannot authorize ordinary branches; ordinary replay certificates cannot
+authorize budget extensions. The probe checks explicit session registration at
+admission and again before each locked repetition. Its owner-requested policy
+preserves the selected probe on operational errors, while proven private-state
+or same-action divergence records failure and invalidates it, even if cleanup
+also fails. It stops at the first divergence and has no automatic replay fallback.
+If cleanup also fails during an operational error, the original error stays
+primary; a sanitized cleanup-code exception note is retained and copied into the
+collector receipt's `probe_cleanup_reasons`, without changing the selected certificate.
+This differs deliberately from the conservative ordinary replay policy above;
+#42 must justify any future unification using native failure evidence.
+
+The probe implementation participates in the native identity; its sequencing
+cannot be changed under harness-only evidence reuse. Old source hashes and frozen
+protocols are never rewritten to make an existing root executable on new code.
+For a clean-source native regression without a paid root or running backend:
+
+```bash
+uv run bh evidence plan --continuation-only
+uv run bh evidence collect --continuation-only --report reports/verification/native-continuation-UNIQUE.json
+```
+
+This bounded Red/White fixture uses at most four launches: one initial-blind
+checkpoint capture, then three fresh-process `select_blind` probes. It stops at
+the first failure and preserves an immutable, sanitized receipt, the original
+parent journal, and private divergence evidence. It requires an idle runtime,
+explicit Windows registration, and matching pinned instrumentation. No provider
+is called, backend started, old protocol rewritten, or capability activated.
+The evaluator-aborted fixture is not a cost-exhausted model run; a pass proves
+only that checkpoint and action, not later phases or a paid continuation.
+It does not override historical direct-save replay failure evidence.
+
+The native proof required by PR #25 remains an operator-gated step; offline
+doubles demonstrate control flow only, not Windows restoration fidelity.
+
 ## Acceptance map
 
 These are bounded regression contracts, not claims about every card, boss, mod,
