@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-22 — Disposable session expiry classification (#42)
+
+- Add `bh evidence plan/collect --session-expiry-only`: reuse the unchanged
+  excluded interruption fixture for at most one replay, close its owned game,
+  then end only a disposable WSL command and observe real socket disappearance.
+- Refuse a shared operator socket, verify the next repetition fails its real
+  registration preflight without another launch, and restore registration bytes.
+- Preserve the prior seven-launch receipt and historical source identities;
+  check journals and certificates remain unchanged. No selection-policy change,
+  WSL shutdown, socket deletion, provider call, or restoration certification.
+
 ## 2026-09-22 — Bounded replay interruption study (part of #42)
 
 - Add `bh evidence plan/collect --interruption-only`: at most seven owned

@@ -135,6 +135,42 @@ Actual WSL socket expiry between repetitions is not exercised by this slice:
 Mocked expiry tests establish ordering only, not native socket-loss evidence.
 The partial study cannot close #42, authorize a live branch, or certify a release.
 
+The remaining row has its own nonexecuting plan, `bh evidence plan
+--session-expiry-only`, and command:
+
+```sh
+bh evidence collect --session-expiry-only --fixture-report reports/verification/native-interruption-PRIOR.json --report reports/verification/native-session-expiry-UNIQUE.json
+```
+
+It requires additional explicit authorization for the Windows `wsl.exe` path.
+One disposable command in the same distro reports its own interop socket; a
+shared operator socket is refused before any game launch. At most **one** fresh
+replay reuses the prior excluded fixture, only when its native identity, runtime,
+configuration, collector and replay oracle are unchanged. Historical source
+hashes are retained alongside the new source and prior-receipt digest, never
+rewritten or promoted to a certificate.
+
+After the owned game closes, stdin requests normal exit of only the disposable
+command. The collector must observe actual socket disappearance and the real
+`WINDOWS_SESSION_EXPIRED` preflight before repetition two, with zero subsequent
+launches. No socket is removed and no distribution or WSL VM is stopped. A
+surviving socket or unexpected error fails the study without retry. Registration
+bytes are restored in `finally`, the operator socket identity must remain intact,
+and journal/certificate content is checked for changes. If an unexpected session
+expiry prevents normal game cleanup, the restored operator session may stop only
+the retained owned nonce; this is cleanup, never replay or action retry.
+Hard-killing the collector
+can still interrupt restoration: use `bh review session --apply` from an active
+Windows-connected terminal before further work; do not retry a native suite.
+
+The disposable child has an independent 180-second input deadline. Microsoft
+[WSL source](https://github.com/microsoft/WSL/blob/56244fdb65508a4628c38865f0e2278f779b81f4/src/linux/init/init.cpp#L2166-L2171)
+resets the relay's interop server before exit, but actual disappearance is an
+observation requirement, not an assumption about the installed Windows version.
+Only the combined passed receipts cover #42's classification matrix. They still
+do not grant restoration certification, a live branch, or a release, and do not
+change either certificate-selection policy.
+
 ### Cost-stopped continuation probes
 
 A terminal budget boundary may have no recorded replay suffix. Its separate
