@@ -55,6 +55,14 @@ and a matching offline report. Public manifests and event journals are
 hash-chained and append-only. Annotation revisions and review records are also
 append-only; SQLite indexes are rebuildable and never the source of truth.
 
+Execution ownership stays in `service.py`: admission, scheduling, and policy
+selection and decoration remain there, while `service_execution.py` takes a typed
+request and owns the prepared plan and locked game lifecycle. Its frozen-rules
+path is independent of the worker-lock location. `workbench/policies.py` owns human and intervention policy
+wrappers. `evaluation/reports.py` owns report files and rendering;
+`evaluation/export.py` owns the ordered public episode snapshot assembled for
+those reports. Both helpers preserve the service/report public entry points.
+
 ## Trust boundary
 
 The native process, provider credentials, raw observations, seeds, saves,

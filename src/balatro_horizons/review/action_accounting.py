@@ -1,12 +1,13 @@
 """Reconcile episode-only review rows against immutable lineage counters."""
 
+from balatro_horizons.harness.terminals import INCOMPLETE_TERMINAL_REASON, RECOVERY_REASONS
 from balatro_horizons.workbench.branches import inherited_events
-
-RECOVERY_REASONS = {"PROCESS_INTERRUPTED", "AMBIGUOUS_ACTION_AFTER_CRASH"}
 
 
 def action_accounting(store, eid, records, summary):
     """Count only verified public commits, not decision IDs or private saves."""
+    if (summary or {}).get("reason") == INCOMPLETE_TERMINAL_REASON:
+        raise ValueError(INCOMPLETE_TERMINAL_REASON)
     own = sum(event["type"] == "action_commit" for event in records)
     inherited = sum(event["type"] == "action_commit" for event in inherited_events(store, eid))
     # Runner terminals include the restored prefix. Recovery and pre-run

@@ -43,6 +43,9 @@ with `action_accounting` separating own, verified inherited, and total commits.
 Runner terminal counts include ancestry; crash recovery and pre-start failures
 count only their own journal, identified by `terminal_count_scope`. Decision IDs
 and stored summaries remain unchanged; parent rows are never silently duplicated.
+If execution has started but the runner cannot write its terminal, the service
+records `EXECUTION_TERMINAL_INCOMPLETE`. Decision exports refuse that same code
+before review exposure: fallback zeroes are not reconstructed accounting totals.
 A download reads the current server snapshot, which may be newer than the last
 browser poll; its source journal head identifies the exported snapshot.
 Action labels come from the single packaged `review/action_descriptors.json`,
