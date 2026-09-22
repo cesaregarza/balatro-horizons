@@ -47,6 +47,12 @@ committed source, a matching pinned environment manifest/instrumentation, an
 explicit session registration, and an idle runtime/port. It temporarily removes
 only this checkout's registration to prove fail-closed RPC admission, restores
 and refreshes it, and opens a new RPC subprocess against the same owned game.
+The temporary rename leaves concurrent registration readers unconfigured. An
+abrupt process kill during that window can leave registration absent: after the
+diagnostic has ended and its owned game is cleaned up, explicitly register again
+with `bh review session --apply` from the connected terminal. Do not refresh the
+registration while the diagnostic is still running or restart the backend to
+bypass this fail-closed window.
 Cleanup stops only that launch identity. It neither simulates actual socket
 destruction nor claims replay, gameplay, or capability certification. Every
 attempt gets a new immutable source/environment-bound receipt, including failures;
@@ -139,8 +145,10 @@ The evaluator-aborted fixture is not a cost-exhausted model run; a pass proves
 only that checkpoint and action, not later phases or a paid continuation.
 It does not override historical direct-save replay failure evidence.
 
-The native proof required by PR #25 remains an operator-gated step; offline
-doubles demonstrate control flow only, not Windows restoration fidelity.
+The accepted native gate in [PR #25](https://github.com/cesaregarza/balatro-horizons/pull/25)
+covers that source-bound fixture only, not changed native implementations or a
+paid root. Further native execution remains operator-gated; offline doubles
+demonstrate control flow only, not Windows restoration fidelity.
 
 ## Acceptance map
 
