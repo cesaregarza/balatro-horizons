@@ -10,6 +10,8 @@
 - Preserve the prior seven-launch receipt and historical source identities;
   check journals and certificates remain unchanged. No selection-policy change,
   WSL shutdown, socket deletion, provider call, or restoration certification.
+- Keep socket/ancestry proof separate from disposable-process lifecycle, below
+  the owner's per-file size limit, without changing fault or replay sequencing.
 
 ## 2026-09-22 — Bounded replay interruption study (part of #42)
 

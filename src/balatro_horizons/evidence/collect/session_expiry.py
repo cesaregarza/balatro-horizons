@@ -17,10 +17,8 @@ from balatro_horizons.evidence.collect.connection import (
     require_source_instrumentation,
     source_identity,
 )
-from balatro_horizons.evidence.collect.disposable_session import (
-    disposable_session,
-    socket_identity,
-)
+from balatro_horizons.evidence.collect.disposable_identity import socket_identity
+from balatro_horizons.evidence.collect.disposable_session import disposable_session
 from balatro_horizons.evidence.collect.interruption import (
     _check_identity,
     _report_path,

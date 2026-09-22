@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from balatro_horizons.evidence.collect import disposable_identity as identity
 from balatro_horizons.evidence.collect import disposable_session as helper
 
 
@@ -57,7 +58,7 @@ class _Process:
 @pytest.fixture
 def setup_helper(tmp_path, monkeypatch):
     child_pid = os.getpid()
-    child_stat = helper._proc_stat(child_pid)
+    child_stat = identity._proc_stat(child_pid)
     relay_pid = child_stat["ppid"]
     operator_path = f"/run/WSL/{relay_pid + 1000000}_interop"
     child_path = f"/run/WSL/{relay_pid}_interop"
@@ -75,8 +76,8 @@ def setup_helper(tmp_path, monkeypatch):
 
     def receipt_for(nonce, path=child_path):
         info = infos[str(path)]
-        current = helper._proc_stat(child_pid)
-        relay = helper._proc_stat(relay_pid)
+        current = identity._proc_stat(child_pid)
+        relay = identity._proc_stat(relay_pid)
         return (
             json.dumps(
                 {
@@ -112,7 +113,7 @@ def setup_helper(tmp_path, monkeypatch):
 
 def test_socket_identity_calls_registration_check_and_returns_safe_fields(setup_helper):
     environment, _, _, _, _, _ = setup_helper
-    result = helper.socket_identity(environment)
+    result = identity.socket_identity(environment)
     assert set(result) == {"path", "inode", "uid"}
     assert result["path"] == environment["WSL_INTEROP"]
     assert result["uid"] == os.getuid()
@@ -202,7 +203,7 @@ def test_shared_socket_is_refused_and_child_is_closed(setup_helper, monkeypatch)
 
 def test_ancestry_and_nonce_uid_validation(monkeypatch):
     current = {"pid": 20, "ppid": 1, "start_ticks": 30}
-    monkeypatch.setattr(helper, "_proc_stat", lambda pid: current)
+    monkeypatch.setattr(identity, "_proc_stat", lambda pid: current)
     good = {
         "nonce": "a" * 32,
         "uid": 0,
@@ -211,7 +212,7 @@ def test_ancestry_and_nonce_uid_validation(monkeypatch):
         "socket": {"path": "/run/WSL/1_interop", "inode": 40, "uid": 0},
         "ancestors": [current, {"pid": 1, "ppid": 0, "start_ticks": 31}],
     }
-    monkeypatch.setattr(helper, "_proc_stat", lambda pid: {
+    monkeypatch.setattr(identity, "_proc_stat", lambda pid: {
         20: current, 1: {"pid": 1, "ppid": 0, "start_ticks": 31}
     }[pid])
     assert helper._validate_receipt(good, "a" * 32, 0)["relay_pid"] == 1
@@ -260,7 +261,7 @@ def test_primary_body_error_survives_cleanup_failure(setup_helper, monkeypatch):
 def test_disconnected_ancestry_is_refused(monkeypatch):
     child = {"pid": 20, "ppid": 30, "start_ticks": 10}
     unrelated = {"pid": 31, "ppid": 0, "start_ticks": 11}
-    monkeypatch.setattr(helper, "_proc_stat", lambda pid: {20: child, 31: unrelated}[pid])
+    monkeypatch.setattr(identity, "_proc_stat", lambda pid: {20: child, 31: unrelated}[pid])
     receipt = {
         "nonce": "a" * 32, "uid": 0, "pid": 20, "ppid": 30,
         "socket": {"path": "/run/WSL/31_interop", "inode": 4, "uid": 0},
@@ -272,7 +273,7 @@ def test_disconnected_ancestry_is_refused(monkeypatch):
 
 def test_wrong_socket_basename_pid_is_refused(monkeypatch):
     child = {"pid": 20, "ppid": 1, "start_ticks": 10}
-    monkeypatch.setattr(helper, "_proc_stat", lambda pid: child)
+    monkeypatch.setattr(identity, "_proc_stat", lambda pid: child)
     receipt = {
         "nonce": "a" * 32, "uid": 0, "pid": 20, "ppid": 1,
         "socket": {"path": "/run/WSL/99_interop", "inode": 4, "uid": 0},
@@ -285,7 +286,7 @@ def test_wrong_socket_basename_pid_is_refused(monkeypatch):
 def test_forbidden_socket_path_is_rejected_before_lstat(monkeypatch):
     monkeypatch.setattr(helper.Path, "lstat", lambda path: (_ for _ in ()).throw(AssertionError))
     with pytest.raises(ValueError, match="DISPOSABLE_SOCKET_INVALID"):
-        helper.socket_identity({"WSL_INTEROP": "/tmp/not-an-interop-socket"})
+        identity.socket_identity({"WSL_INTEROP": "/tmp/not-an-interop-socket"})
 
 
 def test_resolved_mounted_root_is_refused(tmp_path, monkeypatch):
