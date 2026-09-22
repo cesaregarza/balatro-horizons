@@ -2,11 +2,15 @@
 
 import argparse
 import json
-import os
-import tempfile
+import os as os  # Retain the public fault-injection seam used by credential regressions.
 from pathlib import Path
 
 from balatro_horizons.config import ROOT
+from balatro_horizons.storage.private_files import (
+    _check_destination,
+    _WriteFailure,
+    atomic_private,
+)
 
 ALLOWED = frozenset({"OPENAI_API_KEY", "ANTHROPIC_API_KEY"})
 _ERROR_CODES = frozenset(
@@ -59,22 +63,6 @@ def _native(path):
     return resolved
 
 
-def _check_destination(path):
-    if path.is_symlink() or path.parent.is_symlink():
-        raise ValueError("SYMLINK_DESTINATION_FORBIDDEN")
-    parent = path.parent
-    while not parent.exists():
-        parent = parent.parent
-    if not parent.is_dir() or (path.exists() and not path.is_file()):
-        raise ValueError("CREDENTIAL_DESTINATION_UNSAFE")
-
-
-class _WriteFailure(ValueError):
-    def __init__(self, replaced):
-        super().__init__("CREDENTIAL_DESTINATION_UNSAFE")
-        self.replaced = replaced
-
-
 class _PartialApply(ValueError):
     def __init__(self, reason, progress):
         super().__init__("CREDENTIAL_APPLY_INCOMPLETE")
@@ -83,27 +71,6 @@ class _PartialApply(ValueError):
             "applied": False, **progress, "service_restart_required": True,
             "provider_calls": 0,
         }
-
-
-def atomic_private(path, data):
-    _check_destination(path)
-    replaced = False
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        path.parent.chmod(0o700)
-        fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
-        try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-            replaced = True
-            path.chmod(0o600)
-        finally:
-            Path(temporary).unlink(missing_ok=True)
-    except OSError:
-        raise _WriteFailure(replaced) from None
 
 
 def _apply_files(target, data, dropin, settings):

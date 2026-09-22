@@ -65,8 +65,13 @@ are accepted; values and private paths are omitted from command output. The
 destination `private/providers.env` is owner-only (0600), referenced by a user
 service drop-in. Without `--source`, existing credentials are preserved or an
 empty placeholder is prepared for the unpaid dashboard. No mode calls a provider.
-Both file destinations are checked before either is replaced. A later I/O
-failure can still leave a partial apply: the command exits nonzero with
+Both file destinations are checked before either is replaced. Credentials and session registration
+share `storage/private_files.py`: existing file/ancestor symlinks, non-directory
+parents, and nonregular destinations are refused; new private parents start 0700.
+Session CLI apply checks both registration and worker-lock paths before creating
+the lock; its public failure remains `WINDOWS_SESSION_REGISTRATION_FAILED`.
+These preflights are not a defense against a same-user concurrent path swap.
+A later I/O failure can still leave a partial apply: the command exits nonzero with
 `CREDENTIAL_APPLY_INCOMPLETE`, a sanitized reason, and separate
 `credentials_written` / `drop_in_written` booleans. These report completed
 replacements, not a two-file atomic transaction. Repair the named destination
