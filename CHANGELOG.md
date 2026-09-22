@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-22 — Shared private-file destination checks (#50)
+
+- Move the credential writer and destination checks to `storage/private_files.py`
+  and use that same owner for Windows session registration; remove its duplicate
+  writer while preserving exact registration bytes and credential apply output.
+- Refuse symlinked ancestors/files and non-directory/nonregular destinations
+  before touching link targets. Preflight session CLI registration and worker-lock
+  paths before lock creation; keep failure output sanitized.
+- Create the private parent with mode 0700 and files with 0600. Frozen credential
+  and session tests remain unchanged; new cases use disposable Linux fixtures.
+
 ## 2026-09-22 — Credential apply failure reporting (#48)
 
 - Preflight both credential and service-drop-in destinations before replacing
