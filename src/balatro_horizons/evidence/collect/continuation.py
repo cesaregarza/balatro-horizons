@@ -1,6 +1,7 @@
 """Bounded unpaid fixture for the cost-boundary probe, not a paid-run resume."""
 
 import fcntl
+import re
 import subprocess
 from pathlib import Path
 
@@ -102,6 +103,12 @@ def collect(config, report):
         result["status"] = "passed"
     except (OSError, ValueError, RuntimeError, KeyError, StopIteration, subprocess.SubprocessError) as error:
         result["reason"] = error_code(error)
+        cleanup_codes = [
+            match[1] for note in getattr(error, "__notes__", [])
+            if (match := re.fullmatch(r"NATIVE_CLEANUP_FAILED: ([A-Z][A-Z0-9_]{0,98})", note))
+        ]
+        if cleanup_codes:
+            result["probe_cleanup_reasons"] = cleanup_codes
     atomic_json(report, result, immutable=True)
     report.chmod(0o600)
     return result

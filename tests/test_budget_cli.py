@@ -76,6 +76,20 @@ def test_budget_route_requires_workbench_even_with_operator_token(store):
         assert response.status_code == 404
 
 
+def test_documented_workbench_route_counts(tmp_path):
+    routes = []
+    for enabled in (False, True):
+        app = create_app(tmp_path / str(enabled), Config(workbench_enabled=enabled))
+        routes.append({
+            (path, method) for path, methods in app.openapi()["paths"].items()
+            for method in methods if method in {"get", "post", "put", "patch", "delete"}
+        })
+    off, on = routes
+    assert len(off) == 24 and len(on) == 41
+    assert off < on and len(on - off) == 17
+    assert ("/api/operator/episodes/{eid}/continue-budget", "post") in on - off
+
+
 def test_cost_stopped_status_uses_probe_certificate(harness, monkeypatch):
     eid, _, _, _ = stopped(harness)
     probe = Mock(side_effect=ValueError("PROBE_SENTINEL"))

@@ -42,8 +42,8 @@ projects public data and never exposes private run directories. Run library,
 exploration, settings, batches, reports, and append-only retrospective
 annotations are ordinary dashboard surfaces. Staged reveal, branches,
 comparison, human takeover, and verification are the opt-in workbench and
-return 404 when disabled. Budget continuation is deferred to PR #25. The loopback
-bind guard and trusted-origin middleware protect every route.
+return 404 when disabled; see [explicit budget continuation](docs/dashboard.md#explicit-budget-continuation).
+The loopback bind guard and trusted-origin middleware protect every route.
 
 ## Evidence and storage
 

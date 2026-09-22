@@ -113,6 +113,9 @@ admission and again before each locked repetition. Its owner-requested policy
 preserves the selected probe on operational errors, while proven private-state
 or same-action divergence records failure and invalidates it, even if cleanup
 also fails. It stops at the first divergence and has no automatic replay fallback.
+If cleanup also fails during an operational error, the original error stays
+primary; a sanitized cleanup-code exception note is retained and copied into the
+collector receipt's `probe_cleanup_reasons`, without changing the selected certificate.
 This differs deliberately from the conservative ordinary replay policy above;
 #42 must justify any future unification using native failure evidence.
 
@@ -134,6 +137,7 @@ explicit Windows registration, and matching pinned instrumentation. No provider
 is called, backend started, old protocol rewritten, or capability activated.
 The evaluator-aborted fixture is not a cost-exhausted model run; a pass proves
 only that checkpoint and action, not later phases or a paid continuation.
+It does not override historical direct-save replay failure evidence.
 
 The native proof required by PR #25 remains an operator-gated step; offline
 doubles demonstrate control flow only, not Windows restoration fidelity.

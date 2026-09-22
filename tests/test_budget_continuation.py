@@ -23,6 +23,8 @@ from balatro_horizons.game.session import NativeFailure
 from balatro_horizons.harness.baselines import Baseline
 from balatro_horizons.harness.context.freeze import read_protocol, restore_protocol
 from balatro_horizons.harness.money import reservation_usd
+from balatro_horizons.review.decision_ledger import build_summary
+from balatro_horizons.review.export import export_response
 from balatro_horizons.storage.journal import atomic_json
 from balatro_horizons.workbench.budget_continuation import prepare_budget_continuation
 
@@ -64,16 +66,16 @@ def test_extension_restores_game_and_charges_post_checkpoint_helpers(harness):
     assert terminal["cost_usd"] > checkpoint["cost"]
     assert terminal["provider_calls"] > checkpoint["calls"]
     certify(h, eid, decision, action)
-    plan = prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
+    plan = prepare_budget_continuation(h.store, eid, 2, expected_head=terminal["journal_head"])
     assert plan["resume"]["cost"] == pytest.approx(terminal["cost_usd"])
     assert plan["resume"]["calls"] == terminal["provider_calls"]
     expected = deepcopy(original)
-    expected["episode_limits"]["max_episode_cost_usd"] = 1
+    expected["episode_limits"]["max_episode_cost_usd"] = 2
     derived = restore_protocol(h.store, plan["resume"])
     derived.pop("budget_extension")
     assert derived == expected  # Prompts, tools, models and non-money limits unchanged.
     service = h.service()
-    child = service.continue_budget(eid, 1, expected_head=terminal["journal_head"])
+    child = service.continue_budget(eid, 2, expected_head=terminal["journal_head"])
     service.thread.join(10)
     assert not service.thread.is_alive()
     assert service.error is None
@@ -85,6 +87,9 @@ def test_extension_restores_game_and_charges_post_checkpoint_helpers(harness):
     exported = episode_export(h.store, child)["manifest"]
     assert exported["certificate_id"] == manifest["certificate_id"]
     assert exported["budget_extension"] == manifest["budget_extension"]
+    assert exported["budget_extension"]["root_batch_cap_usd"] == 1
+    assert exported["budget_extension"]["previous_cap_usd"] == STOP_CAP_USD
+    assert exported["budget_extension"]["combined_cap_usd"] == 2
     ledger = json.loads((h.store.episode_path(eid, True) / "spending.json").read_text())
     assert sum(e["cost"] for e in ledger.values()) == pytest.approx(
         summary["cost_usd"] + terminal["cost_usd"])
@@ -93,6 +98,27 @@ def test_extension_restores_game_and_charges_post_checkpoint_helpers(harness):
     assert read_checkpoint(h.store, eid, decision) == checkpoint
     assert restore_protocol(h.store, checkpoint) == original
     assert not any(e["type"] == "action_commit" for e in h.store.events(eid))
+
+
+@pytest.mark.parametrize("format", ["json", "jsonl"])
+def test_budget_extension_review_export_preserves_provenance(harness, format):
+    h = harness
+    eid, terminal, decision, action = stopped(h, helpers=True)
+    certify(h, eid, decision, action)
+    service = h.service()
+    child = service.continue_budget(eid, 2, expected_head=terminal["journal_head"])
+    service.thread.join(10)
+    assert not service.thread.is_alive() and service.error is None
+    manifest = h.store.manifest(child)
+    content = export_response(build_summary(h.store, child), format).body.decode()
+    rows = [json.loads(content)] if format == "json" else [json.loads(row) for row in content.splitlines()]
+    assert rows
+    for row in rows:
+        assert row["episode"]["certificate_id"] == manifest["certificate_id"]
+        assert row["episode"]["budget_extension"] == manifest["budget_extension"]
+        assert row["episode"]["budget_extension"]["root_batch_cap_usd"] == 1
+        assert row["cost_accounting"] == "Runner provider calls are inherited-inclusive; cost is own-only."
+    assert "PRIVATE_FIXTURE" not in content
 
 
 def test_extension_rejects_uncertified_changed_or_underfunded_parent(harness):

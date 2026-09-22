@@ -71,6 +71,8 @@ def metadata(ledger, exported_at):
         "source_journal_head": ledger.get("source_journal_head"),
         "snapshot_status": "finished" if summary and summary.get("outcome") else "in_progress",
         "run_summary": pick(summary, SUMMARY_FIELDS) if summary else None,
+        **({"cost_accounting": "Runner provider calls are inherited-inclusive; cost is own-only."}
+           if manifest.get("budget_extension") else {}),
         "omitted_content": [
             "full board observations and exact action envelopes",
             "provider prompts, outputs, and opaque continuation data",

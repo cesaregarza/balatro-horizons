@@ -105,6 +105,20 @@ def test_cleanup_failure_does_not_erase_primary_error(harness):
     assert result["cleanup_reason"] == "NATIVE_RUNTIME_BUSY"
 
 
+def test_probe_cleanup_note_is_preserved_in_receipt_without_private_notes(harness):
+    _, probe, _, _, report = harness
+    error = NativeFailure("WINDOWS_SESSION_EXPIRED")
+    error.add_note("NATIVE_CLEANUP_FAILED: NATIVE_BRIDGE_CLOSED")
+    error.add_note("NATIVE_CLEANUP_FAILED: /private/credential-path")
+    error.add_note("other private diagnostic")
+    probe.side_effect = error
+    result = collector.collect(Config(), report)
+    assert result["reason"] == "WINDOWS_SESSION_EXPIRED"
+    assert result["probe_cleanup_reasons"] == ["NATIVE_BRIDGE_CLOSED"]
+    assert json.loads(report.read_text())["probe_cleanup_reasons"] == ["NATIVE_BRIDGE_CLOSED"]
+    assert "private" not in report.read_text()
+
+
 def test_fixture_closes_when_action_selection_fails(harness, monkeypatch):
     audit, probe, _, _, report = harness
     monkeypatch.setattr(collector, "candidates", lambda obs: [])

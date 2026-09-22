@@ -1,5 +1,6 @@
 """Same-action continuation evidence for an explicitly stopped episode."""
 
+import re
 import uuid
 
 from balatro_horizons.actions.validation import validate_action
@@ -52,7 +53,7 @@ def _new_game(config, checkpoint, native):
     return FakeGame()
 
 
-def _probe_game(game, checkpoint, envelope, eid, decision, after_hashes):
+def _probe_game(game, checkpoint, envelope, decision, after_hashes):
     game.restore(checkpoint["game"])
     game.wait_ready()
     check_private(game, checkpoint["continuation_hash"], decision)
@@ -84,19 +85,22 @@ def _record_divergence(store, eid, decision, error, repetition, checkpoint, afte
     }
 
 
-def _close_game(game, failures):
+def _close_game(game, failures, primary=None):
     if game is None:
         return
     try:
         game.close()
-    except NativeFailure:
-        if not failures:
-            raise
-        failures.append({"repetition": failures[-1]["repetition"], "reason": "NATIVE_CLEANUP_FAILED"})
     except (ValueError, RuntimeError, OSError) as error:
-        if not failures:
+        if primary is not None:
+            # Keep the actionable primary code; notes also feed the collector's receipt.
+            code = str(error) if re.fullmatch(r"[A-Z][A-Z0-9_]{0,98}", str(error)) else "NATIVE_CLEANUP_FAILED"
+            primary.add_note("NATIVE_CLEANUP_FAILED: " + code)
+        elif failures:
+            failures.append({"repetition": failures[-1]["repetition"], "reason": "NATIVE_CLEANUP_FAILED"})
+        elif isinstance(error, NativeFailure):
+            raise
+        else:
             raise NativeFailure("NATIVE_CLEANUP_FAILED") from error
-        failures.append({"repetition": failures[-1]["repetition"], "reason": "NATIVE_CLEANUP_FAILED"})
 
 
 def _run_repetitions(store, config, eid, decision, checkpoint, envelope, native, repetitions):
@@ -108,23 +112,23 @@ def _run_repetitions(store, config, eid, decision, checkpoint, envelope, native,
                 # Recheck immediately before every fresh-process comparison.
                 load_session()
             game = None
+            primary = None
             try:
                 game = _new_game(config, checkpoint, native)
                 after_hashes.append(
-                    _probe_game(game, checkpoint, envelope, eid, decision, after_hashes)
+                    _probe_game(game, checkpoint, envelope, decision, after_hashes)
                 )
-            except NativeFailure:
-                raise
             except ReplayDivergence as error:
                 failures.append(
                     _record_divergence(
                         store, eid, decision, error, repetition, checkpoint, after_hashes
                     )
                 )
-            except (ValueError, RuntimeError, OSError):
+            except (ValueError, RuntimeError, OSError) as error:
+                primary = error
                 raise
             finally:
-                _close_game(game, failures)
+                _close_game(game, failures, primary)
             if failures:
                 break
     return failures, after_hashes

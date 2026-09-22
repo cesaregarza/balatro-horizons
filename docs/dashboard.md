@@ -13,11 +13,12 @@ dashboard always mounts the run library, live status, decision exploration,
 cost/model-budget settings, batches, reports, and cheap append-only
 retrospective annotations under the `/api/explore...` and core namespaces.
 These surfaces remain usable when the flag is off; workbench-only routes are
-registered separately, including budget-continuation admission.
+registered separately, including budget-continuation admission. There are 24
+mounted routes flag-off, 41 flag-on, and 17 workbench-only routes.
 
 The workbench owns staged reveal/review, branching and comparison, human
 takeover, budget continuation, and verification. Its `/api/review*`,
-`/api/branches*`, `/api/operator/human`, `/api/operator/episodes/{id}/continue-budget`,
+`/api/branches*`, `/api/operator/human`, `/api/operator/episodes/{eid}/continue-budget`,
 and `/api/verify` routes are absent and
 return 404 when the flag is off. Workbench controls and screens are hidden in
 that mode; exploration and annotation are not. DevTrace is a development
@@ -94,6 +95,8 @@ A standalone root stopped by a dollar cap may create a child marked
 budget-exhausted; a later win does not become an autonomous win at the old cap.
 Model settings, prompts, tools, non-money limits, source identity, and the
 pre-decision memory boundary remain frozen. A changed implementation is refused.
+Helpers called after that checkpoint are charged, but their later note changes
+and tool results are not inherited by the child.
 
 The combined cap includes the root and every continuation attempt. Unknown-usage
 reservations remain spent when their owning terminal accounts for them. Admission
@@ -102,6 +105,9 @@ using admission hashes rather than SQLite index order. Zero-spend children do
 not change the ledger hash. Lost ledger rows are refused; this is not a tamper-
 proof store if both a child's ledger rows and its index entry are deleted.
 Recover the index with `bh recover` before admission after index loss.
+A crash between `spending.settle` and the `provider_response` journal write can
+leave a permanent `BUDGET_EXTENSION_CHILD_SPEND_MISMATCH` after `bh recover`;
+recovery cannot reconstruct the missing response's settled cost attribution.
 
 Use the owning checkout and an idle backend started with `bh review --workbench`:
 
@@ -119,6 +125,11 @@ Verification and starts use the operator-protected worker so the dashboard can
 stop the child. Verification does not grant spending permission; each start
 requires an explicit cap higher than the root's original cap, not necessarily
 higher than a prior child's. Action/call limits and batch slots are not extended.
+Diagnose a timed-out request before retrying; timeout does not prove that the
+worker stopped or that the action was not committed.
 The child's exported metadata includes its certificate, cap, source identities,
-and admission ledger hash. Provider-call totals include inherited calls; the
-child's terminal cost records its own spend only.
+admission ledger hash, and `root_batch_cap_usd` (the original campaign ceiling,
+distinct from `previous_cap_usd`, the original episode cap). Provider-call totals
+include inherited calls; the child's terminal cost records its own spend only.
+The passing initial-blind continuation fixture does not override any historical
+direct-save replay failure or certify later checkpoints.

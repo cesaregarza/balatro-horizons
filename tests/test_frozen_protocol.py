@@ -164,6 +164,19 @@ def test_missing_protocol_is_an_explicit_restore_limit(store, config, episode):
         restore_protocol(store, checkpoint)
 
 
+@pytest.mark.parametrize("human", [False, True])
+def test_changed_skill_preset_is_refused_before_continuation(store, config, episode, human):
+    from balatro_horizons.harness.context.freeze import validate_continuation
+
+    checkpoint = read_checkpoint(store, episode, 0)
+    protocol = restore_protocol(store, checkpoint)
+    validate_continuation(protocol, config, "heuristic", human=human)
+    changed = config.model_copy(deep=True)
+    changed.skills = "none" if config.skills != "none" else "balatro-guide-v1"
+    with pytest.raises(ValueError, match="AGENT_PROTOCOL_CONFIGURATION_CHANGED"):
+        validate_continuation(protocol, changed, "heuristic", human=human)
+
+
 def test_retired_frozen_interface_is_rejected_explicitly(store, config, episode):
     checkpoint = read_checkpoint(store, episode, 0)
     reference = checkpoint["agent_protocol"]

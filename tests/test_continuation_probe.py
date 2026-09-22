@@ -174,3 +174,66 @@ def test_operational_probe_failure_preserves_selected_pointer(tmp_path, monkeypa
 
     assert selected.read_bytes() == before
     assert not list(private.glob("certificate-record-*.json"))
+
+
+@pytest.mark.parametrize("primary_type", [NativeFailure, ValueError, OSError])
+@pytest.mark.parametrize("cleanup_type,cleanup_code", [
+    (NativeFailure, "NATIVE_BRIDGE_CLOSED"), (OSError, "private path must not be recorded"),
+])
+def test_primary_probe_error_survives_failed_cleanup(tmp_path, monkeypatch, primary_type, cleanup_type, cleanup_code):
+    from unittest.mock import Mock
+
+    store = _Store(tmp_path)
+    private = tmp_path / "private_runs" / "episode"
+    private.mkdir(parents=True)
+    selected = private / "continuation-probe-2.json"
+    selected.write_text('{"status":"passed"}\n')
+    before = selected.read_bytes()
+    primary = primary_type("WINDOWS_SESSION_EXPIRED")
+    games = []
+
+    class Game:
+        def __init__(self):
+            games.append(self)
+
+        def close(self):
+            if len(games) == 2:
+                raise cleanup_type(cleanup_code)
+
+    def compare(*_args):
+        if len(games) == 2:
+            raise primary
+        return "same-action-result"
+
+    monkeypatch.setattr(probe, "ROOT", tmp_path)
+    monkeypatch.setattr(probe, "load_session", Mock())
+    monkeypatch.setattr(probe, "_probe_inputs", lambda *_: ({"game": {"kind": "native"}}, object(), True))
+    monkeypatch.setattr(probe, "_new_game", lambda *_: Game())
+    monkeypatch.setattr(probe, "_probe_game", compare)
+    with pytest.raises(primary_type) as caught:
+        probe.verify_continuation_probe(store, SimpleNamespace(), "episode", 2, object())
+    assert caught.value is primary
+    assert str(caught.value) == "WINDOWS_SESSION_EXPIRED"
+    expected = cleanup_code if cleanup_type is NativeFailure else "NATIVE_CLEANUP_FAILED"
+    assert primary.__notes__ == ["NATIVE_CLEANUP_FAILED: " + expected]
+    assert len(games) == 2  # No third launch after the failed second repetition.
+    assert selected.read_bytes() == before
+    assert not list(private.glob("certificate-record-*.json"))
+
+
+@pytest.mark.parametrize("cleanup,expected", [
+    (NativeFailure("NATIVE_BRIDGE_CLOSED"), "NATIVE_BRIDGE_CLOSED"),
+    (OSError("private path"), "NATIVE_CLEANUP_FAILED"),
+])
+def test_unaccompanied_cleanup_failure_still_aborts_probe(tmp_path, monkeypatch, cleanup, expected):
+    from unittest.mock import Mock
+
+    game = Mock()
+    game.close.side_effect = cleanup
+    launch = Mock(return_value=game)
+    monkeypatch.setattr(probe, "_new_game", launch)
+    monkeypatch.setattr(probe, "_probe_game", lambda *_: "same-action-result")
+    with pytest.raises(NativeFailure, match="^" + expected + "$"):
+        probe._run_repetitions(_Store(tmp_path), SimpleNamespace(), "episode", 2, {}, object(), False, 3)
+    launch.assert_called_once()
+    game.close.assert_called_once()

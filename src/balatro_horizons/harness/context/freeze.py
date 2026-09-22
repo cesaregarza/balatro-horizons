@@ -120,6 +120,7 @@ def validate_continuation(bundle, config, agent, *, human=False):
     if (
         bundle["episode_limits"] != episode_limits(config)
         or bundle["benchmark"] != config.benchmark
+        or bundle["skills_preset"] != config.skills
     ):
         raise ValueError("AGENT_PROTOCOL_CONFIGURATION_CHANGED")
     if human:

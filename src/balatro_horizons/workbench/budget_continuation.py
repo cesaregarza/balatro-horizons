@@ -42,6 +42,7 @@ def _restore_state(store, parent_id, parent, events, boundary, terminal, combine
         raise ValueError("BUDGET_EXTENSION_CHECKPOINT_MISMATCH")
     config = Config.model_validate(store.manifest(parent_id, True)["config"])
     old_cap = config.budgets.max_episode_cost_usd
+    root_batch_cap = config.budgets.max_batch_cost_usd
     if old_cap is None or combined_cap <= old_cap:
         raise ValueError("BUDGET_EXTENSION_MUST_INCREASE_CAP")
     config.budgets.max_episode_cost_usd = combined_cap
@@ -53,6 +54,7 @@ def _restore_state(store, parent_id, parent, events, boundary, terminal, combine
         "parent_protocol": deepcopy(checkpoint["agent_protocol"]),
         "parent_terminal_hash": expected_head,
         "previous_cap_usd": old_cap,
+        "root_batch_cap_usd": root_batch_cap,
         "combined_cap_usd": combined_cap,
         "recorded_implementation_hash": original_protocol["implementation_hash"],
         "implementation_hash": implementation_fingerprint(),

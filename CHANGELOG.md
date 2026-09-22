@@ -2,6 +2,10 @@
 
 ## 2026-09-22 — Budget continuations ported to the current packages (PR #25)
 
+- Addressed the narrow follow-up bounce: preserve operational probe errors when
+  cleanup also fails, retain sanitized cleanup diagnostics, pin review-export
+  provenance, record the root campaign cap, and compare frozen skill presets.
+  Corrected stale overview links, route counts, and documented continuation limits.
 - Added `bh evidence plan/collect --continuation-only` for a bounded unpaid
   initial-blind fixture plus three fresh-process probes, without backend
   deployment. Immutable receipts preserve failures and explicitly exclude
