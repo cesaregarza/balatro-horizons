@@ -2,11 +2,17 @@
 
 import sys
 
+from balatro_horizons.game.windows_context import connection_status
+
 
 def doctor(config, live=False):
     checks = base_checks(config)
     add_skills(checks, config)
-    add_native(checks, config, live)
+    connection = connection_status()
+    checks["windows_connection"] = connection
+    if not connection["ready"]:
+        checks["blockers"].append(connection["code"])
+    add_native(checks, config, live and connection["ready"])
     return checks
 
 

@@ -157,6 +157,11 @@ export type Bootstrap = {
   workbench: boolean;
   paid_credentials: Record<string, boolean>;
 };
+export type RuntimeConnection = {
+  ready: boolean;
+  code: string | null;
+  message: string;
+};
 export type RunInput = {
   agent: string;
   offline: boolean;
@@ -210,6 +215,7 @@ export const listEpisodes = () => request<Episode[]>("/episodes");
 export const startRun = (input: RunInput) => request<{ episode_id: string }>("/runs", "POST", input);
 export const stopRun = () => request<{ stop_requested: boolean }>("/stop", "POST", {});
 export const operatorStatus = () => request<any>("/operator/status");
+export const operatorRuntime = (signal?: AbortSignal) => request<RuntimeConnection>("/operator/runtime", "GET", undefined, undefined, signal);
 export const saveSettings = (input: unknown) => request<any>("/settings", "PUT", input);
 export const openReview = (input: ReviewOpenInput) => request<{ review_token: string; view: View }>("/reviews", "POST", input);
 export const openExplorer = (input: ReviewOpenInput) => request<{ review_token: string; view: View | null }>("/explore/sessions", "POST", { ...input, retrospective: true });

@@ -17,9 +17,11 @@ from balatro_horizons.api.models import (
     VerifyInput,
 )
 from balatro_horizons.evidence.certification import (
+    read_checkpoint,
     require_checkpoint_certificate,
     verify_checkpoint,
 )
+from balatro_horizons.game.windows_context import load_session
 from balatro_horizons.harness.context.freeze import restore_protocol
 from balatro_horizons.harness.skills import restore_knowledge
 from balatro_horizons.review.export import export_response
@@ -98,9 +100,9 @@ def branch_capability(request: Request, token=Depends(require_session)):
 @router.post("/api/verify", dependencies=[Depends(require_operator)])
 def verify(request: Request, data: VerifyInput):
     state = request.app.state
-    with state.runs._guard:
-        if state.runs.thread and state.runs.thread.is_alive():
-            raise ValueError("WORKER_BUSY")
+    with state.runs.admission():
+        if read_checkpoint(state.store, data.episode_id, data.decision)["game"]["kind"] == "native":
+            load_session()
         parent = state.store.manifest(data.episode_id, True)
         return verify_checkpoint(
             state.store,

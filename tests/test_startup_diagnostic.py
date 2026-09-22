@@ -57,6 +57,7 @@ def test_launch_retries_only_pre_submission_eio(monkeypatch, errors, calls, succ
     from balatro_horizons.game import transport as native
 
     spawn = Mock(side_effect=[OSError(5, "EIO")] * errors + [Mock()])
+    monkeypatch.setattr(native, "bridge_environment", lambda: {})
     monkeypatch.setattr(native.subprocess, "Popen", spawn)
     monkeypatch.setattr(native.time, "sleep", Mock())
     bridge = native.WindowsBridge(Environment())
@@ -76,6 +77,7 @@ def test_launch_does_not_retry_other_errors(monkeypatch):
     from balatro_horizons.game import transport as native
 
     spawn = Mock(side_effect=OSError(13, "denied"))
+    monkeypatch.setattr(native, "bridge_environment", lambda: {})
     monkeypatch.setattr(native.subprocess, "Popen", spawn)
     monkeypatch.setattr(native.WindowsBridge, "verify_files", Mock(return_value={}))
     with pytest.raises(NativeFailure, match="WINDOWS_BRIDGE_OS_ERROR_13"):

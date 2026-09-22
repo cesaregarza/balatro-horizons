@@ -131,11 +131,18 @@ def stage_list(
     *, resume_certification: bool = False,
     resume_actions: bool = False,
     gameplay_only: bool = False,
+    connection_only: bool = False,
 ) -> tuple[Stage, ...]:
     """Select a non-executing plan, rejecting incompatible resume modes."""
-    selected = sum((resume_certification, resume_actions, gameplay_only))
+    selected = sum((resume_certification, resume_actions, gameplay_only, connection_only))
     if selected > 1:
         raise ValueError("RESUME_MODES_ARE_MUTUALLY_EXCLUSIVE")
+    if connection_only:
+        return (Stage(
+            "Windows connection only", 1, 0,
+            ("one owned calibration launch; registration refresh and RPC reopen in the same process",),
+            "bh native diagnose --connection --report PATH", "native-connection-*.json",
+        ),)
     if gameplay_only:
         return _gameplay_stages()
     if resume_certification:
@@ -154,7 +161,9 @@ def plan(**options) -> dict:
         "expected_physical_launches": sum(stage.launches for stage in stages),
         "expected_game_resets": resets,
         "native_evidence_collected": False,
-        "release_certification_requested": not options.get("gameplay_only", False),
+        "release_certification_requested": not (
+            options.get("gameplay_only", False) or options.get("connection_only", False)
+        ),
         "capability_activation_requested": False,
     }
 

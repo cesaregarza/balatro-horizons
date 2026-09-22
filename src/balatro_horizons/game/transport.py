@@ -19,6 +19,7 @@ from balatro_horizons.game.environment import (
     verify_identity,
     windows_runtime_path,
 )
+from balatro_horizons.game.windows_context import SESSION_ERROR_CODES, bridge_environment
 
 _LUA_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,98}$")
 _UPSTREAM_REJECTION_NAMES = frozenset({"BAD_REQUEST", "INVALID_STATE", "NOT_ALLOWED"})
@@ -30,6 +31,13 @@ def _safe_lua_code(value: object) -> str | None:
 
 def _bridge_path(runtime: str) -> str:
     return windows_runtime_path(runtime).rstrip("\\/") + r"\bridge.ps1"
+
+
+def _registered_environment() -> dict[str, str]:
+    try:
+        return bridge_environment()
+    except ValueError as error:
+        raise NativeFailure(str(error)) from None
 
 
 def raise_rpc_error(error: object) -> None:
@@ -108,6 +116,7 @@ class WindowsBridge:
         raise AssertionError("unreachable")
 
     def _control(self, mode: str) -> dict:
+        environment = _registered_environment()
         try:
             result = subprocess.run(
                 self._command(mode),
@@ -115,6 +124,7 @@ class WindowsBridge:
                 capture_output=True,
                 timeout=self.env.launch_timeout_seconds,
                 check=False,
+                env=environment,
             )
         except OSError as error:
             raise NativeFailure(f"WINDOWS_BRIDGE_OS_ERROR_{error.errno}") from None
@@ -128,6 +138,7 @@ class WindowsBridge:
             raise NativeFailure("WINDOWS_BRIDGE_RESPONSE_INVALID") from None
 
     def launch(self) -> dict:
+        environment = _registered_environment()
         self.lock = self.verify_files()
         self.instance_id = uuid.uuid4().hex
         try:
@@ -139,6 +150,7 @@ class WindowsBridge:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                env=environment,
             )
         except OSError as error:
             raise NativeFailure(f"WINDOWS_BRIDGE_OS_ERROR_{error.errno}") from None
@@ -148,12 +160,15 @@ class WindowsBridge:
                 state = self.rpc("bh_inspect")
                 self.verify_identity(state)
                 return state
-            except (NativeFailure, NativeRejected):
+            except (NativeFailure, NativeRejected) as error:
+                if str(error) in SESSION_ERROR_CODES:
+                    raise
                 time.sleep(0.5)
         raise NativeFailure("NATIVE_STARTUP_HANDSHAKE_TIMEOUT")
 
     def _exchange(self, line: str):
         if self._rpc_process is None or self._rpc_process.poll() is not None:
+            environment = _registered_environment()
             try:
                 self._rpc_process = self._spawn_with_retry(
                     self._command("rpc"),
@@ -161,6 +176,7 @@ class WindowsBridge:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                     bufsize=0,
+                    env=environment,
                 )
             except OSError as error:
                 raise NativeFailure(f"WINDOWS_BRIDGE_OS_ERROR_{error.errno}") from None

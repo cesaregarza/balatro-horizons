@@ -138,11 +138,13 @@ def test_intervention_modes_use_shared_human_api(store, workbench_config, episod
 
 
 def test_direct_human_runs_cannot_be_scored_as_autonomous(store, workbench_config, monkeypatch):
+    from balatro_horizons import service as service_module
     from balatro_horizons.review.service import ReviewService
     from balatro_horizons.service import RunService
 
     service = RunService(store, ReviewService(store))
     monkeypatch.setattr(service, "_launch", lambda task: None)
+    monkeypatch.setattr(service_module, "load_session", lambda: {})
     config = workbench_config
     eid = service.start(config, "human", "TEST_PANEL_SEED", offline=False)
     assert store.manifest(eid)["evaluation_eligible"] is False

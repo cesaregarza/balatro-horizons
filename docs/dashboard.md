@@ -12,8 +12,8 @@ explicitly enables it. The ordinary
 dashboard always mounts the run library, live status, decision exploration,
 cost/model-budget settings, batches, reports, and cheap append-only
 retrospective annotations under the `/api/explore...` and core namespaces.
-These surfaces remain usable when the flag is off: 23 mounted routes including
-the root page, versus 39 with the 16 workbench routes enabled.
+These surfaces remain usable when the flag is off: 24 mounted routes including
+the root page, versus 40 with the 16 workbench routes enabled.
 
 The workbench owns staged reveal/review, branching and comparison, human
 takeover, and verification. Its `/api/review*`,
@@ -61,9 +61,13 @@ uv run bh review session
 uv run bh review session --apply
 ```
 
-The apply step writes a service-only drop-in and restarts the idle service; it
-rejects a busy native worker and never imports shell credentials, proxies, or the
-general environment. Reapply after the service is recreated. Loopback plus an
+The apply step writes an owner-only registration without restarting the service;
+it rejects a busy native worker and never imports shell credentials, proxies, or
+the general environment. Reapply when the registered terminal/socket expires.
+The operator-only `/api/operator/runtime` endpoint and `bh doctor` report safe
+registration status, not game readiness or certification. The run form checks
+this status and disables native launch until it is ready; synthetic runs remain
+available. Use **Refresh connection** after registering. Loopback plus an
 operator-configured Tailscale Serve endpoint remain the supported remote path.
 
 ## Review and continuation

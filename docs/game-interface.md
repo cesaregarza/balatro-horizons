@@ -54,3 +54,25 @@ the harness must not infer hidden values from the adapter.
 `public-economy-v1` records committed cashouts/shop exits, sampled debt rounds,
 and known score/target ratios. Unknown settlements are distinct from zero;
 these descriptive metrics are not horizon judgments or spending targets.
+
+## Windows connection
+
+From a Windows-connected WSL terminal, preview `uv run bh review session`,
+then explicitly register with `uv run bh review session --apply`. Check the
+registration with `uv run bh review session --check`. Even an interactive shell
+must register: bridge processes never implicitly inherit its `WSL_INTEROP`.
+Registration neither restarts the backend nor launches a game; it refuses to
+replace the connection while the native worker is busy.
+
+The owner-only `private/windows-session.json` holds only allowlisted launch
+variables and an owned socket under `/run/WSL`. Each new Windows bridge process
+loads that registration plus Linux `PATH`, `LANG`, and `LC_ALL`; provider keys,
+proxy settings, and arbitrary `WSLENV` entries are excluded. A backend can keep
+running after its registered terminal expires. Register again from a current
+terminal; no service restart or replay of an uncertain action is needed.
+
+Native run, branch, batch, and replay admission fail closed on a missing or
+expired registration. A batch freezes its evidence kind before that check, so
+an interrupted native attempt cannot become synthetic. Expiry after episode
+creation remains an infrastructure failure. Registration/socket readiness is
+not game readiness or native certification.

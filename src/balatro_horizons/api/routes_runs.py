@@ -4,10 +4,17 @@ import secrets
 
 from fastapi import APIRouter, Depends, Request
 
+from balatro_horizons.game.windows_context import connection_status
+
 from .middleware import require_operator
 from .models import RunInput
 
 router = APIRouter()
+
+
+@router.get("/api/operator/runtime", dependencies=[Depends(require_operator)])
+def operator_runtime():
+    return connection_status()
 
 
 def new_seed():

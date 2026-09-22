@@ -14,6 +14,7 @@ uv run bh evidence plan
 uv run bh evidence plan --gameplay-only
 uv run bh evidence plan --resume-actions
 uv run bh evidence plan --resume-certification
+uv run bh evidence plan --connection-only
 ```
 
 The cold plan has 12 physical launches and 22 resets. Startup profile stability
@@ -38,6 +39,22 @@ collection" --episode-id EPISODE_ID`. A stage name selects the remaining suffix;
 it never turns missing prerequisite artifacts into completed evidence.
 The resume plans report 11 launches / 16 resets for actions, or 11 / 11 for
 certification. Selecting the gameplay-only stage requires `--gameplay-only`.
+
+For an authorized connection-only check, use `bh native diagnose --connection
+--config configs/smoke.yaml --report reports/verification/native-connection-UNIQUE.json`.
+Its plan is one calibration launch and zero game resets. It requires clean
+committed source, a matching pinned environment manifest/instrumentation, an
+explicit session registration, and an idle runtime/port. It temporarily removes
+only this checkout's registration to prove fail-closed RPC admission, restores
+and refreshes it, and opens a new RPC subprocess against the same owned game.
+Cleanup stops only that launch identity. It neither simulates actual socket
+destruction nor claims replay, gameplay, or capability certification. Every
+attempt gets a new immutable source/environment-bound receipt, including failures;
+no backend deployment, provider call, or certificate activation is performed.
+Main-menu connection readiness is distinct from Lua's settled-gameplay flag:
+an identity-verified, non-busy `MENU` response suffices for this zero-reset check.
+The receipt records phase and gameplay readiness separately, without asserting
+that a game action would be legal. Busy responses still fail the bounded wait.
 
 ```bash
 uv run bh evidence collect
@@ -65,6 +82,18 @@ cannot establish scope: the manifest's explicit runtime/source scope and
 fingerprint must be checked. Absent evidence is named as skipped, never counted
 as passing; a passed record naming a missing artifact fails as corrupt.
 Headless and accelerated modes remain uncertified.
+
+Native replay checks the explicitly registered Windows connection at admission
+and again under the native lock before each repetition. A recognized session
+configuration/expiry error aborts without writing a failed certificate or
+changing the selected checkpoint certificate. It is not replay evidence.
+Other mid-replay transport failures remain conservatively failed evidence and
+can disable a prior pass for the same mode; do not interpret them as a gameplay
+divergence or automatically resend the action. Refresh registration before an
+explicit retry. Competing worker admissions return `WORKER_BUSY` while replay
+holds the worker reservation. [Issue #42](https://github.com/cesaregarza/balatro-horizons/issues/42)
+tracks evidence-based classification of ambiguous transport loss before any
+change to that conservative certificate-selection policy.
 
 ## Acceptance map
 

@@ -120,11 +120,26 @@ def configure_parser(parser):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--restart", action="store_true", help="Restart only an idle runtime")
     mode.add_argument("--workbench", action="store_true", help="Test the live browser worker")
+    mode.add_argument("--connection", action="store_true", help="One calibration launch and RPC recovery; no certification")
+    parser.add_argument("--report", type=Path, help="New source-bound connection evidence file")
     parser.add_argument("--preset", choices=("smoke", "pilot"), default="pilot")
     parser.set_defaults(operation_handler=run, operation_parser=parser)
 
 
 def run(args):
+    if args.connection:
+        if args.report is None:
+            args.operation_parser.error("--connection requires --report")
+        from balatro_horizons.evidence.collect.connection import collect
+
+        try:
+            result = collect(load_config(args.config).environment, args.report)
+        except (OSError, ValueError, RuntimeError) as error:
+            result = {"status": "failed", "reason": str(error) if str(error).isupper() else type(error).__name__}
+        print(json.dumps(result, sort_keys=True), flush=True)
+        return 0 if result["status"] == "passed" else 1
+    if args.report is not None:
+        args.operation_parser.error("--report requires --connection")
     if args.workbench:
         return workbench_startup(args.preset)
     bridge = WindowsBridge(load_config(args.config).environment)

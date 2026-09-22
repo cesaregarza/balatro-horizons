@@ -5,10 +5,12 @@ import json
 import os
 import queue
 import threading
+from contextlib import contextmanager
 
 from balatro_horizons.config import ROOT
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeGame
+from balatro_horizons.game.windows_context import load_session
 from balatro_horizons.harness.baselines import Baseline
 from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
 from balatro_horizons.harness.contract import ProviderPolicy
@@ -142,6 +144,18 @@ class RunService:
         self._guard = threading.Lock()
         self.error = None
 
+    @contextmanager
+    def admission(self):
+        """Reserve the worker without making competing requests wait for replay."""
+        if not self._guard.acquire(blocking=False):
+            raise ValueError("WORKER_BUSY")
+        try:
+            if self.thread and self.thread.is_alive():
+                raise ValueError("WORKER_BUSY")
+            yield
+        finally:
+            self._guard.release()
+
     def validate_policy(self, config, agent):
         """Validate paid admission without constructing a client or game."""
         if agent in ("heuristic", "random_legal", "human"):
@@ -199,6 +213,8 @@ class RunService:
         # NativeGame's constructor launches the game. Validate and capture prompt
         # bytes before constructing it; ordinary branches use their original snapshot.
         prompt_bytes = None if resume else load_prompt(ROOT)
+        if not offline and eid is None:
+            load_session()
         if operations:
             policy = InterventionPolicy(operations, policy)
         if human_steps:
@@ -279,15 +295,15 @@ class RunService:
 
     def start(self, config, agent, seed, *, offline=False, calibration=False):
         config = config.model_copy(deep=True)
-        with self._guard:
-            if self.thread and self.thread.is_alive():
-                raise ValueError("WORKER_BUSY")
+        with self.admission():
             self.stop.clear()
             self.error = None
             self.validate_policy(config, agent)
             from balatro_horizons.harness.instructions import load_prompt
 
             load_prompt(ROOT)
+            if not offline:
+                load_session()
             eid = self.store.create(
                 {
                     "evidence_kind": "SYNTHETIC_TEST" if offline else "NATIVE",
@@ -318,9 +334,7 @@ class RunService:
         self.thread.start()
 
     def branch(self, config, parent, decision, mode, actions=None, agent=None, human_steps=3):
-        with self._guard:
-            if self.thread and self.thread.is_alive():
-                raise ValueError("WORKER_BUSY")
+        with self.admission():
             actions = actions or []
             if mode == "single_action_override" and len(actions) != 1:
                 raise ValueError("ONE_OVERRIDE_REQUIRED")
@@ -334,6 +348,8 @@ class RunService:
             if chosen not in ("human", manifest["agent"]):
                 raise ValueError("PROTOCOL_CHANGE_INTERVENTION_NOT_SUPPORTED")
             self.validate_policy(config, chosen)  # Validate before immutable child records.
+            if manifest["evidence_kind"] != "SYNTHETIC_TEST":
+                load_session()
             eid, checkpoint, prefix = prepare_branch(self.store, config, parent, decision, mode)
             self.stop.clear()
             seed = self.store.manifest(parent, True)["seed"]
@@ -359,7 +375,13 @@ class RunService:
         with locked(self.store.root / "batches" / identifier(bid) / "scheduling.lock"):
             return self._run_batch(config, bid, offline=offline)
 
-    def _run_batch(self, config, bid, *, offline):
+    def preflight_batch(self, config, bid, *, offline=False):
+        with locked(self.store.root / "batches" / identifier(bid) / "scheduling.lock"):
+            self._freeze_batch(config, bid, offline=offline)
+            if not offline:
+                load_session()
+
+    def _freeze_batch(self, config, bid, *, offline):
         plan = json.loads((self.store.root / "batches" / bid / "plan.json").read_text())
         private = json.loads((self.store.root / "batches" / bid / "private.json").read_text())
         if plan["config_hash"] != digest(config.model_dump()):
@@ -371,6 +393,10 @@ class RunService:
                 raise ValueError("BATCH_EVIDENCE_KIND_CHANGED")
         else:
             atomic_json(execution_path, {"evidence_kind": evidence}, immutable=True)
+        return plan, private
+
+    def _run_batch(self, config, bid, *, offline):
+        plan, private = self._freeze_batch(config, bid, offline=offline)
         spending = Spending(
             self.store.root / "batches" / bid / "spending.json", config.budgets.max_batch_cost_usd
         )
@@ -404,6 +430,8 @@ class RunService:
                             cost_context=context,
                         )
                         return bid
+                if not offline:
+                    load_session()
                 try:
                     self.execute(
                         config,

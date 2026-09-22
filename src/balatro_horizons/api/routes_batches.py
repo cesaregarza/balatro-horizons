@@ -50,9 +50,8 @@ def batches(request: Request):
 def batch_run(request: Request, batch_id: str, data: BatchRun):
     state = request.app.state
     identifier(batch_id)
-    with state.runs._guard:
-        if state.runs.thread and state.runs.thread.is_alive():
-            raise ValueError("WORKER_BUSY")
+    with state.runs.admission():
+        state.runs.preflight_batch(state.config, batch_id, offline=data.offline)
         state.runs.stop.clear()
         state.runs._launch(lambda: state.runs.run_batch(state.config, batch_id, offline=data.offline))
     return {"batch_id": batch_id, "queued": True}

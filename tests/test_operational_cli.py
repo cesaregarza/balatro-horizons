@@ -1,4 +1,5 @@
 import json
+import subprocess
 from unittest.mock import Mock
 
 import pytest
@@ -9,6 +10,7 @@ from balatro_horizons.cli.parser import build_parser
 from balatro_horizons.config import ROOT
 
 COMMANDS = [
+    ("credentials", modules.credentials, []),
     ("offline", modules.offline, []),
     ("deploy frontend", modules.deploy_frontend, ["--build", "b", "--dist", "d", "--backup", "s"]),
     ("deploy candidate", modules.install_candidate, ["--root", "r"]),
@@ -110,12 +112,13 @@ def test_review_status_unavailable_retains_sanitized_error(monkeypatch, capsys):
 
 def test_review_session_preview_does_not_restart_service(monkeypatch, capsys):
     monkeypatch.setattr(modules.workbench_session.os, "environ", {
-        "WSL_INTEROP": "/test/socket", "USERPROFILE": "/test/profile",
+        "WSL_INTEROP": "/run/WSL/123_interop", "USERPROFILE": "/test/profile",
         "APPDATA": "/test/appdata", "LOCALAPPDATA": "/test/local", "OPENAI_API_KEY": "secret",
     })
     restart = Mock()
-    monkeypatch.setattr(modules.workbench_session.subprocess, "run", restart)
-    assert main(["review", "session"]) is None
+    monkeypatch.setattr(subprocess, "run", restart)
+    monkeypatch.setattr(modules.workbench_session, "require_socket", Mock())
+    assert main(["review", "session"]) == 0
     output = capsys.readouterr().out
     assert "Preview only" in output and "secret" not in output and "OPENAI_API_KEY" not in output
     restart.assert_not_called()

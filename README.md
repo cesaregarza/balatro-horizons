@@ -97,6 +97,7 @@ retain the former scripts' defaults, guards, and output formats:
 | `smoke` | Capped provider smoke; paid execution requires `--allow-paid` |
 | `native diagnose` | Authorized native startup diagnostics |
 | `review session` / `review status` | Preview/apply launch context / bounded worker status |
+| `credentials` | Preview/apply owner-only backend provider credentials without printing values or private paths |
 
 `scripts/` keeps only native bootstrap and the two-line offline CI entry point.
 Browser-native verification lives at `web/scripts/verify_browser_native.mjs`;

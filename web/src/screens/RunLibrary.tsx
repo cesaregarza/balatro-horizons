@@ -3,6 +3,7 @@ import { bootstrap, listEpisodes, saveSettings, startRun, stopRun, type Episode 
 import { ModelControls } from "../ModelControls";
 import { usePolling } from "../usePolling";
 import { useRunAction } from "./useRunAction";
+import { RuntimeConnection, useRuntimeConnection } from "./RuntimeConnection";
 import {
   configureModel,
   EMPTY_CAPABILITIES,
@@ -42,6 +43,7 @@ export function RunLibrary({
   const selectedModel = catalog[agent];
   const selectedModelSupported = !selectedModel || selectedModel.provider !== "openai" || supportsCachedHarness(selectedModel, capabilities);
   const action = useRunAction(run);
+  const { connection, refresh: refreshConnection } = useRuntimeConnection(!offline);
 
   useEffect(() => {
     if (selectedModel) setEffort(effortDefault(selectedModel, capabilities));
@@ -93,7 +95,7 @@ export function RunLibrary({
           <label className="check"><input type="checkbox" checked={offline} onChange={(e) => setOffline(e.target.checked)} /> Synthetic pipeline test</label>
           <p className="muted">{offline ? "Synthetic episodes test the application and are labeled throughout." : "Native autonomous runs require passing environment and action-coverage gates."}</p>
           <div className="actions">
-            <button className="primary" disabled={busy || !selectedModelSupported} onClick={() => action(async () => {
+            <button className="primary" disabled={busy || !selectedModelSupported || (!offline && connection?.ready !== true)} onClick={() => action(async () => {
               const chosenAgent = selectedModel ? await saveModelDefaults() : agent;
               const result = await startRun({ agent: chosenAgent, offline, preset, seed: seed || null });
               setNotice("Run created: " + result.episode_id.slice(0, 10));
@@ -102,6 +104,7 @@ export function RunLibrary({
             })}>Start {offline ? "test episode" : "native run"} <span>↗</span></button>
             <button onClick={() => action(async () => { await stopRun(); setNotice("Stop requested. Any in-flight action will be recorded."); })}>Stop worker</button>
           </div>
+          {!offline && <RuntimeConnection connection={connection} onRefresh={refreshConnection} />}
         </section>
         <section className="panel live">
           <p className="eyebrow">OPERATOR VIEW</p><h2>Live progress</h2>

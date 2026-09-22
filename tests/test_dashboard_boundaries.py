@@ -23,6 +23,12 @@ def test_dashboard_surfaces_remain_available_when_workbench_is_off(store, episod
         assert client.get("/api/episodes", headers=headers).status_code == 200
         assert client.get("/api/panels", headers=headers).status_code == 200
         assert client.get("/api/batches", headers=headers).status_code == 200
+        # Registration status belongs to native launch on the ordinary dashboard;
+        # it reveals no review state and still requires operator authorization.
+        assert client.get("/api/operator/runtime").status_code == 403
+        runtime = client.get("/api/operator/runtime", headers=headers)
+        assert runtime.status_code == 200
+        assert set(runtime.json()) == {"ready", "code", "message"}
         settings = {"models": {}, "budgets": config.budgets.model_dump(), "skills": config.skills}
         assert client.put("/api/settings", headers=headers, json=settings).status_code == 200
         opened = client.post(
@@ -55,7 +61,6 @@ def test_dashboard_surfaces_remain_available_when_workbench_is_off(store, episod
             ("/api/verify", "post"),
             ("/api/branches", "post"),
             ("/api/operator/human", "get"),
-            ("/api/operator/runtime", "get"),
         ):
             response = getattr(client, method)(path, headers=headers, json={}) if method == "post" else getattr(client, method)(path, headers=headers)
             assert response.status_code == 404, (path, response.text)

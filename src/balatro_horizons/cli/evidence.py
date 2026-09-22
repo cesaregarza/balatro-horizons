@@ -10,6 +10,7 @@ def run_evidence_command(args):
 
         return plan(
             gameplay_only=args.gameplay_only,
+            connection_only=args.connection_only,
             resume_actions=getattr(args, "resume_actions", False),
             resume_certification=getattr(args, "resume_certification", False),
         )

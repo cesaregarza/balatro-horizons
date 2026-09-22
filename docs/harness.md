@@ -58,6 +58,17 @@ applicable episode or campaign cap. A paid call requires operator enablement, se
 and episode and batch caps.
 Anthropic `temperature` is incompatible with manual `thinking_budget`.
 
+Configure persistent service credentials with `uv run bh credentials --source
+/path/to/private/provider.env` to preview, then add `--apply` to write. Both
+source and destination must be on native Linux storage. Only provider key names
+are accepted; values and private paths are omitted from command output. The
+destination `private/providers.env` is owner-only (0600), referenced by a user
+service drop-in. Without `--source`, existing credentials are preserved or an
+empty placeholder is prepared for the unpaid dashboard. No mode calls a provider.
+After an applied change, run `systemctl --user daemon-reload` and restart
+`balatro-horizons.service` only while the worker and native verifier are idle.
+Do not commit credentials or include their contents/paths in support logs.
+
 Prompt caching is an accounting concern, not an unverified optimization:
 ordinary input, cache reads, cache writes, output, reservations, and settlement
 remain distinct categories. A cache diagnostic comparison is metadata-only and

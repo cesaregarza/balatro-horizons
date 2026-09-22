@@ -18,6 +18,7 @@ from balatro_horizons.game.replay import (
     restore_seed_prefix,
 )
 from balatro_horizons.game.session import NativeFailure, NativeGame
+from balatro_horizons.game.windows_context import SESSION_ERROR_CODES, load_session
 from balatro_horizons.observations.projection import HandleIssuer
 from balatro_horizons.storage.journal import atomic_json, digest, locked, now
 
@@ -126,6 +127,8 @@ def _replay_once(store, config, eid, decision, mode, checkpoint, suffix, snapsho
         if expected_terminal in ("WIN", "GAME_LOSS") and game.terminal_status() != expected_terminal:
             raise ValueError("TERMINAL_MISMATCH")
     except (ValueError, RuntimeError, OSError) as error:
+        if native and str(error) in SESSION_ERROR_CODES:
+            raise ValueError(str(error)) from None
         return _failure_record(store, eid, decision, repetition, error)
     finally:
         if game is not None:
@@ -137,6 +140,8 @@ def _replay_failures(store, config, eid, decision, mode, checkpoint, suffix, sna
     lock_path = ROOT / "private/native-worker.lock" if native else store.root / "verification.lock"
     with locked(lock_path):
         for repetition in range(repetitions):
+            if native:
+                load_session()
             failure = _replay_once(
                 store, config, eid, decision, mode, checkpoint, suffix, snapshot, repetition
             )
@@ -172,6 +177,8 @@ def verify_checkpoint(store, config, eid, decision, *, repetitions=3, mode="chec
     if mode not in ("checkpoint", "seed_prefix"):
         raise ValueError("UNKNOWN_RESTORATION_MODE")
     checkpoint = read_checkpoint(store, eid, decision)
+    if checkpoint["game"]["kind"] == "native":
+        load_session()
     steps = steps_for(store, eid)
     suffix = [s for s in steps if s["observation"]["observation_id"] > decision]
     if not any(s["kind"] == "action" for s in suffix):

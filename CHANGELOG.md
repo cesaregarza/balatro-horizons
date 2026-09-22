@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-22 — Explicit credentials and Windows connection (PR #23)
+
+- Added `bh evidence plan --connection-only` and `bh native diagnose
+  --connection --report PATH` for one owned calibration launch, fail-closed
+  unregistered RPC, registration refresh, same-process RPC reconnection, and
+  cleanup. Immutable receipts bind the source and environment without granting
+  capability or replay certification; offline doubles cover failure cleanup.
+
+- Integrated current main without rewriting the published PR history. Ported
+  session isolation to `game/transport.py`, runtime status to the split API and
+  run-library screen, and credential configuration to `bh credentials`.
+- Native admission requires explicit owner-only session registration; every new
+  bridge process excludes provider credentials and proxy environment variables.
+  Refreshing the session starts no process and does not restart the backend.
+- Frozen batches retain their original native/synthetic evidence kind after a
+  failed session preflight. Explicit session expiry aborts replay verification
+  without replacing a passing certificate; other transport failures remain
+  conservatively failed replay evidence. Worker contention fails promptly.
+- Folded `docs/runtime-connection.md` into the layer guides and removed the
+  standalone credential script in favor of its tested package command.
+- Offline checks do not supply the fresh source-bound native launch/RPC proof
+  required before this PR leaves draft. No prior certificate is reused here.
+
 ## 2026-09-21 — Operational commands move into the package (issue #40)
 
 - Moved the nine import-loaded scripts into `cli/` modules with `bh` homes;
