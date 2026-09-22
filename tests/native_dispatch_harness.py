@@ -123,7 +123,11 @@ G.FUNCS.evaluate_round = function() end
 
 BH_ISOLATION = true
 BB_SETTINGS = {headless=false, fast=false}
-BB_ERROR_NAMES = {NOT_ALLOWED='NOT_ALLOWED_NAME'}
+BB_ERROR_NAMES = {
+  NOT_ALLOWED='NOT_ALLOWED_NAME',
+  INFRASTRUCTURE='INFRASTRUCTURE_NAME',
+  HARNESS_FAULT='HARNESS_FAULT_NAME',
+}
 BB_GAMESTATE = {get_gamestate=function() return {marker=inspect_marker} end}
 
 love = {
@@ -202,6 +206,24 @@ class NativeHarness:
     def __init__(self):
         self.lua = LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute(BOOTSTRAP)
+        sources = self.lua.table()
+        for name in ("inspect.lua", "settle.lua", "action.lua", "dispatch.lua"):
+            sources[name] = (ROOT / "native/patches" / name).read_text()
+        self.lua.globals().module_sources = sources
+        self.lua.execute(
+            """
+            local previous = SMODS.load_file
+            SMODS.load_file = function(name)
+              local source = module_sources[name]
+              if source then
+                local chunk, err = (loadstring or load)(source)
+                assert(chunk, err)
+                return chunk
+              end
+              return previous(name)
+            end
+            """
+        )
         self.lua.execute((ROOT / "native/patches/horizons.lua").read_text())
 
     @property

@@ -10,17 +10,20 @@ from provider_transport import with_input_count
 from test_boundary import project
 from test_harness_tools import config_for
 
-from balatro_horizons.agents.baselines import Baseline, ScriptedPolicy
-from balatro_horizons.agents.protocol import Operation, context, decision_context, helper
-from balatro_horizons.agents.providers import DirectProvider
-from balatro_horizons.agents.skills import load_guide, prepare_rules, read_guide, restore_knowledge
 from balatro_horizons.config import Config
-from balatro_horizons.engine.certification import verify_checkpoint
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.review.service import ReviewService
-from balatro_horizons.runner import Runner
+from balatro_horizons.evidence.certification import verify_checkpoint
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.baselines import Baseline, ScriptedPolicy
+from balatro_horizons.harness.context.build import context, decision_context
+from balatro_horizons.harness.contract import Operation
+from balatro_horizons.harness.helpers import helper
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
+from balatro_horizons.harness.skills import load_guide, prepare_rules, read_guide, restore_knowledge
+from balatro_horizons.harness.transport import DirectProvider
 from balatro_horizons.storage.journal import digest
+from balatro_horizons.workbench.branches import prepare_branch
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 def test_catalog_has_descriptions_without_loading_bodies_and_provider_parity():
@@ -166,7 +169,16 @@ def test_model_reads_skill_and_reference_then_completes_synthetic_run(
         config.budgets,
         client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
-    runner = Runner(store, config, game, policy)
+    runner = Runner(
+        store,
+        config,
+        game,
+        policy,
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    )
     result = runner.run()
     assert result["outcome"] == "WIN"
     assert result["provider_calls"] == result["committed_actions"] + 2
@@ -181,28 +193,36 @@ def test_model_reads_skill_and_reference_then_completes_synthetic_run(
         (store.episode_path(result["episode_id"], True) / "knowledge.json").read_text()
     )
     assert digest(frozen) == started["rules_hash"]
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     opened = review.open(result["episode_id"])
     assert "helper_result" not in json.dumps(opened["view"])
     assert "helper_result" in json.dumps(review.advance(opened["review_token"]))
 
 
 def test_branch_uses_parent_knowledge_and_rejects_tampering(store, config, monkeypatch):
-    summary = Runner(store, config, FakeGame(), Baseline("heuristic")).run()
+    spending = Spending.episode_only(
+        store.root / "private_runs" / "test-spending.json",
+        config.budgets.max_episode_cost_usd or 1,
+    )
+    summary = Runner(store, config, FakeGame(), Baseline("heuristic"), spending).run()
     eid = summary["episode_id"]
     checkpoint = json.loads((store.episode_path(eid, True) / "checkpoint-0.json").read_text())
     expected = restore_knowledge(store, checkpoint)
     verify_checkpoint(store, config, eid, 0, repetitions=3)
     bid, checkpoint, prefix = prepare_branch(store, config, eid, 0, "agent_continue")
     monkeypatch.setattr(
-        "balatro_horizons.agents.skills.load_guide",
+        "balatro_horizons.harness.skills.load_guide",
         lambda *args: (_ for _ in ()).throw(
             AssertionError("live guide must not be read on resume")
         ),
     )
-    result = Runner(store, Config(skills="none"), FakeGame(), Baseline("heuristic")).run(
-        eid=bid, resume=checkpoint, history_prefix=prefix
-    )
+    result = Runner(
+        store,
+        Config(skills="none"),
+        FakeGame(),
+        Baseline("heuristic"),
+        spending,
+    ).run(eid=bid, resume=checkpoint, history_prefix=prefix)
     assert result["outcome"] == "WIN"
     actual = json.loads((store.episode_path(bid, True) / "knowledge.json").read_text())
     assert actual == expected
@@ -216,7 +236,16 @@ def test_branch_uses_parent_knowledge_and_rejects_tampering(store, config, monke
 
 def test_opt_out_and_skill_helper_budget_do_not_advance_game(store):
     cfg = Config(skills="none")
-    result = Runner(store, cfg, FakeGame(), Baseline("heuristic")).run()
+    result = Runner(
+        store,
+        cfg,
+        FakeGame(),
+        Baseline("heuristic"),
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            cfg.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     ctx = next(
         e["payload"]["context"]
         for e in store.events(result["episode_id"])
@@ -227,7 +256,16 @@ def test_opt_out_and_skill_helper_budget_do_not_advance_game(store):
     cfg.budgets.max_helper_calls_per_decision = 1
     read = {"kind": "skill", "name": "balatro-scoring"}
     game = FakeGame()
-    result = Runner(store, cfg, game, ScriptedPolicy([read] * 4)).run()
+    result = Runner(
+        store,
+        cfg,
+        game,
+        ScriptedPolicy([read] * 4),
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            cfg.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     assert result["reason"] == "AGENT_PROTOCOL_FAILURE" and result["committed_actions"] == 0
     assert sum(
         event["type"] == "helper_result" for event in store.events(result["episode_id"])
@@ -271,11 +309,12 @@ def test_skill_settings_roundtrip_preserves_omitted_choice(store, config):
         assert client.get("/api/bootstrap").json()["config"]["skills"] == "none"
 
 
-def test_branch_capability_requires_knowledge_snapshot(store, config, episode):
+def test_branch_capability_requires_knowledge_snapshot(store, workbench_config, episode):
     from fastapi.testclient import TestClient
 
     from balatro_horizons.api import create_app
 
+    config = workbench_config
     verify_checkpoint(store, config, episode, 0, repetitions=3)
     with TestClient(create_app(store.root, config)) as client:
         op = {"X-BH-Operator": client.get("/api/bootstrap").json()["operator_token"]}
@@ -287,12 +326,19 @@ def test_branch_capability_requires_knowledge_snapshot(store, config, episode):
 
 
 def test_native_calibration_probe_completes_offline_before_native_use(store, config):
-    import runpy
+    from balatro_horizons.evidence.collect.runs import SkillReadBaseline
 
-    from balatro_horizons.config import ROOT
-
-    policy = runpy.run_path(str(ROOT / "scripts/native_runs.py"))["SkillReadBaseline"]()
-    result = Runner(store, config, FakeGame(), policy).run()
+    policy = SkillReadBaseline()
+    result = Runner(
+        store,
+        config,
+        FakeGame(),
+        policy,
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     assert result["outcome"] == "WIN" and result["provider_calls"] == 0
     helpers = [e for e in store.events(result["episode_id"]) if e["type"] == "helper_result"]
     assert len(helpers) == 2

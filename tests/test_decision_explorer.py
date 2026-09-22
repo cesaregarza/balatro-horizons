@@ -7,10 +7,12 @@ from fastapi.testclient import TestClient
 from test_review_branches import annotation
 
 from balatro_horizons.api import create_app
-from balatro_horizons.review.service import ReviewError, ReviewService
+from balatro_horizons.review.service import ReviewService
+from balatro_horizons.workbench.service import ReviewError
 
 
-def test_prospective_tokens_cannot_enumerate_or_seek(store, episode, config):
+def test_prospective_tokens_cannot_enumerate_or_seek(store, episode, workbench_config):
+    config = workbench_config
     with TestClient(create_app(store.root, config)) as client:
         op = client.get("/api/bootstrap").json()["operator_token"]
         opened = client.post(
@@ -33,7 +35,8 @@ def test_prospective_tokens_cannot_enumerate_or_seek(store, episode, config):
         assert "terminal" not in unchanged and "action_events" not in unchanged
 
 
-def test_explorer_jumps_both_ways_and_records_annotation_provenance(store, episode, config):
+def test_explorer_jumps_both_ways_and_records_annotation_provenance(store, episode, workbench_config):
+    config = workbench_config
     before = (store.episode_path(episode) / "events.jsonl").read_bytes()
     with TestClient(create_app(store.root, config)) as client:
         op = client.get("/api/bootstrap").json()["operator_token"]
@@ -71,13 +74,13 @@ def test_explorer_jumps_both_ways_and_records_annotation_provenance(store, episo
 def test_seek_uses_actual_ids_for_branches_and_rejects_missing_ids(store):
     from test_boundary import project
 
-    from balatro_horizons.engine.fake import FakeGame
+    from balatro_horizons.game.fake import FakeGame
 
     eid = store.create({"evidence_kind": "SYNTHETIC_TEST"}, eid="e" * 32)
     observation = project(FakeGame().observe_private(), index=17).model_dump(mode="json")
     store.append(eid, "observation", observation, observation_id=17)
     review = ReviewService(store)
-    token = review.open(eid, retrospective=True)["review_token"]
+    token = review.open_explorer(eid)["review_token"]
     assert review.seek(token, 17)["decision"] == 17
     with pytest.raises(ReviewError, match="DECISION_NOT_AVAILABLE"):
         review.seek(token, 0)
@@ -96,7 +99,7 @@ def test_explorer_can_explain_a_run_that_failed_before_any_observation(store):
         },
     )
     review = ReviewService(store)
-    opened = review.open(eid, retrospective=True)
+    opened = review.open_explorer(eid)
     assert opened["view"] is None
     ledger = review.decisions(opened["review_token"])
     assert ledger["actions"] == []
@@ -107,7 +110,7 @@ def test_explorer_can_explain_a_run_that_failed_before_any_observation(store):
 def test_live_explorer_handles_intent_commit_settlement_and_terminal(store):
     from test_boundary import project
 
-    from balatro_horizons.engine.fake import FakeGame
+    from balatro_horizons.game.fake import FakeGame
 
     game = FakeGame()
     game.phase = "SHOP"
@@ -115,7 +118,7 @@ def test_live_explorer_handles_intent_commit_settlement_and_terminal(store):
     before = project(game.observe_private()).model_dump(mode="json")
     store.append(eid, "observation", before, observation_id=0)
     review = ReviewService(store)
-    token = review.open(eid, retrospective=True)["review_token"]
+    token = review.open_explorer(eid)["review_token"]
     assert review.decisions(token)["actions"] == []
     action = {
         "observation_id": 0,

@@ -12,7 +12,7 @@ test("expired connection blocks native launch, reconnect restores it, synthetic 
         code: ready ? null : "WINDOWS_SESSION_EXPIRED",
         message: ready
           ? "Windows connection registered"
-          : "Windows runtime connection needs refreshing. Run scripts/configure_workbench_session.py --apply from a Windows-connected WSL terminal.",
+          : "Windows runtime connection needs refreshing. Run 'bh review session --apply' from a Windows-connected WSL terminal.",
       },
     }),
   );
@@ -37,5 +37,25 @@ test("expired connection blocks native launch, reconnect restores it, synthetic 
   await expect(
     page.getByRole("button", { name: /Start native run/ }),
   ).toBeEnabled();
+  await page.getByRole("button", { name: "Refresh connection" }).click();
+  await expect(
+    page.getByText("Windows connection registered"),
+  ).toBeVisible();
   expect(launches).toBe(0);
+});
+
+test("runtime connection fails closed and can recover from a network error", async ({ page }) => {
+  let reachable = false;
+  await page.route("**/api/operator/runtime", (route) => {
+    if (!reachable) return route.fulfill({ status: 503, json: { detail: "backend unavailable" } });
+    return route.fulfill({ json: { ready: true, code: null, message: "Windows connection registered" } });
+  });
+  await page.goto("/");
+  await page.getByLabel("Synthetic pipeline test").uncheck();
+  await expect(page.getByRole("button", { name: /Start native run/ })).toBeDisabled();
+  await expect(page.getByText("Cannot check the runtime connection.")).toBeVisible();
+  reachable = true;
+  await page.getByRole("button", { name: "Refresh connection" }).click();
+  await expect(page.getByText("Windows connection registered")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Start native run/ })).toBeEnabled();
 });

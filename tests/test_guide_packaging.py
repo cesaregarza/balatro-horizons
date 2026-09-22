@@ -1,21 +1,16 @@
 """The guide must remain portable and usable by the existing rules helper."""
 
-import importlib.util
 import io
 import json
 import subprocess
 import sys
 import zipfile
-from pathlib import Path
 
 import pytest
 
-from balatro_horizons.agents.protocol import Rules, helper
-
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts/package_balatro_guide.py"
-SPEC = importlib.util.spec_from_file_location("package_balatro_guide", SCRIPT)
-packaging = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(packaging)
+from balatro_horizons.cli import package_balatro_guide as packaging
+from balatro_horizons.harness.contract import Rules
+from balatro_horizons.harness.helpers import helper
 
 
 @pytest.fixture
@@ -50,7 +45,10 @@ def test_cli_packages_a_portable_deterministic_bundle(guide, tmp_path):
     report_path = tmp_path / "report.json"
     command = [
         sys.executable,
-        str(SCRIPT),
+        "-m",
+        "balatro_horizons.cli",
+        "guide",
+        "package",
         "--guide",
         str(guide),
         "--output",

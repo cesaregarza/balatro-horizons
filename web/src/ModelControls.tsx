@@ -1,6 +1,7 @@
 import {
   effortOptions,
   supportsCachedHarness,
+  type CapabilityTable,
   type ModelConfig,
 } from "./modelSelection";
 
@@ -8,14 +9,16 @@ export function ModelControls({
   model,
   effort,
   onEffort,
+  capabilities,
   disabled = false,
 }: {
   model: ModelConfig;
   effort: string;
   onEffort: (effort: string) => void;
+  capabilities: CapabilityTable;
   disabled?: boolean;
 }) {
-  const efforts = effortOptions(model);
+  const efforts = effortOptions(model, capabilities);
   return (
     <>
       <div className="form-row">
@@ -45,7 +48,7 @@ export function ModelControls({
         reasoning across helper calls within a decision. Prompt caching is
         included for supported OpenAI models.
         {model.provider === "openai" &&
-          !supportsCachedHarness(model) &&
+          !supportsCachedHarness(model, capabilities) &&
           " Configure a supported model and cache read/write prices in Settings before starting."}
       </p>
     </>

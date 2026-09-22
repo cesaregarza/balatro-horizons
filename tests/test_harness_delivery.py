@@ -5,8 +5,9 @@ import json
 from copy import deepcopy
 
 from balatro_horizons.config import ROOT
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.runner import Runner
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
 
 
 class GoldenProvider:
@@ -43,9 +44,13 @@ def digest(value):
     return {"bytes": len(value), "sha256": hashlib.sha256(value).hexdigest()}
 
 
-def test_v7_delivery_is_byte_stable(store, config):
+def test_harness_delivery_is_byte_stable(store, config):
     provider = GoldenProvider()
-    result = Runner(store, config, FakeGame("HARNESS_GOLDEN"), provider).run()
+    spending = Spending.episode_only(
+        store.root / "private_runs" / "test-spending.json",
+        config.budgets.max_episode_cost_usd or 1,
+    )
+    result = Runner(store, config, FakeGame("HARNESS_GOLDEN"), provider, spending).run()
     rejected = [
         event["payload"]
         for event in store.events(result["episode_id"])

@@ -5,9 +5,10 @@ import pytest
 from pydantic import ValidationError
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
-from balatro_horizons.agents.protocol import arithmetic, context
 from balatro_horizons.contracts import ActionEnvelope, RemainingBudget
-from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.arithmetic import arithmetic
+from balatro_horizons.harness.context.build import context
 from balatro_horizons.observations.projection import HandleIssuer, project_public
 
 
@@ -29,7 +30,7 @@ def test_AT01_allowlist():
     raw["visible"]["seed"] = "PRIVATE_SEED_SENTINEL"
     for card in raw["visible"]["hand"]:
         card["rng_state"] = "PRIVATE_RNG_SENTINEL"
-    value = json.dumps(context(project(raw)))
+    value = json.dumps(dict(context(project(raw))))
     assert "PRIVATE_" not in value and "forbidden" not in value and "card-internal" not in value
 
 

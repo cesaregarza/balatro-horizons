@@ -1,17 +1,6 @@
-import importlib.util
-
 import pytest
 
-from balatro_horizons.config import ROOT
-
-
-@pytest.fixture
-def deploy(monkeypatch):
-    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    spec = importlib.util.spec_from_file_location("deploy_frontend", ROOT / "scripts/deploy_frontend.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.deploy
+from balatro_horizons.cli.deploy_frontend import deploy
 
 
 def fixture(tmp_path):
@@ -25,7 +14,7 @@ def fixture(tmp_path):
     return build, dist, tmp_path / "backup.html"
 
 
-def test_frontend_only_publish_keeps_old_assets_and_exact_index_backup(deploy, tmp_path):
+def test_frontend_only_publish_keeps_old_assets_and_exact_index_backup(tmp_path):
     build, dist, backup = fixture(tmp_path)
     result = deploy(build, dist, backup)
     assert result["backend_restarted"] is False
@@ -36,7 +25,7 @@ def test_frontend_only_publish_keeps_old_assets_and_exact_index_backup(deploy, t
 
 
 @pytest.mark.parametrize("failure", ["missing", "collision"])
-def test_bad_build_preserves_the_current_index(deploy, tmp_path, failure):
+def test_bad_build_preserves_the_current_index(tmp_path, failure):
     build, dist, backup = fixture(tmp_path)
     if failure == "missing":
         (build / "assets/new.js").unlink()

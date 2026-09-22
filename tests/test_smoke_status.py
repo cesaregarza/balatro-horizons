@@ -1,16 +1,11 @@
-import importlib.util
 import json
 import sys
 
 import pytest
 
-from balatro_horizons.agents.budget import Spending
-from balatro_horizons.config import ROOT
+from balatro_horizons.cli import smoke
+from balatro_horizons.harness.money import Spending
 from balatro_horizons.review.service import ReviewService
-
-spec = importlib.util.spec_from_file_location("smoke_openai", ROOT / "scripts/smoke_openai.py")
-smoke = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(smoke)
 
 
 def test_status_is_scoped_public_and_retains_unknown_reservations(store):

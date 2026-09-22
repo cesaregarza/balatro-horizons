@@ -5,25 +5,33 @@ import json
 import os
 import queue
 import threading
+from contextlib import contextmanager
 
-from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.budget import Spending, validate_paid_configuration
-from balatro_horizons.agents.frozen import restore_protocol, validate_continuation
-from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import ROOT
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.native import NativeGame
-from balatro_horizons.engine.windows_context import load_session
-from balatro_horizons.evaluation.scheduling import batch_attempts, reconcile_stop, record_stop
-from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.runner import OperatorAbort, Runner
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.game.session import NativeGame
+from balatro_horizons.game.windows_context import load_session
+from balatro_horizons.harness.baselines import Baseline
+from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
+from balatro_horizons.harness.contract import ProviderPolicy
+from balatro_horizons.harness.loop import OperatorAbort, run_episode
+from balatro_horizons.harness.money import (
+    Spending,
+    batch_attempts,
+    reconcile_stop,
+    record_stop,
+    validate_paid_configuration,
+)
+from balatro_horizons.harness.transport import DirectProvider
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
+from balatro_horizons.workbench.branches import prepare_branch
 
 
 class HumanPolicy:
-    paid = False
+    interface = "tools_v7"
     name = "human"
     actor = "human"
+    model = None
 
     def __init__(self, stop):
         self.queue = queue.Queue(maxsize=1)
@@ -41,46 +49,79 @@ class HumanPolicy:
                 pass
         raise OperatorAbort
 
+    def on_decision_end(self) -> None:
+        # The submitted operation already left the one-slot human queue.
+        pass
+
+    def on_commit(self) -> None:
+        # A human selection has no provider continuation to advance.
+        pass
+
 
 class InterventionPolicy:
+    interface = "tools_v7"
+
     def __init__(self, operations, continuation):
         self.operations = list(operations)
         self.continuation = continuation
 
     @property
     def actor(self):
-        return "human_override" if self.operations else getattr(self.continuation, "actor", "agent")
+        return "human_override" if self.operations else self.continuation.actor
 
     @property
-    def paid(self):
-        return not self.operations and self.continuation.paid
+    def active_policy(self):
+        return self if self.operations else self.continuation
+
+    @property
+    def name(self):
+        return self.continuation.name
+
+    @property
+    def model(self):
+        return self.continuation.model
 
     def decide(self, ctx, exchanges):
         if self.operations:
             return {
                 "kind": "action",
                 "envelope": {
-                    "observation_id": ctx["observation"]["observation_id"],
+                    "observation_id": ctx.observation["observation_id"],
                     "action": self.operations.pop(0),
                 },
             }
         return self.continuation.decide(ctx, exchanges)
 
-    def __getattr__(self, key):
-        return getattr(self.continuation, key)
+    def on_decision_end(self):
+        # An override itself has no continuation; forwarded turns have their own owner.
+        pass
+
+    def on_commit(self):
+        # Removing the operation at decision time already advances this wrapper.
+        pass
 
 
 class HumanSequencePolicy:
+    interface = "tools_v7"
+
     def __init__(self, human, continuation, steps):
         self.human, self.continuation, self.remaining = human, continuation, steps
 
     @property
-    def paid(self):
-        return self.remaining == 0 and self.continuation.paid
+    def active_policy(self):
+        return self.human if self.remaining else self.continuation
+
+    @property
+    def name(self):
+        return self.continuation.name
+
+    @property
+    def model(self):
+        return self.continuation.model
 
     @property
     def actor(self):
-        return "human" if self.remaining else getattr(self.continuation, "actor", "agent")
+        return "human" if self.remaining else self.continuation.actor
 
     def decide(self, ctx, exchanges):
         return (self.human if self.remaining else self.continuation).decide(ctx, exchanges)
@@ -88,8 +129,9 @@ class HumanSequencePolicy:
     def on_commit(self):
         self.remaining = max(0, self.remaining - 1)
 
-    def __getattr__(self, key):
-        return getattr(self.continuation, key)
+    def on_decision_end(self):
+        # The active human/provider policy clears its own state before this wrapper advances.
+        pass
 
 
 class RunService:
@@ -101,6 +143,18 @@ class RunService:
         self.active_id = None
         self._guard = threading.Lock()
         self.error = None
+
+    @contextmanager
+    def admission(self):
+        """Reserve the worker without making competing requests wait for replay."""
+        if not self._guard.acquire(blocking=False):
+            raise ValueError("WORKER_BUSY")
+        try:
+            if self.thread and self.thread.is_alive():
+                raise ValueError("WORKER_BUSY")
+            yield
+        finally:
+            self._guard.release()
 
     def validate_policy(self, config, agent):
         """Validate paid admission without constructing a client or game."""
@@ -154,7 +208,7 @@ class RunService:
                 restore_protocol(self.store, resume), config, agent, human=agent == "human"
             )
         policy = self.policy(config, agent)
-        from balatro_horizons.agents.instructions import load_prompt
+        from balatro_horizons.harness.instructions import load_prompt
 
         # NativeGame's constructor launches the game. Validate and capture prompt
         # bytes before constructing it; ordinary branches use their original snapshot.
@@ -166,7 +220,7 @@ class RunService:
         if human_steps:
             self.human = HumanPolicy(self.stop)
             policy = HumanSequencePolicy(self.human, policy, human_steps)
-        if calibration and (policy.paid or agent == "human"):
+        if calibration and (isinstance(policy, ProviderPolicy) or policy.model or agent == "human"):
             raise ValueError("CALIBRATION_REQUIRES_SCRIPTED_POLICY")
         manifest = {
             "evidence_kind": "SYNTHETIC_TEST" if offline else "NATIVE",
@@ -180,6 +234,10 @@ class RunService:
             manifest["evaluation_eligible"] = False
             manifest["assistance"] = "human_takeover" if agent == "human" else "intervention"
         eid = eid or self.store.create(manifest, {"seed": seed, "config": config.model_dump()})
+        spending = spending or Spending.episode_only(
+            self.store.root / "private_runs" / eid / "spending.json",
+            config.budgets.max_batch_cost_usd,
+        )
         self.review.expose(eid, "operator_configuration", model_identity_seen=True)
         self.active_id = eid
         lock_path = (
@@ -199,10 +257,19 @@ class RunService:
                     rules = json.loads(frozen.read_text())
                     if rules.get("environment_hash") != digest(game.lock):
                         raise ValueError("FROZEN_RULES_ENVIRONMENT_MISMATCH")
-                return Runner(
-                    self.store, config, game, policy, stop=self.stop, spending=spending, rules=rules,
+                return run_episode(
+                    self.store,
+                    config,
+                    game,
+                    policy,
+                    spending,
+                    stop=self.stop,
+                    rules=rules,
                     prompt_bytes=prompt_bytes,
-                ).run(eid=eid, resume=resume, history_prefix=prefix)
+                    eid=eid,
+                    resume=resume,
+                    history_prefix=prefix,
+                )
             except Exception as error:
                 if game:
                     try:
@@ -228,13 +295,11 @@ class RunService:
 
     def start(self, config, agent, seed, *, offline=False, calibration=False):
         config = config.model_copy(deep=True)
-        with self._guard:
-            if self.thread and self.thread.is_alive():
-                raise ValueError("WORKER_BUSY")
+        with self.admission():
             self.stop.clear()
             self.error = None
             self.validate_policy(config, agent)
-            from balatro_horizons.agents.instructions import load_prompt
+            from balatro_horizons.harness.instructions import load_prompt
 
             load_prompt(ROOT)
             if not offline:
@@ -269,9 +334,7 @@ class RunService:
         self.thread.start()
 
     def branch(self, config, parent, decision, mode, actions=None, agent=None, human_steps=3):
-        with self._guard:
-            if self.thread and self.thread.is_alive():
-                raise ValueError("WORKER_BUSY")
+        with self.admission():
             actions = actions or []
             if mode == "single_action_override" and len(actions) != 1:
                 raise ValueError("ONE_OVERRIDE_REQUIRED")
@@ -312,7 +375,13 @@ class RunService:
         with locked(self.store.root / "batches" / identifier(bid) / "scheduling.lock"):
             return self._run_batch(config, bid, offline=offline)
 
-    def _run_batch(self, config, bid, *, offline):
+    def preflight_batch(self, config, bid, *, offline=False):
+        with locked(self.store.root / "batches" / identifier(bid) / "scheduling.lock"):
+            self._freeze_batch(config, bid, offline=offline)
+            if not offline:
+                load_session()
+
+    def _freeze_batch(self, config, bid, *, offline):
         plan = json.loads((self.store.root / "batches" / bid / "plan.json").read_text())
         private = json.loads((self.store.root / "batches" / bid / "private.json").read_text())
         if plan["config_hash"] != digest(config.model_dump()):
@@ -324,6 +393,10 @@ class RunService:
                 raise ValueError("BATCH_EVIDENCE_KIND_CHANGED")
         else:
             atomic_json(execution_path, {"evidence_kind": evidence}, immutable=True)
+        return plan, private
+
+    def _run_batch(self, config, bid, *, offline):
+        plan, private = self._freeze_batch(config, bid, offline=offline)
         spending = Spending(
             self.store.root / "batches" / bid / "spending.json", config.budgets.max_batch_cost_usd
         )

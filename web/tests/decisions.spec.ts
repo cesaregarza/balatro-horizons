@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { awaitIdleWorker } from "./runHelpers";
 
 async function exported(page: Page, format: "json" | "jsonl") {
   const download = page.waitForEvent("download");
@@ -21,11 +22,12 @@ async function fixture(page: Page) {
     await page.request.get("/api/bootstrap")
   ).json();
   const headers = { "X-BH-Operator": operator_token };
+  await awaitIdleWorker(page, operator_token);
   const created = await page.request.post("/api/runs", {
     headers,
     data: { agent: "heuristic", offline: true },
   });
-  expect(created.ok()).toBe(true);
+  expect(created.ok(), await created.text()).toBe(true);
   const { episode_id } = await created.json();
   await expect
     .poll(async () => {
@@ -182,7 +184,7 @@ test("live explorer appends decisions, preserves the selected board, retries and
   let fail = false;
   let finished = false;
   let polls = 0;
-  await page.route("**/api/review/decisions", async (route) => {
+  await page.route("**/api/explore/decisions", async (route) => {
     polls += 1;
     if (fail) {
       await route.fulfill({
@@ -200,6 +202,28 @@ test("live explorer appends decisions, preserves the selected board, retries and
         summary: finished ? ledger.summary : null,
         source_journal_head: `live-${count}-${finished}`,
       },
+    });
+  });
+  await page.route("**/api/explore/export/jsonl", async (route) => {
+    const response = await route.fetch();
+    const rows = (await response.text())
+      .trimEnd()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    const snapshot = rows.slice(0, count).map((row) => ({
+      ...row,
+      snapshot_status: finished ? row.snapshot_status : "in_progress",
+      run_summary: finished ? row.run_summary : null,
+      source_journal_head: `live-${count}-${finished}`,
+    }));
+    await route.fulfill({
+      status: response.status(),
+      headers: {
+        ...response.headers(),
+        "content-disposition": `attachment; filename="balatro-${eid}-decisions${finished ? "" : "-partial"}.jsonl"`,
+      },
+      body: snapshot.map((row) => JSON.stringify(row)).join("\n") + "\n",
     });
   });
   await page.goto(`/#explore/${eid}`);

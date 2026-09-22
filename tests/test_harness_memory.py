@@ -6,28 +6,32 @@ from copy import deepcopy
 import httpx
 import pytest
 from provider_transport import with_input_count
+from runner_support import episode_spending
 from test_boundary import project
 from test_harness_tools import config_for
 from test_provider_continuations import model
 
-from balatro_horizons.agents.focused import context_bound
-from balatro_horizons.agents.notebook import RunNotebook, fold_notebook, restore_notebook
-from balatro_horizons.agents.protocol import ActionResult, decision_context, helper
-from balatro_horizons.agents.providers import DirectProvider, context_payload
-from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
-from balatro_horizons.agents.working_memory import (
+from balatro_horizons.config import WORKING_MEMORY_BYTES, WORKING_MEMORY_DECISIONS
+from balatro_horizons.contracts import Observation
+from balatro_horizons.evaluation.reports import episode_export
+from balatro_horizons.evidence.certification import read_checkpoint, verify_checkpoint
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import context_bound, decision_context
+from balatro_horizons.harness.context.memory import (
+    RunNotebook,
     WorkingMemory,
+    fold_notebook,
+    restore_notebook,
     restore_working_memory,
     size,
 )
-from balatro_horizons.config import WORKING_MEMORY_BYTES, WORKING_MEMORY_DECISIONS
-from balatro_horizons.contracts import Observation
-from balatro_horizons.engine.certification import read_checkpoint, verify_checkpoint
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.evaluation.reports import episode_export
-from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.review.service import ReviewService
-from balatro_horizons.runner import Runner
+from balatro_horizons.harness.contract import ActionResult
+from balatro_horizons.harness.helpers import helper
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.tool_interface import ACTION_MODELS, decode_tool
+from balatro_horizons.harness.transport import DirectProvider, context_payload
+from balatro_horizons.workbench.branches import prepare_branch
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 def select(ctx):
@@ -132,7 +136,7 @@ def test_helper_write_is_visible_immediately_and_survives_pruning_and_actions(st
         select,
         play,
     )
-    result = Runner(store, config, FakeGame(), policy).run()
+    result = Runner(store, config, FakeGame(), policy, episode_spending(store, config)).run()
     assert result["committed_actions"] == 2 and result["reason"] == "AGENT_ABORT"
     assert policy.contexts[0]["run_notebook"]["revision"] == 0
     for ctx in policy.contexts[1:]:
@@ -154,7 +158,7 @@ def test_helper_write_is_visible_immediately_and_survives_pruning_and_actions(st
 def test_repeated_exhausted_helpers_fail_without_substituting_game_action(store, config):
     config.budgets.max_helper_calls_per_decision = 0
     policy = WorkingScript(*[{"kind": "arithmetic", "expression": "1+1"}] * 3)
-    result = Runner(store, config, FakeGame(), policy).run()
+    result = Runner(store, config, FakeGame(), policy, episode_spending(store, config)).run()
     assert result["reason"] == "AGENT_PROTOCOL_FAILURE" and result["committed_actions"] == 0
     assert len(policy.contexts) == 3
 
@@ -162,7 +166,7 @@ def test_repeated_exhausted_helpers_fail_without_substituting_game_action(store,
 def test_recent_actions_results_and_helpers_survive_without_note_writes(store, config):
     policy = WorkingScript({"kind": "arithmetic", "expression": "7*6"}, select,
                            {"kind": "inspect_page", "section": "hand", "offset": 0}, play)
-    result = Runner(store, config, FakeGame(), policy).run()
+    result = Runner(store, config, FakeGame(), policy, episode_spending(store, config)).run()
     assert result["committed_actions"] == 2 and result["reason"] == "AGENT_ABORT"
     ctx = policy.contexts[-1]
     frames = ctx["working_memory"]["frames"]
@@ -172,6 +176,10 @@ def test_recent_actions_results_and_helpers_survive_without_note_writes(store, c
     assert frames[-1]["observed_result"] == ctx["observation"]["last_action"]
     assert frames[-1]["recorded_decision_note"].startswith("Recorded note")
     assert ctx["run_notebook"]["entries"] == {}
+    outcome = ctx["previous_action_outcome"]
+    assert outcome["action_type"] == "play_hand"
+    assert outcome["recorded_decision_note"] == frames[-1]["recorded_decision_note"]
+    assert outcome["from_observation_id"] == frames[-1]["decision_id"]
     assert policy.exchanges[-1] == []  # No provider-native replay across actions.
     assert "Maintain a concise" in ctx["prompt"]
 
@@ -179,13 +187,19 @@ def test_recent_actions_results_and_helpers_survive_without_note_writes(store, c
 def test_action_attached_notes_need_no_helper_and_delete_is_visible(store, config):
     config.budgets.max_helper_calls_per_decision = 0
     policy = WorkingScript(annotated(select), annotated(play, text=None))
-    result = Runner(store, config, FakeGame(), policy).run()
+    result = Runner(store, config, FakeGame(), policy, episode_spending(store, config)).run()
     assert result["committed_actions"] == 2
     assert policy.contexts[1]["run_notebook"]["entries"] == {"plan": "Keep this conclusion"}
     assert policy.contexts[2]["run_notebook"]["entries"] == {}
+    written = policy.contexts[1]["previous_action_outcome"]["recorded_note_update"]
+    deleted = policy.contexts[2]["previous_action_outcome"]["recorded_note_update"]
+    assert (written["key"], written["text"], written["revision"]) == ("plan", "Keep this conclusion", 1)
+    assert written["timing"] == "before_action_execution"
+    assert (deleted["operation"], deleted["text"], deleted["revision"]) == ("delete_run_note", None, 2)
     assert all(c["helper_status"]["remaining"] == 0 for c in policy.contexts)
     events = store.events(result["episode_id"])
     assert len([e for e in events if e["type"] == "run_note"]) == 2
+    assert written["note_event_id"] == next(e["event_id"] for e in events if e["type"] == "run_note")
     assert not any(e["type"] == "helper_result" for e in events)
     assert read_checkpoint(store, result["episode_id"], 0)["run_notebook"]["revision"] == 0
     assert read_checkpoint(store, result["episode_id"], 1)["run_notebook"]["revision"] == 1
@@ -198,11 +212,12 @@ def test_action_attached_notes_need_no_helper_and_delete_is_visible(store, confi
 ])
 def test_bad_edit_rejects_entire_submission_without_execution(store, config, edit, code):
     policy = WorkingScript(lambda ctx: {**select(ctx), "note_update": edit}, select)
-    result = Runner(store, config, FakeGame(), policy).run()
+    result = Runner(store, config, FakeGame(), policy, episode_spending(store, config)).run()
     assert result["committed_actions"] == 1
     assert policy.contexts[0]["observation"]["observation_id"] == policy.contexts[1]["observation"]["observation_id"]
     assert policy.exchanges[1][-1]["result"]["error"] == code
     assert not any(e["type"] == "run_note" for e in store.events(result["episode_id"]))
+    assert policy.contexts[-1]["previous_action_outcome"]["recorded_note_update"] is None
 
 
 def test_bad_game_action_does_not_write_valid_attached_note(store, config):
@@ -211,23 +226,32 @@ def test_bad_game_action_does_not_write_valid_attached_note(store, config):
         raw["envelope"]["action"]["blind_id"] = "invalid"
         return raw
     policy = WorkingScript(invalid, select)
-    result = Runner(store, config, FakeGame(), policy).run()
+    result = Runner(store, config, FakeGame(), policy, episode_spending(store, config)).run()
     assert result["committed_actions"] == 1
     assert policy.contexts[1]["run_notebook"]["revision"] == 0
+    assert policy.contexts[-1]["previous_action_outcome"]["recorded_note_update"] is None
 
 
 def test_durable_attached_note_survives_native_failure_without_claiming_success(store, config):
-    from balatro_horizons.engine.native import NativeRejected
+    from balatro_horizons.game.contract import NativeRejected
 
     class RejectedGame(FakeGame):
         def apply_public_action(self, *args):
             raise NativeRejected("test rejection")
 
-    result = Runner(store, config, RejectedGame(), WorkingScript(annotated(select))).run()
+    runner = Runner(
+        store,
+        config,
+        RejectedGame(),
+        WorkingScript(annotated(select)),
+        episode_spending(store, config),
+    )
+    result = runner.run()
     events = store.events(result["episode_id"])
     assert result["committed_actions"] == 0
     assert any(e["type"] == "run_note" for e in events)
     assert not any(e["type"] == "action_commit" for e in events)
+    assert runner.working_memory.view()["frames"] == []
     assert read_checkpoint(store, result["episode_id"], 0)["run_notebook"]["revision"] == 0
 
 
@@ -238,7 +262,13 @@ def test_note_storage_failure_prevents_game_action(store, config, monkeypatch):
             raise OSError("test storage failure")
         return original(eid, kind, payload, **kwargs)
     monkeypatch.setattr(store, "append", append)
-    runner = Runner(store, config, FakeGame(), WorkingScript(annotated(select)))
+    runner = Runner(
+        store,
+        config,
+        FakeGame(),
+        WorkingScript(annotated(select)),
+        episode_spending(store, config),
+    )
     result = runner.run()
     assert result["outcome"] == "INFRASTRUCTURE_FAILURE"
     assert result["committed_actions"] == 0 and runner.notebook.entries == {}
@@ -253,7 +283,13 @@ def test_failed_helper_note_journal_append_does_not_make_note_visible(store, con
         return original(eid, kind, payload, **kwargs)
 
     monkeypatch.setattr(store, "append", append)
-    runner = Runner(store, config, FakeGame(), WorkingScript(note("x", "y")))
+    runner = Runner(
+        store,
+        config,
+        FakeGame(),
+        WorkingScript(note("x", "y")),
+        episode_spending(store, config),
+    )
     result = runner.run()
     assert result["outcome"] == "INFRASTRUCTURE_FAILURE"
     assert result["committed_actions"] == 0
@@ -270,7 +306,13 @@ def test_helper_note_stays_durable_when_acknowledgment_write_fails(store, config
         return original(eid, kind, payload, **kwargs)
 
     monkeypatch.setattr(store, "append", append)
-    result = Runner(store, config, FakeGame(), WorkingScript(note("x", "y"))).run()
+    result = Runner(
+        store,
+        config,
+        FakeGame(),
+        WorkingScript(note("x", "y")),
+        episode_spending(store, config),
+    ).run()
     assert result["outcome"] == "INFRASTRUCTURE_FAILURE"
     events = store.events(result["episode_id"])
     assert fold_notebook(events).entries == {"x": "y"}
@@ -317,8 +359,8 @@ def test_retention_bounds_drop_whole_frames_and_private_events_are_ignored():
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
 def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, config):
-    policy = WorkingScript(annotated(select), play)
-    Runner(store, config, FakeGame(), policy).run()
+    policy = WorkingScript(annotated(select), annotated(play, text="I expect this hand to win"))
+    Runner(store, config, FakeGame(), policy, episode_spending(store, config)).run()
     first, last = [
         context_payload(ctx, [], provider)
         for ctx in (policy.contexts[0], policy.contexts[-1])
@@ -328,15 +370,55 @@ def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, con
     messages = last.get("input", last.get("messages"))
     view = json.loads(next(m for m in messages if m.get("role") == "user")["content"])
     assert len(view["working_memory"]["frames"]) == 2
-    assert view["run_notebook"]["entries"] == {"plan": "Keep this conclusion"}
+    assert view["run_notebook"]["entries"] == {"plan": "I expect this hand to win"}
+    assert view["previous_action_outcome"] == policy.contexts[-1]["previous_action_outcome"]
+    assert view["previous_action_outcome"]["action_type"] == "play_hand"
+    assert view["previous_action_outcome"]["recorded_note_update"]["text"] == "I expect this hand to win"
     for definition in last["tools"]:
         if definition["name"] in ACTION_MODELS:
             schema = definition.get("parameters", definition.get("input_schema"))
             assert "note_update" in schema["required"] and "memory_update" not in schema["properties"]
+            if definition["name"] in ("buy", "use_consumable", "choose_pack"):
+                guidance = schema["properties"]["target_ids"]["description"]
+                assert "list order does not move them" in guidance
+                assert "Death converts the left selected card into the right selected card" in guidance
     args = {"observation_id": 0, "note_update": {"key": "k", "text": "v"}}
     assert decode_tool("cash_out", args)["note_update"] == args["note_update"]
     with pytest.raises(ValueError, match="LEGACY_MEMORY_UPDATE_NOT_ALLOWED"):
         decode_tool("cash_out", {"observation_id": 0, "memory_update": "retired"})
+
+
+def test_unfrozen_context_matches_frozen_guidance_and_uses_bundle_outcome_flag(store, config):
+    policy = WorkingScript(select)
+    result = Runner(store, config, FakeGame(), policy, episode_spending(store, config)).run()
+    checkpoint = read_checkpoint(store, result["episode_id"], 0)
+    canonical = Observation.model_validate(checkpoint["observation"])
+    ctx, _ = decision_context(canonical, [])
+    frozen_definitions = {definition["name"]: definition for definition in policy.contexts[0]["tools"]}
+    for definition in ctx["tools"]:
+        if definition["name"] in ("buy", "use_consumable", "choose_pack"):
+            assert definition == frozen_definitions[definition["name"]]
+    frozen = json.loads(
+        (store.episode_path(result["episode_id"], True) / "agent-protocol.json").read_text()
+    )
+    assert frozen["memory_policy"]["action_outcome"] == "previous-action-outcome-v2"
+    without_feature = deepcopy(frozen)
+    without_feature["memory_policy"].pop("action_outcome")
+    old_context, _ = decision_context(canonical, [], frozen=without_feature)
+    assert "previous_action_outcome" not in old_context
+
+
+@pytest.mark.parametrize("name,selection", [
+    ("buy", {"offer_id": "offer", "mode": "buy_and_use"}),
+    ("use_consumable", {"consumable_id": "death"}),
+    ("choose_pack", {"offer_id": "offer"}),
+])
+def test_target_guidance_never_reorders_a_submitted_selection(name, selection):
+    args = {"observation_id": 4, "target_ids": ["right_card", "left_card"],
+            "note_update": None, "decision_note": None, **selection}
+    action = decode_tool(name, args)["envelope"]["action"]
+    assert action["target_ids"] == ["right_card", "left_card"]
+    assert args["target_ids"] == action["target_ids"]
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
@@ -393,7 +475,7 @@ def test_provider_parity_dynamic_notes_and_bounded_helper_feedback(store, monkey
         provider_model, config.budgets,
         httpx.Client(transport=httpx.MockTransport(with_input_count(respond))),
     )
-    result = Runner(store, config, FakeGame(), policy).run()
+    result = Runner(store, config, FakeGame(), policy, episode_spending(store, config)).run()
     assert result["committed_actions"] == 1 and result["reason"] == "AGENT_ABORT"
     assert len(requests) == 4
     assert all(body["tools"] == requests[0]["tools"] for body in requests)
@@ -419,7 +501,13 @@ def test_provider_parity_dynamic_notes_and_bounded_helper_feedback(store, monkey
 
 
 def test_context_budget_prunes_history_before_live_helpers_and_notebook(store, config):
-    result = Runner(store, config, FakeGame(), WorkingScript(select)).run()
+    result = Runner(
+        store,
+        config,
+        FakeGame(),
+        WorkingScript(select),
+        episode_spending(store, config),
+    ).run()
     observation = Observation.model_validate(read_checkpoint(store, result["episode_id"], 1)["observation"])
     memory = memory_fixture().view()
     ctx, exchanges = decision_context(observation, [], working_memory=memory)
@@ -429,6 +517,7 @@ def test_context_budget_prunes_history_before_live_helpers_and_notebook(store, c
         observation, [], working_memory=memory, byte_limit=bound - 500
     )
     assert len(smaller["working_memory"]["frames"]) < 3
+    assert smaller["previous_action_outcome"] == ctx["previous_action_outcome"]
     assert smaller["working_memory"]["request_pruned_decisions"] > 0
     assert smaller["context_bytes_upper_bound"] <= bound - 500
     assert memory["frames"][0]["decision_id"] == 2  # Source never mutated.
@@ -441,11 +530,17 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
     root = Runner(store, config, FakeGame(), WorkingScript(
         {"kind": "arithmetic", "expression": "7*6"}, annotated(select),
         {"kind": "rules", "key": "FUTURE_PARENT"},
-        note("plan", "LATER_PARENT"), play)).run()["episode_id"]
+        note("plan", "LATER_PARENT"), play), episode_spending(store, config)).run()["episode_id"]
     assert verify_checkpoint(store, config, root, 1)["status"] == "passed"
     child, checkpoint, prefix = prepare_branch(store, config, root, 1, "agent_continue")
     child_policy = WorkingScript(play, note("later", "FUTURE_CHILD"))
-    result = Runner(store, config, FakeGame(), child_policy).run(eid=child, resume=checkpoint, history_prefix=prefix)
+    result = Runner(
+        store,
+        config,
+        FakeGame(),
+        child_policy,
+        episode_spending(store, config),
+    ).run(eid=child, resume=checkpoint, history_prefix=prefix)
     assert result["reason"] == "AGENT_ABORT"
     view = child_policy.contexts[0]["working_memory"]
     assert view == checkpoint["working_memory"]
@@ -453,18 +548,28 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
         "plan": "Keep this conclusion"
     }
     assert view["frames"][0]["episode_id"] == root
+    assert child_policy.contexts[0]["previous_action_outcome"]["recorded_note_update"] == (
+        view["frames"][0]["recorded_note_update"]
+    )
+    assert view["frames"][0]["recorded_note_update"]["text"] == "Keep this conclusion"
     assert "FUTURE_PARENT" not in json.dumps(view)
-    assert "LATER_PARENT" not in json.dumps(child_policy.contexts[0])
+    assert "LATER_PARENT" not in json.dumps(dict(child_policy.contexts[0]))
     assert verify_checkpoint(store, config, child, 1)["status"] == "passed"
     grandchild, snapshot, ancestors = prepare_branch(store, config, child, 1, "agent_continue")
     grand = WorkingScript({"kind": "action_result", "decision_id": 0})
-    Runner(store, config, FakeGame(), grand).run(eid=grandchild, resume=snapshot, history_prefix=ancestors)
+    Runner(
+        store,
+        config,
+        FakeGame(),
+        grand,
+        episode_spending(store, config),
+    ).run(eid=grandchild, resume=snapshot, history_prefix=ancestors)
     assert grand.contexts[0]["working_memory"] == view
     assert grand.contexts[0]["run_notebook"]["entries"] == {
         "plan": "Keep this conclusion"
     }
     assert grand.contexts[0]["run_notebook"]["revision"] == snapshot["run_notebook"]["revision"]
-    assert "FUTURE_CHILD" not in json.dumps(grand.contexts[0])
+    assert "FUTURE_CHILD" not in json.dumps(dict(grand.contexts[0]))
     assert grand.exchanges[1][-1]["result"]["references"]["action"]["episode_id"] == root
     corrupt = deepcopy(snapshot["working_memory"])
     corrupt["frames"][0]["helpers"][0]["result"] = {"result": "999"}
@@ -496,7 +601,7 @@ def read_action_result(events, observation, **kwargs):
 
 def test_action_result_uses_exact_public_cutoff(store, config):
     policy = WorkingScript(select, play, note("later", "do not include in old receipt"))
-    result = Runner(store, config, FakeGame(), policy).run()
+    result = Runner(store, config, FakeGame(), policy, episode_spending(store, config)).run()
     events = store.events(result["episode_id"])
     observations = [
         Observation.model_validate(event["payload"])
@@ -537,8 +642,14 @@ def test_prospective_review_and_export_keep_current_edit_behind_action_reveal(st
     with pytest.raises(ValueError, match="LOCAL_CONTEXT_LIMIT"):
         decision_context(observation, [], notebook=book.view(), byte_limit=2000)
 
-    eid = Runner(store, config, FakeGame(), WorkingScript(annotated(select, text="CURRENT_EDIT_SENTINEL"), play)).run()["episode_id"]
-    review = ReviewService(store)
+    eid = Runner(
+        store,
+        config,
+        FakeGame(),
+        WorkingScript(annotated(select, text="CURRENT_EDIT_SENTINEL"), play),
+        episode_spending(store, config),
+    ).run()["episode_id"]
+    review = WorkbenchService(store)
     token = review.open(eid)["review_token"]
     assert "CURRENT_EDIT_SENTINEL" not in json.dumps(review.view(token))
     review.advance(token)

@@ -1,0 +1,154 @@
+.dev-trace {
+  border-top: 2px solid #748eb2;
+  margin-top: 24px;
+  padding-top: 16px;
+  min-width: 0;
+}
+.dev-trace h3 {
+  font-size: 20px;
+}
+.dev-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dev-call {
+  padding: 16px;
+  margin: 14px 0;
+  border: 1px solid #425575;
+  border-radius: 8px;
+  background: #121e2d;
+  min-width: 0;
+}
+.dev-call h4 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.dev-status {
+  color: #f0c591;
+}
+.dev-meta {
+  font-size: 11px;
+  color: #acbdd1;
+  overflow-wrap: anywhere;
+}
+.dev-tool {
+  margin: 12px 0;
+  padding: 10px;
+  border-left: 3px solid #729bb0;
+  min-width: 0;
+}
+.dev-json {
+  margin: 8px 0;
+  min-width: 0;
+}
+.dev-json summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.dev-json pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-height: 65vh;
+  overflow: auto;
+  max-width: 100%;
+  font-size: 12px;
+}
+.dev-results {
+  margin: 14px 0;
+}
+.dev-trace h5 {
+  font-size: 14px;
+  margin: 14px 0 8px;
+}
+.dev-value,
+.dev-result,
+.dev-context,
+.dev-technical,
+.dev-settled {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dev-value dl {
+  display: block;
+  margin: 8px 0;
+}
+.dev-value dl > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr);
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid #283b50;
+}
+.dev-value dt {
+  color: #a9bdd1;
+}
+.dev-value dd {
+  margin: 0;
+  min-width: 0;
+}
+.dev-value-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dev-expand {
+  display: block;
+  margin: 6px 0;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.dev-result,
+.dev-model-note,
+.dev-settled {
+  padding: 10px;
+  margin: 10px 0;
+  background: #0e1926;
+  border-radius: 6px;
+}
+.dev-result > strong,
+.dev-result > small,
+.dev-model-note > strong {
+  display: block;
+  margin-bottom: 6px;
+}
+.dev-model-note {
+  border-left: 2px solid #bdacdc;
+}
+.dev-quote {
+  color: #a9e0bf;
+  font-weight: 600;
+}
+.dev-error {
+  color: #ffc0b7;
+}
+.dev-context,
+.dev-technical {
+  margin: 12px 0;
+}
+.dev-context > summary,
+.dev-technical > summary {
+  cursor: pointer;
+}
+.dev-technical {
+  border-top: 1px solid #425575;
+  padding-top: 10px;
+}
+.dev-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dev-toggle input {
+  width: auto;
+}
+@media (max-width: 600px) {
+  .dev-call {
+    padding: 10px;
+  }
+  .dev-value dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+}

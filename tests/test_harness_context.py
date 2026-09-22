@@ -1,6 +1,7 @@
 """Public context compression, bounded retrieval and provider parity; no live APIs."""
 
 import json
+from collections.abc import Mapping
 from copy import deepcopy
 
 import pytest
@@ -9,18 +10,6 @@ from test_boundary import project
 from test_harness_tools import config_for
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
-from balatro_horizons.agents.budget import reservation_usd
-from balatro_horizons.agents.focused import (
-    CARD_DEFAULTS,
-    COUNTER_DEFAULTS,
-    PAGE_BYTES,
-    encode,
-    text_page,
-)
-from balatro_horizons.agents.notebook import RunNotebook
-from balatro_horizons.agents.protocol import Operation, context, decision_context, helper
-from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
-from balatro_horizons.agents.skills import load_guide
 from balatro_horizons.config import (
     CONTEXT_FRAMING_BYTES,
     CONTEXT_SETTINGS_BYTES,
@@ -28,11 +17,53 @@ from balatro_horizons.config import (
     ModelConfig,
 )
 from balatro_horizons.contracts import Observation
-from balatro_horizons.engine.fake import FakeGame
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import (
+    HELPER_EXHAUSTED_MESSAGE,
+    context,
+    decision_context,
+)
+from balatro_horizons.harness.context.memory import RunNotebook
+from balatro_horizons.harness.context.present import (
+    CARD_DEFAULTS,
+    COUNTER_DEFAULTS,
+    PAGE_BYTES,
+    encode,
+    text_page,
+)
+from balatro_horizons.harness.contract import Operation
+from balatro_horizons.harness.helpers import helper
+from balatro_horizons.harness.money import reservation_usd
+from balatro_horizons.harness.skills import load_guide
+from balatro_horizons.harness.tool_interface import ACTION_MODELS
+from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure, ProviderFailure
 
 
 def read(raw, obs, events=(), rules=None):
     return helper(Operation.validate_python(raw), events, rules or {}, obs)
+
+
+def test_context_is_explicit_mapping_with_source_order_and_nullable_outcome():
+    ctx = context(project(FakeGame().observe_private()))
+    assert isinstance(ctx, Mapping) and not isinstance(ctx, dict)
+    assert ctx.previous_action_outcome is None
+    assert dict(ctx)["previous_action_outcome"] is None
+    keys = list(ctx)
+    assert keys.index("working_memory") + 1 == keys.index("previous_action_outcome")
+    assert keys.index("previous_action_outcome") + 1 == keys.index("allowed_tools")
+    assert keys.index("allowed_tools") + 1 == keys.index("helper_status")
+    assert "skill_catalog_delivery" not in ctx
+
+
+def test_exhausted_helper_allowance_agrees_with_allowed_tools_and_message():
+    observation = project(FakeGame().observe_private())
+    ctx = context(observation, helper_remaining=0)
+    assert ctx.helper_status["remaining"] == 0
+    assert ctx.helper_status["message"] == HELPER_EXHAUSTED_MESSAGE
+    assert set(ctx.allowed_tools) <= set(ACTION_MODELS) | {"abort_run"}
+    assert "select_blind" in ctx.allowed_tools
+    assert "inspect_state" not in ctx.allowed_tools
+    assert "set_run_note" not in ctx.allowed_tools
 
 
 def cache_model():
@@ -168,9 +199,8 @@ def test_disjoint_cache_input_categories_and_worst_case_reservation():
                 "input_tokens_details": {"cached_tokens": 3000, "cache_write_tokens": 1000},
             }
         }
-        assert policy.usage_cost(response, 0.2) == pytest.approx(
-            (1000 * 2 + 3000 * 0.2 + 1000 * 2.5 + 100 * 12) / 1_000_000
-        )
+        # 1k ordinary × $2 + 3k reads × $0.20 + 1k writes × $2.50 + 100 output × $12.
+        assert policy.usage_cost(response, 0.2) == pytest.approx(0.0063)
         for details in (
             None,
             {},

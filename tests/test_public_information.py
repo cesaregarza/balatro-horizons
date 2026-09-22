@@ -9,20 +9,24 @@ from test_boundary import project
 from test_provider_continuations import model
 
 from balatro_horizons.actions.validation import validate_action
-from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.protocol import Operation, decision_context, helper
-from balatro_horizons.agents.providers import DirectProvider
 from balatro_horizons.config import Limits
 from balatro_horizons.contracts import ActionEnvelope, Observation
-from balatro_horizons.engine.certification import verify_checkpoint
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.native_state import normalize
 from balatro_horizons.evaluation.reports import episode_export
+from balatro_horizons.evidence.certification import verify_checkpoint
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.game.state import normalize
+from balatro_horizons.harness.baselines import Baseline
+from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.contract import Operation
+from balatro_horizons.harness.helpers import helper
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
+from balatro_horizons.harness.transport import DirectProvider
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer
 from balatro_horizons.review.service import ReviewService
-from balatro_horizons.runner import Runner
 from balatro_horizons.service import RunService
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 def native_state(phase="SHOP"):
@@ -255,7 +259,16 @@ def test_last_action_preserves_departed_labels_without_promoting_agent_claims(st
                 operation["envelope"]["decision_note"] = "I scored a Royal Flush for 999999 points"
             return operation
 
-    result = Runner(store, config, FakeGame(), ClaimingPolicy("heuristic")).run()
+    result = Runner(
+        store,
+        config,
+        FakeGame(),
+        ClaimingPolicy("heuristic"),
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     observations = [
         Observation.model_validate(e["payload"])
         for e in store.events(result["episode_id"])
@@ -339,7 +352,7 @@ def test_branch_retains_known_last_action_without_recomputing_parent_future(stor
 
 
 def test_last_action_remains_behind_prospective_consequence_gate(store, episode):
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     opened = review.open(episode)
     assert opened["view"]["observation"]["last_action"] is None
     token = opened["review_token"]

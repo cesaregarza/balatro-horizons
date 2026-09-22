@@ -1,17 +1,14 @@
-import importlib.util
 import json
 import subprocess
 
 import pytest
 
-from balatro_horizons.config import ROOT
+from balatro_horizons.cli import install_candidate
 
 
 @pytest.fixture
 def prepared(tmp_path):
-    spec = importlib.util.spec_from_file_location('install_candidate', ROOT / 'scripts/install_candidate.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = install_candidate
     root, candidate = tmp_path / 'live', tmp_path / 'candidate'
     def git(*args):
         subprocess.run(['git', '-c', 'commit.gpgsign=false', *map(str, args)],
@@ -79,7 +76,11 @@ def test_runtime_snapshot_is_complete_without_secrets_or_generated_data(prepared
         (runtime/name).write_text(name)
     (runtime/'Mods/lovely').mkdir()
     (runtime/'Mods/lovely/generated.lua').write_text('generated')
-    monkeypatch.setattr(module, 'OWNED_RUNTIME', runtime)
+    monkeypatch.setattr(
+        module,
+        'Environment',
+        lambda: type('RuntimeConfig', (), {'runtime': str(runtime)})(),
+    )
     backup = tmp_path/'snapshot'
     result = module.snapshot_runtime(backup)
     hashes = json.loads((backup/'manifest.json').read_text())

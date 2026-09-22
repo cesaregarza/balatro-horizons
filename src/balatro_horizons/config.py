@@ -13,6 +13,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from balatro_horizons.game.environment import Environment
+
 ROOT = Path(__file__).resolve().parents[2]
 
 # Transport bytes, model tokens, and dollar reservations have independent units.
@@ -28,6 +30,8 @@ AUTOMATIC_PUBLIC_EVENT_COUNT = 2
 EVENT_SUMMARY_CHARACTERS = 240
 HELPER_PAGE_BYTES = 2_048
 RETAINED_HELPER_RESULTS = 3
+NOTEBOOK_KEY_MIN = 1
+NOTEBOOK_KEY_MAX = 64
 WORKING_MEMORY_DECISIONS = 3
 WORKING_MEMORY_BYTES = 24_576
 WORKING_MEMORY_HELPER_BYTES = 4_096
@@ -95,13 +99,9 @@ class ModelConfig(Options):
             raise ValueError("configure both cache read and write rates")
         if self.cached_input_usd_per_million is not None and self.provider != "openai":
             raise ValueError("category cache pricing is currently OpenAI-only")
-        allowed = (
-            {"temperature", "reasoning_effort", "reasoning_summary"}
-            if self.provider == "openai"
-            else {"temperature", "thinking_budget"}
-        )
-        if set(self.settings) - allowed:
-            raise ValueError("unsupported provider setting")
+        from balatro_horizons.harness.transport import validate_settings
+
+        validate_settings(self.provider, self.model, self.settings)
         date.fromisoformat(self.pricing_date)
         if self.model != self.model.strip() or not self.model.strip():
             raise ValueError("explicit model identifier required")
@@ -128,9 +128,6 @@ class ModelConfig(Options):
             "detailed",
         ):
             raise ValueError("invalid reasoning summary")
-        if self.provider == "openai" and self.model == "gpt-5.6-luna":
-            if self.settings.get("reasoning_effort") == "minimal":
-                raise ValueError("Luna does not support minimal reasoning effort")
         if "thinking_budget" in self.settings and (
             type(self.settings["thinking_budget"]) is not int
             or self.settings["thinking_budget"] < 1024
@@ -142,20 +139,10 @@ class ModelConfig(Options):
         return self
 
 
-class Environment(Options):
-    adapter: str = "balatrobot"
-    deck: str = "RED"
-    stake: str = "GOLD"
-    unlock_profile: str = "dedicated_fully_unlocked"
-    resolved_manifest: str = "private/environment.lock.json"
-    require_live_certification: Literal[True] = True
-    runtime: str = "/mnt/d/BalatroHorizonsRuntime"
-    powershell: str = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
-    port: int = Field(default=12346, ge=1024, le=65535)
-    timeout_seconds: int = Field(default=90, ge=1, le=300)
-
-
 class Config(Options):
+    # Review sessions and intervention controls are an explicit operator
+    # opt-in. The ordinary dashboard remains enabled.
+    workbench_enabled: bool = False
     skills: Literal["balatro-guide-v1", "none"] = "balatro-guide-v1"
     benchmark: dict = Field(
         default_factory=lambda: {
@@ -184,13 +171,17 @@ class Config(Options):
         return self
 
     def public(self):
+        from balatro_horizons.harness.transport import public_capability_table
+
         return {
             "benchmark": self.benchmark,
+            "workbench": self.workbench_enabled,
             "skills": self.skills,
             "deck": self.environment.deck,
             "stake": self.environment.stake,
             "budgets": self.budgets.model_dump(),
             "models": {k: v.model_dump() for k, v in self.models.items()},
+            "model_capabilities": public_capability_table(self.models),
         }
 
 
