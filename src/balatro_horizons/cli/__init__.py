@@ -10,6 +10,10 @@ from .parser import build_parser
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if hasattr(args, "operation_handler"):
+        # These migrated commands own their text/JSON and nonzero exit codes.
+        # Keep their original exception behavior outside the run API's envelope.
+        return args.operation_handler(args)
     try:
         result = dispatch(args)
         if result is not None:

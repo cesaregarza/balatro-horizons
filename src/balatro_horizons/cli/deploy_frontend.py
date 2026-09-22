@@ -1,14 +1,14 @@
-#!/usr/bin/env python3
 """Publish a built frontend without restarting the backend or deleting old assets."""
 
-import argparse
 import json
 import re
 import shutil
 import tempfile
 from pathlib import Path
 
-from install_candidate import child, digest, native
+from balatro_horizons.evidence.lock import native_path as native
+
+from .install_candidate import child, digest
 
 
 def deploy(build, dist, backup):
@@ -52,18 +52,23 @@ def deploy(build, dist, backup):
         staged.replace(old_index)
     finally:
         staged.unlink(missing_ok=True)
-    return {"deployed": True, "index_sha256": digest(old_index), "assets": len(sources),
-            "previous_index": str(backup) if backup.exists() else None, "backend_restarted": False}
+    return {
+        "deployed": True,
+        "index_sha256": digest(old_index),
+        "assets": len(sources),
+        "previous_index": str(backup) if backup.exists() else None,
+        "backend_restarted": False,
+    }
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def configure_parser(parser):
+    parser.description = __doc__
     parser.add_argument("--build", type=Path, required=True, help="Completed Vite build directory")
     parser.add_argument("--dist", type=Path, required=True, help="Existing served web/dist directory")
     parser.add_argument("--backup", type=Path, required=True, help="New file for the previous index")
-    args = parser.parse_args()
+    parser.set_defaults(operation_handler=run, operation_parser=parser)
+    return parser
+
+
+def run(args):
     print(json.dumps(deploy(args.build, args.dist, args.backup), sort_keys=True))
-
-
-if __name__ == "__main__":
-    main()

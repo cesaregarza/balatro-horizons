@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
 """Clone a saved player's harness settings with explicit model and accounting rates.
 
 Previews by default. --apply registers the player through the workbench API;
 it preserves budgets, skills and other players and never starts a paid run.
 """
 
-import argparse
 import json
 import re
 from copy import deepcopy
@@ -14,19 +12,8 @@ from balatro_horizons.config import ModelConfig
 from balatro_horizons.operator_client import operator_request
 
 
-def settings_payload(config, alias, model):
-    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", alias):
-        raise ValueError("INVALID_PLAYER_ALIAS")
-    models = deepcopy(config["models"])
-    validated = ModelConfig.model_validate(model).model_dump()
-    if alias in models and models[alias] != validated:
-        raise ValueError("EXISTING_PLAYER_DIFFERS")
-    models[alias] = validated
-    return {"models": models, "budgets": deepcopy(config["budgets"]), "skills": config["skills"]}
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def configure_parser(parser):
+    parser.description = __doc__
     parser.add_argument("--alias", required=True)
     parser.add_argument("--clone", required=True)
     parser.add_argument("--model", required=True)
@@ -40,7 +27,22 @@ def main():
     parser.add_argument("--cache-write-rate", type=float)
     parser.add_argument("--pricing-date", required=True)
     parser.add_argument("--apply", action="store_true")
-    args = parser.parse_args()
+    parser.set_defaults(operation_handler=run, operation_parser=parser)
+    return parser
+
+
+def settings_payload(config, alias, model):
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", alias):
+        raise ValueError("INVALID_PLAYER_ALIAS")
+    models = deepcopy(config["models"])
+    validated = ModelConfig.model_validate(model).model_dump()
+    if alias in models and models[alias] != validated:
+        raise ValueError("EXISTING_PLAYER_DIFFERS")
+    models[alias] = validated
+    return {"models": models, "budgets": deepcopy(config["budgets"]), "skills": config["skills"]}
+
+
+def run(args):
     config = operator_request("/bootstrap")["config"]
     model = {
         **config["models"][args.clone],
@@ -69,7 +71,3 @@ def main():
             sort_keys=True,
         )
     )
-
-
-if __name__ == "__main__":
-    main()

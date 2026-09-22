@@ -1,15 +1,10 @@
-import importlib.util
 import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts/check_offline.py"
-spec = importlib.util.spec_from_file_location("check_offline", SCRIPT)
-assert spec and spec.loader
-check_offline = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(check_offline)
+from balatro_horizons.cli import offline as check_offline
 
 
 def test_commands_use_explicit_checkout_and_web_is_opt_in():

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Review only: this script never launches the game, branches, or calls a provider.
-import { chromium, expect } from '../web/node_modules/@playwright/test/index.mjs';
+import { chromium, expect } from '../node_modules/@playwright/test/index.mjs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 const usage = 'Usage: verify_browser_native.mjs EPISODE_ID [BRANCH_ID] | --release | --explore EPISODE_ID [DECISION_ID]\nExplorer mode reads recorded decisions on desktop and phone; it records retrospective exposure. BH_WORKBENCH_URL defaults to http://127.0.0.1:8765.';
@@ -13,7 +13,7 @@ if (process.argv[2] === '--explore') {
   const decision = Number(process.argv[4] ?? '0');
   if (!/^[a-f0-9]{32}$/.test(eid || '') || !/^\d+$/.test(process.argv[4] ?? '0') || !Number.isSafeInteger(decision) || decision < 0 || process.argv.length > 5) throw new Error(usage);
   const origin = process.env.BH_WORKBENCH_URL || 'http://127.0.0.1:8765';
-  const artifacts = new URL('../reports/verification/', import.meta.url);
+  const artifacts = new URL('../../reports/verification/', import.meta.url);
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1512, height: 1100 } });
@@ -59,14 +59,14 @@ if (process.argv[2] === '--explore') {
   process.exit(0);
 }
 const release = process.argv[2] === '--release'
-  ? JSON.parse(await readFile(new URL('../reports/verification/native-release.json', import.meta.url), 'utf8'))
+  ? JSON.parse(await readFile(new URL('../../reports/verification/native-release.json', import.meta.url), 'utf8'))
   : null;
 const episode = release?.parent_episode_id || process.argv[2];
 const branch = release?.branch.episode_id || process.argv[3];
 if (!/^[a-f0-9]{32}$/.test(episode || '') || (branch && !/^[a-f0-9]{32}$/.test(branch))) {
-  throw new Error('Usage: node scripts/verify_browser_native.mjs EPISODE_ID [BRANCH_ID] or --release');
+  throw new Error('Usage: node web/scripts/verify_browser_native.mjs EPISODE_ID [BRANCH_ID] or --release');
 }
-const root = new URL('../reports/verification/', import.meta.url);
+const root = new URL('../../reports/verification/', import.meta.url);
 const mobile = process.env.BH_MOBILE === '1';
 const artifactSuffix = mobile ? '-mobile' : '';
 const origin = process.env.BH_WORKBENCH_URL || 'http://127.0.0.1:8765';

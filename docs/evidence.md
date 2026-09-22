@@ -97,7 +97,7 @@ use the baseline checkout holding the immutable certificate and native artifacts
 Omit `--apply` to inspect the refusal or reuse plan:
 
 ```bash
-uv run python scripts/check_offline.py --report reports/verification/offline.json
+uv run bh offline --report reports/verification/offline.json
 uv run bh evidence reuse \
   --root ../baseline-checkout \
   --candidate . \

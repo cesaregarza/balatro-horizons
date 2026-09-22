@@ -1,4 +1,4 @@
-# Native plumbing test; opt in with scripts/smoke_openai.py --allow-paid.
+# Native plumbing test; opt in with bh smoke --allow-paid.
 # Standard and cache rates verified 2026-09-18 against the official Luna model page.
 # Explicit prompt caching; no fast tier.
 # Shared limits and disabled paid execution are inherited from config.py.

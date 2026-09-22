@@ -63,7 +63,7 @@ journals stay outside public exports.
 Install the locked Python and web dependencies before running the offline gate:
 
 ```bash
-uv run python scripts/check_offline.py
+uv run bh offline
 ```
 
 The gate runs the Python checks without launching Balatro or making paid
@@ -82,6 +82,26 @@ A certificate covers only its pinned runtime, source identity, environment,
 deck, stake, and recorded restoration scope. A successful save call alone does
 not establish checkpoint fidelity. Failed or missing evidence is retained as
 unresolved and is never silently converted into a pass.
+
+## Operational commands
+
+Use `uv run bh COMMAND --help` for flags and required inputs. These commands
+retain the former scripts' defaults, guards, and output formats:
+
+| Command | Purpose |
+| --- | --- |
+| `offline [--web] [--report PATH]` | Python checks, optional web lane, source-bound receipt |
+| `deploy frontend` / `deploy candidate` | Frontend publication / idle candidate installation and rollback |
+| `guide package` / `prompt sync` | Guide validation and packaging / persistent prompt freshness |
+| `human register` | Preview or register a saved player's settings; does not start a run |
+| `smoke` | Capped provider smoke; paid execution requires `--allow-paid` |
+| `native diagnose` | Authorized native startup diagnostics |
+| `review session` / `review status` | Preview/apply launch context / bounded worker status |
+
+`scripts/` keeps only native bootstrap and the two-line offline CI entry point.
+Browser-native verification lives at `web/scripts/verify_browser_native.mjs`;
+its help and invalid-argument checks run in the web unit-test lane. Live browser
+verification still requires the operator's existing runtime and recorded runs.
 
 ## Repository boundaries
 

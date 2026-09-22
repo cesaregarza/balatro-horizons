@@ -5,6 +5,8 @@ from pathlib import Path
 
 from balatro_horizons.config import ROOT
 
+from .operations import add_operational_commands
+
 
 def build_parser():
     parser = argparse.ArgumentParser(prog="bh", description="Balatro Horizons native runs and expert review")
@@ -15,6 +17,7 @@ def build_parser():
     add_evidence_commands(sub)
     add_data_commands(sub)
     add_summarize_command(sub)
+    add_operational_commands(sub)
     return parser
 
 
@@ -46,7 +49,7 @@ def add_command_options(parser, name):
 
 
 def add_review_commands(sub):
-    parser = sub.add_parser("review")
+    parser = sub.add_parser("review", help="Serve the dashboard; session/status operations")
     parser.add_argument("--host", choices=["127.0.0.1", "localhost"], default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument(
@@ -83,10 +86,9 @@ def add_data_commands(sub):
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--count", type=int, default=20)
     sub.add_parser("recover")
-    parser = sub.add_parser("human")
+    parser = sub.add_parser("human", help="Inspect/action a human turn; register player settings")
     parser.add_argument("--action-file", type=Path)
-    parser = sub.add_parser("native")
-    parser.add_argument("operation", choices=["launch", "stop", "status"])
+    sub.add_parser("native", help="Runtime launch/stop/status and startup diagnostics")
 
 
 def add_summarize_command(sub):

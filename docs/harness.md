@@ -40,7 +40,7 @@ To fit the context, trim the oldest working-memory frame, then a loaded helper
 result, then a public event; if nothing removable remains, fail with
 `LOCAL_CONTEXT_LIMIT`. Never trim the current observation, notebook, or action
 constraints. The frozen `knowledge.json` retains the rules/skills; regenerate
-the guide for future episodes with `uv run scripts/package_balatro_guide.py`.
+the guide for future episodes with `uv run bh guide package`.
 
 `ActionEnvelope` pairs the current observation ID with one typed action and may
 carry a memory replacement and decision note. The harness validates phase,

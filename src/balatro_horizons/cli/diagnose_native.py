@@ -5,7 +5,6 @@ Requires task-scoped access to the configured Windows runtime and PowerShell.
 Never calls a model, changes pinned files, or resets a run journal.
 """
 
-import argparse
 import fcntl
 import json
 import time
@@ -115,14 +114,17 @@ def workbench_startup(preset):
     return 0 if result["status"] == "passed" else 1
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def configure_parser(parser):
+    parser.description = __doc__
     parser.add_argument("--config", type=Path, default=ROOT / "configs/pilot.yaml")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--restart", action="store_true", help="Restart only an idle runtime")
     mode.add_argument("--workbench", action="store_true", help="Test the live browser worker")
     parser.add_argument("--preset", choices=("smoke", "pilot"), default="pilot")
-    args = parser.parse_args()
+    parser.set_defaults(operation_handler=run, operation_parser=parser)
+
+
+def run(args):
     if args.workbench:
         return workbench_startup(args.preset)
     bridge = WindowsBridge(load_config(args.config).environment)
@@ -149,7 +151,3 @@ def main():
         bridge._close_rpc()
     print(json.dumps(result, sort_keys=True), flush=True)
     return 0 if result["status"] == "passed" else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
