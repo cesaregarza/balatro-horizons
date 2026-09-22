@@ -12,6 +12,7 @@ from .doctor import doctor
 from .evidence import run_evidence_command
 from .native import run_native_command
 from .review import run_review_command
+from .summarize import run_summarize_command
 
 
 def dispatch(args):
@@ -23,6 +24,8 @@ def dispatch(args):
         return doctor_command(args)
     if args.command == "review":
         return run_review_command(args)
+    if args.command == "summarize":
+        return run_summarize_command(args)
     if args.command == "branch":
         return run_branch_command(args)
     store = Store(args.data_dir)

@@ -13,7 +13,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from native_patches import patch_rearrange
+from balatro_horizons.game.patches import patch_rearrange
 
 ROOT = Path(__file__).resolve().parents[1]
 BOT = "e7c6db8a9ad88318f6e4128eefd6e61aafc94885"
@@ -49,6 +49,8 @@ def tree_hash(root):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
+    # The licensed source and owned runtime are explicit installer arguments;
+    # the destination guard prevents touching a personal game installation.
     p.add_argument(
         "--source", type=Path, default=Path("/mnt/d/SteamLibrary/steamapps/common/Balatro")
     )

@@ -3,11 +3,13 @@
 import html
 import json
 from collections import Counter
+from importlib.resources import files
 from itertools import groupby
-from pathlib import Path
 
 DESCRIPTORS = json.loads(
-    (Path(__file__).resolve().parents[1] / "web/src/actionDescriptors.json").read_text()
+    files("balatro_horizons.review")
+    .joinpath("action_descriptors.json")
+    .read_text(encoding="utf-8")
 )
 
 
@@ -85,11 +87,10 @@ def table(lines, headings, rows):
     lines.append("")
 
 
-def render_decisions(result):
+def _header(result):
     manifest, summary = result["manifest"], result["summary"] or {}
     actions = result["actions"]
-    groups = [(ante, list(rows)) for ante, rows in groupby(actions, key=lambda row: row["ante"])]
-    lines = [
+    return [
         f"# Decision summary — {cell(manifest.get('agent', 'agent'))}",
         "",
         f"Episode: `{cell(manifest['episode_id'])}`. "
@@ -106,40 +107,40 @@ def render_decisions(result):
         "Hand scores retain the target from before play, even if the cleared round resets it.",
         "",
     ]
+
+
+def _append_overview(lines, actions, groups):
     if not actions:
         lines.extend(["No committed game actions were recorded.", ""])
-    else:
-        table(
-            lines,
-            ["Ante", "Decisions", "Skipped blinds", "Purchases", "Cash, start → end"],
-            [
-                [
-                    ante,
-                    f"D{rows[0]['decision']}–D{rows[-1]['decision']}",
-                    compact_names(row["item"] for row in rows if row["type"] == "skip_blind"),
-                    compact_names(row["item"] for row in rows if row["type"] == "buy"),
-                    f"${rows[0]['money_before']} → ${rows[-1]['money_after']}",
-                ]
-                for ante, rows in groups
-            ],
-        )
-    if result.get("rounds"):
-        lines.extend(["**Recorded blind results**", ""])
-        table(
-            lines,
-            ["Ante", "Blind", "Score / target", "Hands", "Discards", "Cleared"],
-            [
-                [
-                    row["ante"],
-                    row["blind"],
-                    f"{row.get('total_chips', '—')} / {row['target']}",
-                    row["hands_played"],
-                    row["discards_used"],
-                    "Yes" if row["cleared"] else "No",
-                ]
-                for row in result["rounds"]
-            ],
-        )
+        return
+    rows = [
+        [
+            ante,
+            f"D{block[0]['decision']}–D{block[-1]['decision']}",
+            compact_names(row["item"] for row in block if row["type"] == "skip_blind"),
+            compact_names(row["item"] for row in block if row["type"] == "buy"),
+            f"${block[0]['money_before']} → ${block[-1]['money_after']}",
+        ]
+        for ante, block in groups
+    ]
+    table(lines, ["Ante", "Decisions", "Skipped blinds", "Purchases", "Cash, start → end"], rows)
+
+
+def _append_rounds(lines, rounds):
+    if not rounds:
+        return
+    lines.extend(["**Recorded blind results**", ""])
+    rows = [
+        [
+            row["ante"], row["blind"], f"{row.get('total_chips', '—')} / {row['target']}",
+            row["hands_played"], row["discards_used"], "Yes" if row["cleared"] else "No",
+        ]
+        for row in rounds
+    ]
+    table(lines, ["Ante", "Blind", "Score / target", "Hands", "Discards", "Cleared"], rows)
+
+
+def _append_antes(lines, groups):
     for ante, rows in groups:
         lines.extend(
             [f"**Ante {cell(ante)} — D{rows[0]['decision']}–D{rows[-1]['decision']}**", ""]
@@ -159,35 +160,43 @@ def render_decisions(result):
         )
         build = " → ".join(rows[-1].get("jokers_after", [])) or "No Jokers"
         lines.extend([f"Visible Joker order after this block: {cell(build)}.", ""])
-    if result.get("uncommitted_actions"):
-        lines.extend(
-            [
-                "**Requests without a committed transition**",
-                "",
-                "These requests are excluded from the committed-action count. No settled result "
-                "is inferred for them.",
-                "",
-            ]
-        )
-        table(
-            lines,
-            ["Decision", "Phase", "Requested action", "Recorded status", "Model note"],
-            [
-                [
-                    f"D{row['decision']}",
-                    row["phase"],
-                    describe(row),
-                    row.get("rejection_code") or row["status"],
-                    row.get("note") or "No note recorded.",
-                ]
-                for row in result["uncommitted_actions"]
-            ],
-        )
-    helpers = result.get("helper_calls", [])
+
+
+def _append_uncommitted(lines, actions):
+    if not actions:
+        return
+    lines.extend([
+        "**Requests without a committed transition**", "",
+        "These requests are excluded from the committed-action count. No settled result "
+        "is inferred for them.", "",
+    ])
+    rows = [
+        [
+            f"D{row['decision']}", row["phase"], describe(row),
+            row.get("rejection_code") or row["status"],
+            row.get("note") or "No note recorded.",
+        ]
+        for row in actions
+    ]
+    table(lines, ["Decision", "Phase", "Requested action", "Recorded status", "Model note"], rows)
+
+
+def _append_helpers(lines, helpers):
     if helpers:
         names = [
             f"{op['kind']}: {op.get('name') or op.get('section') or op.get('key') or ''}"
             for op in helpers
         ]
         lines.extend([f"Additional model lookups: {cell(compact_names(names))}.", ""])
+
+
+def render_decisions(result):
+    actions = result["actions"]
+    groups = [(ante, list(rows)) for ante, rows in groupby(actions, key=lambda row: row["ante"])]
+    lines = _header(result)
+    _append_overview(lines, actions, groups)
+    _append_rounds(lines, result.get("rounds"))
+    _append_antes(lines, groups)
+    _append_uncommitted(lines, result.get("uncommitted_actions"))
+    _append_helpers(lines, result.get("helper_calls", []))
     return "\n".join(lines)

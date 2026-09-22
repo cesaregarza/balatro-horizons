@@ -1,7 +1,6 @@
 """Offline legality and installer regressions; native certification is separate."""
 
 import hashlib
-import importlib.util
 from pathlib import Path
 
 import pytest
@@ -9,15 +8,13 @@ from test_boundary import project
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.contracts import ActionEnvelope
+from balatro_horizons.game import patches
 from balatro_horizons.game.session import NativeGame
 from balatro_horizons.game.state import normalize
 from balatro_horizons.harness.context.build import context
 from balatro_horizons.observations.projection import HandleIssuer
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("native_patches", ROOT / "scripts/native_patches.py")
-patches = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(patches)
 
 
 def state(phase):

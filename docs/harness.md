@@ -1,123 +1,110 @@
-# Current harness
+# Harness
+
+The current harness is one interface and one frozen protocol. A run snapshots
+the prompt, rules guide, skills catalog, provider capability, memory policy,
+model/pricing settings, and limits before its first decision. Later edits do
+not change that episode or its ordinary branches.
+The immutable `agent-protocol.json` binds checkpoints to that snapshot. A legacy
+checkpoint without it fails with `AGENT_PROTOCOL_SNAPSHOT_MISSING`; it is never
+rewritten. Retired interface snapshots fail with `AGENT_PROTOCOL_INTERFACE_RETIRED`.
 
 ## What the model receives
 
-The single current harness sends a frozen prompt, a rules kernel, stable tool
-definitions, and a dynamic public `Context` on each provider call. The context
-contains the current compressed observation and action constraints, current
-cost quotes, the permitted tool names and helper allowance, a run notebook,
-bounded completed-decision frames, the latest observed action outcome, and
-delivery/omission metadata. OpenAI and Anthropic use the same builder and
-renderer; frozen episodes keep their recorded prompt and tool bytes. No hidden
-card identity, future draw, provider-private reasoning, or automatic strategy
-summary enters this context.
+Each decision contains the current public observation, bounded public history,
+and explicit working memory. The model may use the twelve named skills through
+on-demand chapter pages, but paging cannot mutate the frozen knowledge base.
+Rules, history, inspection, and arithmetic are read-only helpers. Regeneration
+is a new bounded request, not a hidden retry or an alternative action.
 
-The prompt incorporates [`ALWAYS-LOADED.md`](../configs/prompts/ALWAYS-LOADED.md),
-a 1,024-byte mechanics reference. Edit that source and run
-`uv run python scripts/sync_prompt_instructions.py --write`; without `--write`,
-the script checks freshness. Stale or malformed content blocks a new run.
-The generated block in `harness.txt` is not an editing target. Configured
-notebook-key and retained-helper limits are rendered into the prompt from
-`config.py`; the synced mechanics block is guarded separately.
+The defaults below come from `config.py`; bytes and provider tokens are separate
+units. Overrides are recorded and cannot silently widen a frozen episode.
 
-`working_memory` keeps up to `WORKING_MEMORY_DECISIONS` completed decisions,
-bounded by `WORKING_MEMORY_BYTES`. Each frame carries exact public pre-action
-resources, committed action, model-authored decision note, following public
-result, and up to `RETAINED_HELPER_RESULTS` helper receipts. Oversized helper
-receipts are omitted whole; oldest frames leave first. Historical handles and
-quotes are informational—only the current observation authorizes an action.
-The latest `previous_action_outcome` pairs a verified public delta with the
-prior model claim and linked note edit when matching journal events exist;
-missing or pruned evidence stays null. The model, not the harness, reconciles
-its notes with the observed outcome.
+| Setting or constant | Default |
+| --- | ---: |
+| `max_input_tokens_per_call` / `DEFAULT_INPUT_TOKEN_LIMIT` | 32,768 tokens |
+| `max_request_bytes` / `DEFAULT_REQUEST_BYTE_LIMIT` | 262,144 bytes |
+| `INPUT_TOKEN_SAFETY_MARGIN` | 512 tokens |
+| `CONTEXT_FRAMING_BYTES` | 4,096 bytes |
+| `HELPER_PAGE_BYTES` | 2,048 bytes |
+| `RETAINED_HELPER_RESULTS` | 3 results |
+| `WORKING_MEMORY_DECISIONS` | 3 completed decisions |
+| `WORKING_MEMORY_BYTES` | 24,576 bytes |
+| `ALWAYS_LOADED_MAX_BYTES` | 1,024 bytes |
+| `max_game_actions` | 1,500 |
+| `max_provider_calls` | 2,000 |
+| `max_helper_calls_per_decision` | 8 |
+| `max_output_tokens_per_call` | 8,192 tokens |
+| `max_transport_attempts` | 3 |
+
+To fit the context, trim the oldest working-memory frame, then a loaded helper
+result, then a public event; if nothing removable remains, fail with
+`LOCAL_CONTEXT_LIMIT`. Never trim the current observation, notebook, or action
+constraints. The frozen `knowledge.json` retains the rules/skills; regenerate
+the guide for future episodes with `uv run scripts/package_balatro_guide.py`.
+
+`ActionEnvelope` pairs the current observation ID with one typed action and may
+carry a memory replacement and decision note. The harness validates phase,
+handles, counts, and order before dispatch. The model never receives raw RPC,
+seeds, saves, endpoint text, or private provider credentials.
 
 ## Providers
 
-Both direct providers use `harness/transport/base.py` for request admission,
-HTTP delivery, response classification, the six-stage tool-call parser,
-continuation capture, and conservative usage settlement. `openai.py` and
-`anthropic.py` supply immutable specs rather than alternate state machines.
-Each spec declares its terminal field and mapping, call item type, identifier
-and argument fields, result item type, and cache options.
+OpenAI Responses and Anthropic Messages implement the same capability contract;
+transport doubles live behind the session seam. Provider-native reasoning and
+tool blocks continue within one decision and reset after the game action. Every
+request reserves configured ceilings and prices, including retries. Unknown
+usage remains reserved; overage is recorded; the next request stops at the
+applicable episode or campaign cap. A paid call requires operator enablement, settings,
+and episode and batch caps.
+Anthropic `temperature` is incompatible with manual `thinking_budget`.
 
-Provider modules also own their supported settings and model capabilities.
-OpenAI declares cache-diagnostic eligibility, explicit-cache eligibility,
-unsupported setting values, display names, and verified reasoning efforts;
-Anthropic declares thinking-budget support. `ModelConfig` validates through
-those tables, and `/api/bootstrap` publishes the same declarations to the
-workbench. The browser does not infer compatibility from model names. Unknown
-models and missing declarations fail closed for cache-dependent launches.
-
-OpenAI uses Responses with encrypted reasoning continuations, explicit prompt
-cache accounting, and disjoint ordinary/read/write input categories. Anthropic
-uses Messages with native thinking blocks and conservatively retains the full
-reservation when cache-write usage cannot be priced. Every provider retains the
-reservation when usage is missing or malformed. Paid execution remains disabled
-by default; credentials stay in the backend environment and are never serialized
-into run configuration.
-
-Tests inject `httpx.MockTransport` into `Transport`; this HTTP seam covers real
-request bodies, status handling, parsing, continuation, and accounting without
-patching transport internals or making provider calls. New runs save a canonical
-provider/model key and freeze exact settings and prices. Historical aliases and
-recorded runs remain readable, while the workbench deduplicates aliases for new
-selection. The smoke preset remains `configs/luna-smoke.yaml`; retired interfaces
-and historical live-check results are archived in the changelog and verification
-artifacts rather than maintained as a second harness guide.
-
-## Context limits
-
-The notebook has model-chosen keys and a total character bound. Gameplay tools
-may attach one nullable `note_update` without a helper call; separate set/delete
-helpers remain available. Action and edit are both validated before execution.
-A valid edit is journaled before the native action and can survive a subsequent
-native failure without claiming action success. `notebook_maintenance` warns
-about likely frame or helper-result displacement, not guaranteed retention.
-
-The complete request obeys `max_request_bytes` (default 262,144), including
-framing/settings headroom. If it is too large, the builder removes oldest
-working-memory frames, then current-decision helper results, then oldest recent
-public events; it never trims the current observation, notebook, or action
-constraints. Failure is `LOCAL_CONTEXT_LIMIT`. Independently, provider input
-counting enforces `max_input_tokens_per_call` (default 32,768) with a 512-token
-safety margin; unavailable counts fail closed. Spending reserves the configured
-input/output ceilings, not an estimate derived from request bytes.
+Prompt caching is an accounting concern, not an unverified optimization:
+ordinary input, cache reads, cache writes, output, reservations, and settlement
+remain distinct categories. A cache diagnostic comparison is metadata-only and
+must use an episode-local baseline; it does not authorize a live probe or expose
+opaque provider content.
+The stable-prefix breakpoint precedes dynamic state, budgets, memory, and helper
+outputs. `comparison_response_id` advances only after a completed response with
+a nonempty ID; a new episode or branch starts without a baseline. Diagnostics
+are best effort; actual usage establishes cache read/write charges. Reserve the
+highest configured input rate, and keep the full reservation on inconsistent
+usage rather than double-counting disjoint cache categories.
 
 ## Money
 
-Every loop receives an explicit `Spending` ledger. A standalone episode uses
-`Spending.episode_only(path, campaign_cap)`, where the cap is still the
-configured campaign ceiling; a batch passes one ledger shared by all original
-attempts. The scheduler and loop use the same locked ledger and the same
-conservative reservation formula, including the maximum input price.
+Public cost fields distinguish `public_costs_v2` from `public_transaction_v1`.
+They expose sanitized cost, balance, reservation, and settlement facts without
+provider secrets or hidden accounting. Every loop receives an explicit `Spending`
+ledger; all original batch attempts share one. Standalone ledgers use the configured
+campaign cap, but have no scheduler or `scheduling_stop`. In a batch, campaign-only
+refusal leaves the slot unresolved; episode-only refusal is a valid non-win.
+Funding stops are durable and cannot be resumed by rerunning a frozen batch.
+The admission predicate is `total + reservation <= cap`, using the next model's
+worst-case reservation and unchanged floating-point arithmetic.
+`CAMPAIGN_COST_CAP` yields `CAMPAIGN_INTERRUPTED`; `EPISODE_COST_CAP` and
+`EPISODE_AND_CAMPAIGN_COST_CAP` yield `BUDGET_EXHAUSTED`. The latter still stops
+later campaign scheduling while the current slot is a valid bounded non-win.
+`EPISODE_CAP_BELOW_RESERVATION` is a configuration refusal before episode/game
+creation. A write-once `stop.json` preserves the first scheduling stop; changing
+a frozen batch configuration yields `BATCH_CONFIGURATION_CHANGED`.
+`provider_reservation` is private accounting evidence, omitted from public exports.
+Retained reservation dollars still appear in terminal summaries, batch
+`all_attempt_cost_usd`, and status costs; private events do not hide spending.
+Reserve under the lock immediately before each send, including retries, and journal
+the reservation before the request. Successful responses settle measured costs;
+provider failures call `retain(request_id)`. Preflight is only a locked snapshot,
+never a substitute for authoritative reservation at send time.
+Only campaign reasons may enter `stop.json`. Preflight permits only
+`CAMPAIGN_COST_CAP`, with no episode, terminal or outcome. Episode-stage stops
+require an episode ID, terminal reference and matching reason/outcome.
+An unfunded paid batch slot creates no episode or game; first-stop bytes survive
+restarts. `REFUSAL_OUTCOMES` is the single reason/outcome vocabulary.
 
-Reserve under the lock immediately before sending each request, including a
-transport retry. The journal records the reservation before the request. A
-successful response settles the reservation with its measured cost; a provider
-failure calls `retain(request_id)`, so unknown usage remains charged. The
-`provider_reservation` event is private accounting evidence and is intentionally
-omitted from public episode and batch exports.
-Preflight affordability is a locked, non-binding snapshot and never replaces
-the authoritative reserve operation.
+## Journals, branches, and tests
 
-The `REFUSAL_OUTCOMES` table is the single reason-to-outcome vocabulary:
-
-| refusal | episode outcome | scheduler |
-| --- | --- | --- |
-| episode cap | `BUDGET_EXHAUSTED` | continue |
-| campaign cap | `CAMPAIGN_INTERRUPTED` | stop |
-| both caps | `BUDGET_EXHAUSTED` | stop |
-
-An unfunded paid slot creates no episode or game and records a write-once
-`stop.json`. Episode-only refusals remain valid non-wins; campaign interruption
-leaves the current slot unresolved. Reports retain all attempt costs, including
-retained reservations, and preserve the first stop bytes across restarts.
-
-The source journal and complete delivered requests remain authoritative.
-Branches inherit only public ancestry through their boundary observation;
-later parent events cannot enter the child. Dynamic notebook and history do
-not change the fixed cached prefix. Offline tests cover both transports,
-byte-bound precedence, branches, note/action failure isolation, and frozen
-delivery. They establish interface behavior, not better gameplay or native
-fidelity. Executable harness changes alter the implementation fingerprint;
-check [native evidence reuse](evidence.md) before activation.
+Requests, helper receipts, rejections, actions, outcomes, memory edits, and
+budget settlements are hash-chained append-only records. A certified branch
+inherits frozen protocol and knowledge but gets a new immutable identity. Human
+and assisted branches are diagnostic and excluded from autonomous scores.
+Offline fakes are application tests only. Native reuse requires an explicit
+offline report and matching certificate; see [evidence](evidence.md).

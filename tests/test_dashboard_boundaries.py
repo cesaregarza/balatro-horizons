@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from typing import get_args, get_type_hints
 
 import pytest
@@ -9,6 +8,8 @@ from balatro_horizons.api import create_app
 from balatro_horizons.config import Config
 from balatro_horizons.contracts import Action
 from balatro_horizons.review.decision_ledger import ACTION_DETAIL_HANDLERS
+from balatro_horizons.review.export import export_content, export_response
+from balatro_horizons.review.summary import DESCRIPTORS
 
 
 def test_dashboard_surfaces_remain_available_when_workbench_is_off(store, episode):
@@ -105,8 +106,6 @@ def test_explorer_tokens_cannot_mutate_workbench_sessions(store, episode, workbe
 
 
 def test_server_export_projection_omits_private_fields():
-    from balatro_horizons.review.export import export_content, export_response
-
     ledger = {
         "manifest": {
             "episode_id": "e" * 32,
@@ -184,13 +183,11 @@ def test_dashboard_factory_rejects_remote_bind_by_default(store):
 
 
 def test_action_descriptor_covers_contract_actions():
-    descriptor_path = Path(__file__).parents[1] / "web/src/actionDescriptors.json"
-    descriptors = json.loads(descriptor_path.read_text())
     action_types = {
         get_type_hints(action).get("type").__args__[0]
         for action in get_args(Action)
     }
-    assert action_types <= descriptors.keys()
+    assert action_types <= DESCRIPTORS.keys()
 
 
 def test_action_detail_handlers_cover_contract_actions():

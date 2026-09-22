@@ -15,7 +15,7 @@ from pathlib import Path
 
 from balatro_horizons.evidence.lock import native_path as native
 
-# Issue #16 owns migration of this installer default to Environment.runtime.
+# Issue #40 owns migration of this installer default to Environment.runtime.
 OWNED_RUNTIME = Path('/mnt/d/BalatroHorizonsRuntime')
 
 

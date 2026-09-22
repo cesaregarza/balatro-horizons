@@ -1,13 +1,13 @@
-# Evidence and native certification
+# Evidence
 
-Native evidence is a bounded regression proof for one pinned Balatro runtime. It
-does not establish model quality, optimal play, headless equivalence, or support
-for untested decks, stakes, cards, bosses, and continuations. Calibration,
-fixtures, and assisted branches are excluded from autonomous performance scores.
+Native evidence is a bounded regression proof for one pinned Balatro runtime.
+It does not establish model quality, optimal play, headless equivalence, or
+support for untested decks, stakes, cards, bosses, or continuations. Calibration,
+fixtures, and assisted branches are excluded from autonomous scores.
 
-## Plan before execution
+## Plan and stages
 
-Always inspect the non-executing plan first:
+Inspect the non-executing plan first:
 
 ```bash
 uv run bh evidence plan
@@ -16,33 +16,28 @@ uv run bh evidence plan --resume-actions
 uv run bh evidence plan --resume-certification
 ```
 
-Planning reads no private manifest or seed, launches no process, and contacts no
-provider. Native collection requires the operator's separately granted runtime
-access. Never add invisible retries: retain failures and resume from a named
-stage only when its prerequisites still match.
+The cold plan has 12 physical launches and 22 resets. Startup profile stability
+uses two launches; functional collection reuses the retained process; fresh
+process restoration uses nine launches; branch restoration uses one. Gameplay
+only uses one process and eight resets and does not certify restoration.
 
-| Stage | Launches / resets | What it proves | Artifact |
-| --- | ---: | --- | --- |
-| Startup profile stability | 2 / 4 | Pinned identity and stable White/Gold profiles in fresh processes | `runtime-audit-{stake}.json` |
-| Functional collection | 0 / 8 | Invalid actions, all strategic actions, terminal detection, ordinary runs, reorder and fault handling in the retained process | `native-fixtures-final.json` |
-| Fresh-process restoration | 9 / 9 | Three fresh-process seed-prefix continuation probes for two episodes and three direct-checkpoint probes | `certificate-record-*.json` |
-| Branch restoration | 1 / 1 | One immutable-parent assisted continuation | `native-release.json` |
+| Stage | Launches / resets | Evidence artifact |
+| --- | --- | --- |
+| startup profile stability | 2 / 4 | `runtime-audit-{stake}.json` |
+| functional collection | 0 / 8 | `native-fixtures-final.json` |
+| fresh-process restoration certification | 9 / 9 | `certificate-record-*.json` |
+| branch restoration | 1 / 1 | `native-release.json` |
+| gameplay collection only (alternative plan) | 1 / 8 | `native-gameplay-collection-*.json` |
 
-The cold plan is 12 physical launches and 22 game resets. Gameplay-only uses one
-process and eight resets; it writes collection evidence but neither certifies
-restoration nor activates capabilities. Use `bh evidence collect --from-stage
-NAME` to resume the declarative suffix; the command does not infer success from
-old terminal output. A resumed action fixture requires its explicit
-`--episode-id`; the journal and pinned environment must still validate.
+Collectors use `EvaluatorSession` ownership, public actions, fresh journals,
+handle issuers, and request IDs. Ambiguous execution retires a session; unknown
+status is infrastructure failure and is never silently retried. Resume only a
+named stage with matching prerequisites, and identify the episode when resuming
+an action fixture using `bh evidence collect --from-stage "resumed functional
+collection" --episode-id EPISODE_ID`. A stage name selects the remaining suffix;
+it never turns missing prerequisite artifacts into completed evidence.
 The resume plans report 11 launches / 16 resets for actions, or 11 / 11 for
 certification. Selecting the gameplay-only stage requires `--gameplay-only`.
-
-## Collection and certification
-
-Collectors use `EvaluatorSession`/`NativeSession` ownership and public game
-actions. A game reset gets a fresh journal, handle issuer, and request IDs while
-the caller-owned process remains pinned. Ambiguous execution retires the session;
-unknown action status is an infrastructure failure and is never retried.
 
 ```bash
 uv run bh evidence collect
@@ -50,59 +45,77 @@ uv run bh evidence certify
 uv run bh evidence publish
 ```
 
-Certification compares the public observation hash and private continuation hash
-across at least three fresh processes. Seed-prefix certificates cover only the
-recorded prefix and suffix they replayed; direct-save support is per checkpoint,
-not universal. A divergence leaves a private `divergence-*.json` artifact and a
-failed immutable record. Use `bh evidence inspect ARTIFACT` for its bounded diff.
+## Certification and scope
+
+Certification compares public-state and private-continuation fingerprints across
+at least three fresh processes. Seed-prefix certificates cover only their
+recorded prefix and suffix; direct-save support is per checkpoint. `publish`
+validates required artifacts and the schema-selected public export before
+activating a pointer to immutable certificate records. A divergence leaves a
+private artifact and failed immutable record; an old pass is never rewritten.
+The failure artifact is `divergence-*.json`. Inspect its boundary summary with
+`bh evidence inspect PATH --limit 20`; raw private divergence values stay private.
+`private/capability-certificate.json` selects the active immutable certificate.
 Seed-prefix failure aborts certification; direct-checkpoint failure is recorded
 in `native-release.json` while the passing seed-prefix capability remains usable.
 
-`publish` validates every required artifact and the schema-selected public export
-before it writes the active `private/capability-certificate.json`. The active file
-is a mutable pointer to immutable certificate records. A failed check disables
-only the selected restoration mode; it never rewrites an older passing record.
+Every non-calibration launch needs a certificate matching source, environment,
+deck, stake, injector, bridge, and full mod tree. Filename classification alone
+cannot establish scope: the manifest's explicit runtime/source scope and
+fingerprint must be checked. Absent evidence is named as skipped, never counted
+as passing; a passed record naming a missing artifact fails as corrupt.
+Headless and accelerated modes remain uncertified.
 
-Every non-calibration native launch requires a passing certificate whose source,
-environment digest, deck, and stake match. The environment lock pins the licensed
-runtime, injector, bridge, and full mod tree. Source changes during collection or
-verification fail closed. Missing empirical artifacts are reported as skipped,
-with the missing artifact named; they are never counted as passing evidence.
+## Acceptance map
 
-## Evidence reuse
+These are bounded regression contracts, not claims about every card, boss, mod,
+or stochastic interaction. Unsupported availability fails closed.
 
-Harness-only candidates may reuse native evidence only through explicit review:
+| IDs | Contract and evidence home |
+| --- | --- |
+| AT-01–04 | Public allowlists, privacy scans, concealed-handle eviction, resources, prices, capacities, and ordering: boundary/state tests plus native concealed-state fixtures. |
+| AT-05 | All 14 strategic action families: blind select/skip; play/discard/reorder; buy/sell/use; shop/boss reroll; pack choose/skip; cashout/leave, covered by native action fixtures. |
+| AT-06–09 | Persisted intent, validation/no-mutation rejection, permutation fidelity, and known-commit replay versus unknown-status failure: runner, action, dispatch, reorder, and transport tests. |
+| AT-10–12 | Fresh-process continuation, same-action replay, and terminal win/loss distinction: restoration certificates, seed-prefix replay, and excluded evaluator fixtures. |
+| AT-13–15 | Torn-tail recovery, cost/limit durability, and provider-contract parity: storage, spending, and mocked provider suites; live compatibility stays separately authorized. |
+| AT-16–18 | Progressive exposure, append-only annotation revisions, immutable parents, and explicit assistance: review API/browser and branch tests. |
+| AT-19–20 | Attempt accounting and seed-clustered uncertainty: reporting and deterministic bootstrap tests. |
+| AT-21–24 | Schema-selected exports, synthetic provenance, isolated runtime identity, and rejection of uncertified/assisted evidence: export, native-gate, and release tests. |
+
+## Reuse and publication
+
+Harness-only candidates may reuse evidence only with an immutable parent
+certificate, unchanged `contracts.py`, `game/` (except `fake.py`), `observations/`,
+`actions/`, and `storage/` bytes, the same environment lock, existing
+artifacts, and a matching offline report. Reuse records the original native
+identity, candidate identity, parent certificate, and zero native launches; it
+does not migrate checkpoint certificates or frozen protocol snapshots.
+The receipt includes the per-file native manifest as well as the aggregate hash.
+
+From the candidate checkout, first create its source-bound offline report, then
+use the baseline checkout holding the immutable certificate and native artifacts.
+Omit `--apply` to inspect the refusal or reuse plan:
 
 ```bash
-uv run python scripts/check_offline.py --report private/offline-candidate.json
+uv run python scripts/check_offline.py --report reports/verification/offline.json
 uv run bh evidence reuse \
-  --root /path/to/live --candidate /path/to/candidate \
-  --baseline auto --offline-report private/offline-candidate.json
+  --root ../baseline-checkout \
+  --candidate . \
+  --baseline auto \
+  --offline-report reports/verification/offline.json \
+  --apply
 ```
 
-Preview is read-only. `--baseline auto` searches Git history for the exact
-certified implementation identity and fails with
-`CERTIFIED_BASELINE_REVISION_NOT_FOUND` when none exists. Reuse requires the
-immutable parent certificate, unchanged `contracts.py`, `game/` (except
-`fake.py`), `observations/`, `actions/`, and `storage/` bytes, the same environment
-lock, existing evidence artifacts, and an offline report bound to the exact
-candidate. The receipt includes the per-file native manifest and aggregate hash.
-Apply only after the candidate is installed and the worker is idle.
+The command refuses changed native files, environment drift, missing artifacts,
+or a report bound to a different candidate. A success records zero native
+launches and never activates broader restoration scope.
+`--baseline auto` finds the committed revision matching the accepted source hash;
+`CERTIFIED_BASELINE_REVISION_NOT_FOUND` means that revision is absent from local
+history. Recover the matching history or choose a verified explicit baseline;
+do not rewrite the certificate hash.
 
-The acceptance record preserves the original native-tested implementation hash,
-adds the reviewed candidate hash and parent certificate, and records zero native
-launches. It never migrates checkpoint certificates or frozen protocol snapshots;
-those continue to require their full original implementation identity.
-
-## Scope and operating limits
-
-- Public exports are schema-selected and scanned; seeds, raw states, saves,
-  credentials, private paths, and divergence payloads remain private.
-- Red/White and Red/Gold are the currently supported certified configurations.
-- Visible speed-1 execution is the tested mode. Headless and acceleration remain
-  uncertified.
-- Paid-provider compatibility, scientific evaluation, and model-quality claims
-  require their own evidence and budgets; this pipeline performs no paid calls.
-- Tests that need live artifacts skip with an artifact-specific reason on a clean
-  clone, and release summaries count those checks as skipped rather than passed.
-  An existing passed evidence record naming a missing artifact fails as corrupt.
+Public exports are schema-selected and privacy-scanned. Seeds, raw state, saves,
+credentials, private paths, and divergence payloads stay private. Red/White and
+Red/Gold are the supported certified configurations. Paid-provider compatibility
+and scientific evaluation require separate evidence and budgets; this pipeline
+makes no paid calls.
