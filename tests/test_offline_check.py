@@ -52,7 +52,7 @@ def test_invalid_checkout_is_rejected(tmp_path):
 
 
 def test_success_report_requires_completed_checks_and_unchanged_source(tmp_path, monkeypatch):
-    source = tmp_path/'src/balatro_horizons/runner.py'
+    source = tmp_path/'src/balatro_horizons/harness/loop.py'
     source.parent.mkdir(parents=True)
     source.write_text('original')
     (tmp_path/'.venv/bin').mkdir(parents=True)

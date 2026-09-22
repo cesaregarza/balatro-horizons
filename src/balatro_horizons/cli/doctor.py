@@ -25,7 +25,7 @@ def base_checks(config):
 
 def add_skills(checks, config):
     try:
-        from balatro_horizons.agents.skills import prepare_rules
+        from balatro_horizons.harness.skills import prepare_rules
 
         knowledge = prepare_rules({}, config.skills)
         checks["skills"] = {

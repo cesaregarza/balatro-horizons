@@ -90,3 +90,6 @@ client; `docs/balatro-guide/` is the canonical rules reference. Public exports
 are schema-selected and privacy-scanned. Private run data and generated reports
 are local artifacts, not source-controlled inputs. See [third-party notices](docs/THIRD_PARTY.md)
 and the [original contract](docs/contract/balatro_horizons_spec/BALATRO_HORIZONS_SPEC.md).
+
+Money admission, reserve-before-send ordering, unknown-usage retention, and
+durable campaign stops are documented in the [harness Money guide](docs/harness.md#money).

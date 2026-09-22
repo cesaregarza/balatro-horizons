@@ -2,9 +2,9 @@
 
 import pytest
 
-from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.harness.context import build as focused
 from balatro_horizons.harness.contract import Context
+from balatro_horizons.harness.failures import HarnessFailure
 
 
 def context_with(frames, events):

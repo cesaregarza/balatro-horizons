@@ -26,6 +26,20 @@ def test_game_source_invalidates_native_fingerprint(tmp_path, monkeypatch):
     assert native_implementation_fingerprint() != before
 
 
+def test_harness_money_invalidates_full_fingerprint_not_native_identity(tmp_path, monkeypatch):
+    from balatro_horizons.evidence import provenance
+
+    monkeypatch.setattr(provenance, "ROOT", tmp_path)
+    source = tmp_path / "src/balatro_horizons/harness/money.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("original money")
+    before_full = provenance.implementation_fingerprint()
+    before_native = native_implementation_fingerprint()
+    source.write_text("changed money")
+    assert provenance.implementation_fingerprint() != before_full
+    assert native_implementation_fingerprint() == before_native
+
+
 def test_AT24_missing_native_certificate_blocks_evaluation():
     with pytest.raises(NativeFailure):
         require_environment_certificate({"unrecognized": "environment"}, Environment())

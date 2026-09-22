@@ -8,19 +8,13 @@ from balatro_horizons.storage.journal import digest
 IMPLEMENTATION_FILES = (
     "config.py",
     "contracts.py",
-    "runner.py",
+    "harness/loop.py",
+    "harness/money.py",
     "service.py",
     "workbench/branches.py",
-    "evaluation/scheduling.py",
 )
 IMPLEMENTATION_DIRECTORIES = (
-    "game",
-    "evidence",
-    "observations",
-    "actions",
-    "agents",
-    "storage",
-    "harness",
+    "game", "evidence", "observations", "actions", "storage", "harness"
 )
 NATIVE_COMPONENT_DIRECTORIES = ("game", "observations", "actions", "storage")
 

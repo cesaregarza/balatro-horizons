@@ -7,21 +7,22 @@ import httpx
 import pytest
 from provider_transport import with_input_count
 from pydantic import ValidationError
+from runner_support import episode_spending
 from test_boundary import project
 
 from balatro_horizons.actions.validation import validate_action
-from balatro_horizons.agents.baselines import Baseline, baseline_observation, candidates
-from balatro_horizons.agents.input_limits import request_size
-from balatro_horizons.agents.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.config import ROOT, ModelConfig, load_config
 from balatro_horizons.contracts import ActionEnvelope, RecentPublicEvent
 from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.baselines import Baseline, baseline_observation, candidates
 from balatro_horizons.harness.context.build import context, decision_context
 from balatro_horizons.harness.context.present import PAGE_BYTES
 from balatro_horizons.harness.contract import Operation
 from balatro_horizons.harness.helpers import helper
+from balatro_horizons.harness.input_limits import request_size
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure
-from balatro_horizons.runner import Runner
 from balatro_horizons.workbench.service import WorkbenchService
 
 
@@ -342,7 +343,7 @@ def test_tools_inspect_calculate_correct_error_and_finish(store, monkeypatch, pr
         config.budgets,
         client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
-    runner = Runner(store, config, game, policy)
+    runner = Runner(store, config, game, policy, episode_spending(store, config))
     result = runner.run()
     assert result["outcome"] == "WIN" and result["evidence_kind"] == "SYNTHETIC_TEST"
     assert result["provider_calls"] == result["committed_actions"] + 3
@@ -392,7 +393,7 @@ def test_helper_budget_stops_repeated_inspection_without_advancing_game(store, m
         config.budgets,
         client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
-    result = Runner(store, config, game, policy).run()
+    result = Runner(store, config, game, policy, episode_spending(store, config)).run()
     assert result["reason"] == "AGENT_PROTOCOL_FAILURE"
     assert result["committed_actions"] == 0 and result["provider_calls"] == 4
     assert game.observe_private() == before
@@ -465,7 +466,7 @@ def test_oversized_named_note_write_exhausts_helpers_then_allows_model_game_acti
         config.budgets,
         client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
-    runner = Runner(store, config, game, policy)
+    runner = Runner(store, config, game, policy, episode_spending(store, config))
     result = runner.run()
     assert result["reason"] == "AGENT_ABORT"
     assert result["committed_actions"] == 1 and result["provider_calls"] == 4

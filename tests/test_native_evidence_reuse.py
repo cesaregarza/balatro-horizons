@@ -37,7 +37,7 @@ def test_harness_only_edits_change_full_identity_but_not_native_game_identity():
     before = provenance.source_files(ROOT)
     after = deepcopy(before)
     after['src/balatro_horizons/harness/context/memory.py'] += b'\n# changed notebook policy\n'
-    after['src/balatro_horizons/service.py'] += b'\n# changed harness orchestration\n'
+    after['src/balatro_horizons/harness/loop.py'] += b'\n# changed harness orchestration\n'
     assert provenance.fingerprint_sources(before) != provenance.fingerprint_sources(after)
     assert (
         provenance.native_implementation_fingerprint(before)

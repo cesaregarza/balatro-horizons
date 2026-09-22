@@ -87,8 +87,8 @@ def test_fixture_labels_and_export_download_are_separate_from_review(
 @pytest.mark.parametrize("mode", ["agent_continue", "short_human_sequence", "human_takeover"])
 def test_intervention_modes_use_shared_human_api(store, workbench_config, episode, mode):
     """Drive synthetic human operations through the same endpoint as the browser/CLI."""
-    from balatro_horizons.agents.baselines import Baseline
     from balatro_horizons.evidence.certification import verify_checkpoint
+    from balatro_horizons.harness.baselines import Baseline
 
     config = workbench_config
     assert verify_checkpoint(store, config, episode, 0)["status"] == "passed"

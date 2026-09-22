@@ -4,12 +4,12 @@ import shutil
 import pytest
 from test_boundary import project
 
-from balatro_horizons.agents.failures import HarnessFailure
-from balatro_horizons.agents.skills import prepare_rules
 from balatro_horizons.config import ROOT
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.context.build import decision_context
 from balatro_horizons.harness.context.freeze import freeze_protocol
+from balatro_horizons.harness.failures import HarnessFailure
+from balatro_horizons.harness.skills import prepare_rules
 from balatro_horizons.harness.transport import context_payload
 
 SPEC = importlib.util.spec_from_file_location(
@@ -75,7 +75,8 @@ def test_instructions_remain_short():
 def test_new_run_rejects_unsynced_instructions_before_game_start(
     config, store, tmp_path, monkeypatch
 ):
-    from balatro_horizons.runner import Runner
+    from balatro_horizons.harness.loop import Runner
+    from balatro_horizons.harness.money import Spending
     prompts = tmp_path / "source/configs/prompts"
     shutil.copytree(ROOT / "configs/prompts", prompts)
     monkeypatch.setattr("balatro_horizons.harness.context.freeze.ROOT", prompts.parents[1])
@@ -88,7 +89,16 @@ def test_new_run_rejects_unsynced_instructions_before_game_start(
     source = prompts / "ALWAYS-LOADED.md"
     source.write_text("Updated ordinary mechanic.\n")
     with pytest.raises(HarnessFailure, match="PERSISTENT_INSTRUCTIONS_STALE"):
-        Runner(store, config, UnstartedGame(), Policy()).run()
+        Runner(
+            store,
+            config,
+            UnstartedGame(),
+            Policy(),
+            Spending.episode_only(
+                store.root / "private_runs" / "test-spending.json",
+                config.budgets.max_episode_cost_usd or 1,
+            ),
+        ).run()
     assert store.list_episodes() == []
     sync_module.sync(prompts.parents[1], write=True)
     frozen = freeze_protocol(config, Policy(), {})

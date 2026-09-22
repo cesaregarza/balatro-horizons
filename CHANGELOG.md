@@ -66,6 +66,18 @@
   requirements. Native execution and paid-provider verification remain operator
   work, not documentation acceptance.
 
+## 2026-09-21 — Harness money and loop consolidation (PR #36; issue #14)
+
+- Merged reservations and durable batch scheduling into `harness/money.py`,
+  with one `REFUSAL_OUTCOMES` table, explicit `Spending.retain`, and required
+  ledgers for named episode-loop phases.
+- Moved harness helpers under `harness/`, removed the replaced runner, agent
+  package, and scheduling module, and documented reserve-before-send and
+  campaign-versus-episode semantics in `docs/harness.md#money`.
+- `episode_start` now sits inside the episode-loop `try` block, so a journal
+  failure while recording it is classified and closed with the run instead of
+  escaping before a terminal record.
+
 ## 2026-09-21 — Dashboard boundary (PR #37)
 
 - The dashboard split keeps exploration, settings, batches, reports, and

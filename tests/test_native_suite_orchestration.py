@@ -148,8 +148,9 @@ class FaultFactory(FakeSessionFactory):
 
 
 class FaultRunner:
-    def __init__(self, store, config, game, policy):
+    def __init__(self, store, config, game, policy, spending):
         self.game = game
+        assert spending is not None
 
     def run(self, *, manifest, private):
         try:
@@ -405,13 +406,17 @@ def test_gameplay_only_uses_one_startup_and_eight_resets(monkeypatch):
     assert len(calls) == 8 and all(owner is factory.sessions[0] for owner in calls)
 
 
-def test_fault_collection_restores_transport_and_keeps_unknown_last(monkeypatch):
+def test_fault_collection_restores_transport_and_keeps_unknown_last(monkeypatch, tmp_path):
     environment = _environment("WHITE")
     games = []
     rpc_events = []
-
-    config = SimpleNamespace(environment=environment, public=lambda: {}, model_dump=lambda: {})
-    monkeypatch.setattr(faults, "Store", lambda root: object())
+    config = SimpleNamespace(
+        environment=environment,
+        budgets=SimpleNamespace(max_episode_cost_usd=1),
+        public=lambda: {},
+        model_dump=lambda: {},
+    )
+    monkeypatch.setattr(faults, "Store", lambda root: SimpleNamespace(root=tmp_path))
     monkeypatch.setattr(faults, "continuation_fingerprint", lambda raw: "same-state")
     monkeypatch.setattr(faults, "atomic_json", lambda *args, **kwargs: None)
     monkeypatch.setattr(faults, "Runner", FaultRunner)
@@ -420,6 +425,7 @@ def test_fault_collection_restores_transport_and_keeps_unknown_last(monkeypatch)
         results = faults.collect(config, game_factory=session.new_game)
 
     assert [result["unknown_status"] for result in results] == [False, True]
+    assert len(factory.sessions) == factory.sessions_closed == 1
     assert session.games_created == session.games_closed == 2
     assert all(game.closed and game._rpc == game.original_rpc for game in games)
     assert results[-1]["outcome"] == "INFRASTRUCTURE_FAILURE"

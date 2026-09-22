@@ -54,7 +54,7 @@ transport doubles live behind the session seam. Provider-native reasoning and
 tool blocks continue within one decision and reset after the game action. Every
 request reserves configured ceilings and prices, including retries. Unknown
 usage remains reserved; overage is recorded; the next request stops at the
-episode cap. A paid call requires explicit operator enablement, model settings,
+applicable episode or campaign cap. A paid call requires operator enablement, settings,
 and episode and batch caps.
 Anthropic `temperature` is incompatible with manual `thinking_budget`.
 
@@ -74,20 +74,31 @@ usage rather than double-counting disjoint cache categories.
 
 Public cost fields distinguish `public_costs_v2` from `public_transaction_v1`.
 They expose sanitized cost, balance, reservation, and settlement facts without
-provider secrets or hidden accounting. The campaign cap is separate from the
-episode cap: a campaign-only refusal leaves the current slot unresolved and
-records `scheduling_stop`; an episode-only refusal is a valid
-`BUDGET_EXHAUSTED` non-win. Funding stops are durable and cannot be resumed by
-rerunning a frozen batch.
+provider secrets or hidden accounting. Every loop receives an explicit `Spending`
+ledger; all original batch attempts share one. Standalone ledgers use the configured
+campaign cap, but have no scheduler or `scheduling_stop`. In a batch, campaign-only
+refusal leaves the slot unresolved; episode-only refusal is a valid non-win.
+Funding stops are durable and cannot be resumed by rerunning a frozen batch.
 The admission predicate is `total + reservation <= cap`, using the next model's
 worst-case reservation and unchanged floating-point arithmetic.
 `CAMPAIGN_COST_CAP` yields `CAMPAIGN_INTERRUPTED`; `EPISODE_COST_CAP` and
 `EPISODE_AND_CAMPAIGN_COST_CAP` yield `BUDGET_EXHAUSTED`. The latter still stops
-campaign scheduling. Standalone ledgers retain the configured campaign cap.
+later campaign scheduling while the current slot is a valid bounded non-win.
 `EPISODE_CAP_BELOW_RESERVATION` is a configuration refusal before episode/game
 creation. A write-once `stop.json` preserves the first scheduling stop; changing
 a frozen batch configuration yields `BATCH_CONFIGURATION_CHANGED`.
 `provider_reservation` is private accounting evidence, omitted from public exports.
+Retained reservation dollars still appear in terminal summaries, batch
+`all_attempt_cost_usd`, and status costs; private events do not hide spending.
+Reserve under the lock immediately before each send, including retries, and journal
+the reservation before the request. Successful responses settle measured costs;
+provider failures call `retain(request_id)`. Preflight is only a locked snapshot,
+never a substitute for authoritative reservation at send time.
+Only campaign reasons may enter `stop.json`. Preflight permits only
+`CAMPAIGN_COST_CAP`, with no episode, terminal or outcome. Episode-stage stops
+require an episode ID, terminal reference and matching reason/outcome.
+An unfunded paid batch slot creates no episode or game; first-stop bytes survive
+restarts. `REFUSAL_OUTCOMES` is the single reason/outcome vocabulary.
 
 ## Journals, branches, and tests
 

@@ -4,8 +4,6 @@ import hashlib
 import json
 from copy import deepcopy
 
-from balatro_horizons.agents.failures import HarnessFailure
-from balatro_horizons.agents.instructions import load_prompt
 from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, RETAINED_HELPER_RESULTS, ROOT
 from balatro_horizons.evidence.provenance import implementation_fingerprint
 from balatro_horizons.harness.context.memory import working_memory_policy
@@ -17,6 +15,8 @@ from balatro_horizons.harness.context.render import (
     validate_prompt_template,
 )
 from balatro_horizons.harness.contract import NamedPolicy, Policy
+from balatro_horizons.harness.failures import HarnessFailure
+from balatro_horizons.harness.instructions import load_prompt
 from balatro_horizons.storage.journal import digest
 
 FROZEN_INTERFACE = "tools_v7"
@@ -35,7 +35,7 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         raise HarnessFailure("PERSISTENT_INSTRUCTIONS_INVALID", stage="protocol_freeze") from None
     raw = render_prompt(template)
     skills = rules.get("skills", [])
-    from balatro_horizons.agents.outcomes import VERSION as outcome_version
+    from balatro_horizons.harness.outcomes import VERSION as outcome_version
     tools = tool_catalog(skills)
     model = policy.model if isinstance(policy, Policy) else None
     return {

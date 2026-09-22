@@ -6,7 +6,6 @@ from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
 from pydantic import Field, TypeAdapter
 
-from balatro_horizons.agents.tool_interface import INSPECT_SECTIONS
 from balatro_horizons.config import (
     DEFAULT_HISTORY_PAGE_EVENTS,
     MAX_ABORT_REASON_CHARACTERS,
@@ -16,6 +15,7 @@ from balatro_horizons.config import (
 )
 from balatro_horizons.contracts import ActionEnvelope, StrictModel
 from balatro_horizons.game.contract import GameSession
+from balatro_horizons.harness.tool_interface import INSPECT_SECTIONS
 
 
 class NoteUpdate(StrictModel):
