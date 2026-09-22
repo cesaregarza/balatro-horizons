@@ -41,8 +41,11 @@ def _read_fixture(config, receipt, result):
     path = Path(os.path.abspath(receipt))
     if path.is_relative_to("/mnt") or any(part.is_symlink() for part in (*reversed(path.parents), path)):
         raise ValueError("EXPIRY_FIXTURE_REQUIRES_LINUX_PATH")
-    payload = path.read_bytes()
-    prior = json.loads(payload)
+    try:
+        payload = path.read_bytes()
+        prior = json.loads(payload)
+    except (OSError, UnicodeError, ValueError):
+        raise ValueError("EXPIRY_FIXTURE_UNREADABLE") from None
     if (not isinstance(prior, dict) or not isinstance(prior.get("attempts"), list)
             or not all(isinstance(row, dict) for row in prior["attempts"])
             or not isinstance(prior.get("source"), dict)):
@@ -64,10 +67,13 @@ def _read_fixture(config, receipt, result):
         raise ValueError("EXPIRY_FIXTURE_SOURCE_INVALID")
     # Reusing the unpaid fixture is not recertification. Its collector and replay
     # oracle must remain byte-identical, in addition to the native fingerprint.
-    subprocess.run(["git", "-C", str(ROOT), "diff", "--exit-code", "--quiet", commit, "HEAD", "--",
-                    "src/balatro_horizons/evidence/collect/interruption.py",
-                    "src/balatro_horizons/evidence/collect/interruption_faults.py",
-                    "src/balatro_horizons/evidence/certification.py"], check=True, timeout=10)
+    try:
+        subprocess.run(["git", "-C", str(ROOT), "diff", "--exit-code", "--quiet", commit, "HEAD", "--",
+                        "src/balatro_horizons/evidence/collect/interruption.py",
+                        "src/balatro_horizons/evidence/collect/interruption_faults.py",
+                        "src/balatro_horizons/evidence/certification.py"], check=True, timeout=10)
+    except subprocess.CalledProcessError:
+        raise ValueError("EXPIRY_FIXTURE_HEAD_MISMATCH") from None
     store, eid = Store(ROOT / "data"), identifier(prior["episode_id"])
     manifest = store.manifest(eid)
     if (manifest.get("fixture") != "replay_interruption_boundary"

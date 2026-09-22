@@ -33,14 +33,14 @@ def _socket_path(environment):
 def _socket_stat(environment):
     path_value = _socket_path(environment)
     try:
-        windows_context.require_socket(environment)
         info = Path(path_value).lstat()
+        if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+            raise ValueError("DISPOSABLE_SOCKET_INVALID")
+        windows_context.require_socket(environment)
     except ValueError as error:
         raise ValueError(_error_code(error, "DISPOSABLE_SOCKET_INVALID")) from None
     except (OSError, TypeError):
         raise ValueError("DISPOSABLE_SOCKET_EXPIRED") from None
-    if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
-        raise ValueError("DISPOSABLE_SOCKET_INVALID")
     return {
         "path": path_value,
         "inode": int(info.st_ino),

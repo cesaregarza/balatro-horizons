@@ -149,6 +149,8 @@ replay reuses the prior excluded fixture, only when its native identity, runtime
 configuration, collector and replay oracle are unchanged. Historical source
 hashes are retained alongside the new source and prior-receipt digest, never
 rewritten or promoted to a certificate.
+Both native receipts are mode `0600`, stored under gitignored
+`reports/verification/`, and are not included in public exports or published.
 
 After the owned game closes, stdin requests normal exit of only the disposable
 command. The collector must observe actual socket disappearance and the real
@@ -163,7 +165,17 @@ Hard-killing the collector
 can still interrupt restoration: use `bh review session --apply` from an active
 Windows-connected terminal before further work; do not retry a native suite.
 
-The disposable child has an independent 180-second input deadline. Microsoft
+The disposable child has an independent 180-second input deadline, but the
+collector's 20-second exit wait does not signal or kill it. On
+`DISPOSABLE_CHILD_EXIT_TIMEOUT`, an orphaned Windows `wsl.exe` command may survive
+the collector. Operator cleanup requires identifying that **specific** invocation
+in Windows process inspection by its checkout, module, and unique `--child`
+argument, then closing only that command; never terminate all `wsl.exe` processes,
+the distro, or the WSL VM. Receipt child/relay PIDs are Linux identities, not
+Windows process IDs. If the invocation cannot be identified unambiguously, stop
+for operator investigation rather than guessing or retrying.
+
+Microsoft
 [WSL source](https://github.com/microsoft/WSL/blob/56244fdb65508a4628c38865f0e2278f779b81f4/src/linux/init/init.cpp#L2166-L2171)
 resets the relay's interop server before exit, but actual disappearance is an
 observation requirement, not an assumption about the installed Windows version.

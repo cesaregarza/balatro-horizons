@@ -3,6 +3,8 @@
 import io
 import json
 import os
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -321,3 +323,32 @@ def test_child_only_reads_bridge_environment_keys(monkeypatch):
     finally:
         os.close(read_fd)
     assert captured == {"WSL_INTEROP": "/run/WSL/1_interop", "WSL_DISTRO_NAME": "Ubuntu"}
+
+
+def test_real_child_rejects_changed_start_ticks():
+    # A real Linux child proves the receipt is compared against /proc, not echoed
+    # through a mocked parser. EOF exits only this owned test process.
+    with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"],
+                          stdin=subprocess.PIPE) as child:
+        try:
+            actual = identity._proc_stat(child.pid)
+            parent = identity._proc_stat(actual["ppid"])
+            receipt = {"pid": child.pid, "ppid": actual["ppid"], "ancestors": [actual, parent]}
+            assert identity._validate_ancestors(receipt, parent["pid"]) == (child.pid, parent["start_ticks"])
+            receipt["ancestors"] = [{**actual, "start_ticks": actual["start_ticks"] + 1}, parent]
+            with pytest.raises(ValueError, match="^DISPOSABLE_ANCESTRY_INVALID$"):
+                identity._validate_ancestors(receipt, parent["pid"])
+        finally:
+            child.stdin.close()
+            child.wait(timeout=5)
+
+
+@pytest.mark.parametrize("mode,foreign_uid", [(0o140000, True), (0o120000, False),
+                                             (0o010000, False), (0o100000, False)])
+def test_invalid_socket_type_or_owner_is_not_expiry(monkeypatch, mode, foreign_uid):
+    info = SimpleNamespace(st_mode=mode, st_uid=os.getuid() + int(foreign_uid))
+    monkeypatch.setattr(identity.Path, "lstat", lambda path: info)
+    # Keep the real shared require_socket: its broad expiry taxonomy must not
+    # swallow the disposable helper's more specific invalid-socket refusal.
+    with pytest.raises(ValueError, match="^DISPOSABLE_SOCKET_INVALID$"):
+        identity.socket_identity({"WSL_INTEROP": "/run/WSL/123_interop"})

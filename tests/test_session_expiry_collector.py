@@ -270,3 +270,22 @@ def test_changed_private_hash_cannot_be_used_as_replay_oracle(prior_fixture):
     collector.prefix_snapshot.return_value = {"initial_continuation_hash": "tampered"}
     with pytest.raises(ValueError, match="EXPIRY_FIXTURE_PRIVATE_HASH_MISMATCH"):
         collector._read_fixture(Config(), path, {"environment_hash": "runtime", "source": {"native_implementation_hash": "native"}})
+
+
+@pytest.mark.parametrize("payload", [None, b"", b"not json", b"\xff"])
+def test_unreadable_fixture_has_named_refusal(tmp_path, payload):
+    path = tmp_path / "prior.json"
+    if payload is not None:
+        path.write_bytes(payload)
+    with pytest.raises(ValueError, match="^EXPIRY_FIXTURE_UNREADABLE$"):
+        collector._read_fixture(Config(), path, {})
+
+
+@pytest.mark.parametrize("returncode", [1, 128])
+def test_changed_or_missing_fixture_head_has_named_refusal(prior_fixture, returncode):
+    path, prior, store = prior_fixture
+    path.write_text(json.dumps(prior))
+    collector.subprocess.run.side_effect = collector.subprocess.CalledProcessError(returncode, ["git", "diff"])
+    with pytest.raises(ValueError, match="^EXPIRY_FIXTURE_HEAD_MISMATCH$"):
+        collector._read_fixture(Config(), path, {"environment_hash": "runtime", "source": {"native_implementation_hash": "native"}})
+    store.manifest.assert_not_called()

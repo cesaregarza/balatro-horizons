@@ -12,6 +12,10 @@
   WSL shutdown, socket deletion, provider call, or restoration certification.
 - Keep socket/ancestry proof separate from disposable-process lifecycle, below
   the owner's per-file size limit, without changing fault or replay sequencing.
+- Distinguish unreadable/mismatched fixture receipts and invalid socket types or
+  owners from session expiry; test real Linux child start-time rejection and the
+  existing immediate debugger exit-policy ordering. Document private receipt
+  handling and operator-only cleanup of a surviving disposable command.
 
 ## 2026-09-22 — Bounded replay interruption study (part of #42)
 

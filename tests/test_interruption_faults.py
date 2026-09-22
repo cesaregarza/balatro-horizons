@@ -9,6 +9,23 @@ from balatro_horizons.evidence.collect import interruption_faults as faults
 from balatro_horizons.game.contract import NativeFailure
 
 
+def test_debugger_exit_policy_immediately_follows_successful_attach():
+    script = faults._SUSPEND_TEMPLATE
+    attach = 'if (!DebugActiveProcess(process.Id)) throw new InvalidOperationException("DEBUG_ATTACH_FAILED");'
+    policy = 'if (!DebugSetProcessKillOnExit(false)) throw new InvalidOperationException("DEBUG_KILL_POLICY_FAILED");'
+    before, after = script.split(attach, 1)
+    between, after_policy = after.split(policy, 1)
+    # Set the local flag first so a failed policy call still detaches in finally;
+    # no process access, output, or other operation belongs in this window.
+    assert between.strip() == "attached = true;"
+    assert "process.Refresh();" in before
+    assert "process.MainModule.FileName" in before
+    assert 'process.StartTime.ToUniversalTime().ToString("o")' in before
+    assert "Console.WriteLine" not in before
+    assert "Console.WriteLine" in after_policy
+    assert "bool detached = !attached || DebugActiveProcessStop(process.Id);" in after_policy
+
+
 class FakeStream:
     def __init__(self, calls):
         self.calls = calls
