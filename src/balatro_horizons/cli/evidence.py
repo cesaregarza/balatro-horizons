@@ -12,10 +12,13 @@ def run_evidence_command(args):
             gameplay_only=args.gameplay_only,
             connection_only=args.connection_only,
             continuation_only=args.continuation_only,
+            interruption_only=args.interruption_only,
             resume_actions=getattr(args, "resume_actions", False),
             resume_certification=getattr(args, "resume_certification", False),
         )
     if operation == "collect":
+        if args.interruption_only:
+            return collect_interruption(args)
         if args.continuation_only:
             return collect_continuation(args)
         if args.report is not None:
@@ -48,6 +51,18 @@ def collect_continuation(args):
 
     if args.report is None or args.from_stage or args.episode_id or args.gameplay_only:
         raise ValueError("CONTINUATION_REQUIRES_REPORT_AND_NO_RESUME_MODE")
+    result = collect(load_config(ROOT / "configs/smoke.yaml"), args.report)
+    if result["status"] != "passed":
+        raise ValueError(result["reason"])
+    return result
+
+
+def collect_interruption(args):
+    from balatro_horizons.config import ROOT, load_config
+    from balatro_horizons.evidence.collect.interruption import collect
+
+    if args.report is None or args.from_stage or args.episode_id or args.gameplay_only or args.continuation_only:
+        raise ValueError("INTERRUPTION_REQUIRES_REPORT_AND_NO_RESUME_MODE")
     result = collect(load_config(ROOT / "configs/smoke.yaml"), args.report)
     if result["status"] != "passed":
         raise ValueError(result["reason"])

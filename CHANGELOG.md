@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-22 — Bounded replay interruption study (part of #42)
+
+- Add `bh evidence plan/collect --interruption-only`: at most seven owned
+  launches, single-send acknowledgement loss, deliberate native divergence,
+  and an independently bounded game hold, with immutable sanitized receipts.
+- Reuse existing replay comparisons without writing or selecting certificates.
+  Preserve fail-closed policy, historical hashes, and the fixture journal.
+- Explicitly exclude actual WSL socket expiry from this partial study; offline
+  preflight/cleanup tests do not establish native classification or close #42.
+
 ## 2026-09-22 — Run execution and export ownership (issue #44)
 
 - Split `RunService` execution preparation/locked lifecycle into
