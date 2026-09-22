@@ -30,7 +30,7 @@ from balatro_horizons.harness.helpers import helper
 from balatro_horizons.harness.transport import DirectProvider, context_payload
 from balatro_horizons.runner import Runner
 from balatro_horizons.workbench.branches import prepare_branch
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 def select(ctx):
@@ -600,7 +600,7 @@ def test_prospective_review_and_export_keep_current_edit_behind_action_reveal(st
         decision_context(observation, [], notebook=book.view(), byte_limit=2000)
 
     eid = Runner(store, config, FakeGame(), WorkingScript(annotated(select, text="CURRENT_EDIT_SENTINEL"), play)).run()["episode_id"]
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     token = review.open(eid)["review_token"]
     assert "CURRENT_EDIT_SENTINEL" not in json.dumps(review.view(token))
     review.advance(token)

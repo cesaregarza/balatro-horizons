@@ -19,7 +19,7 @@ from balatro_horizons.game.state import normalize
 from balatro_horizons.harness.context.build import context
 from balatro_horizons.harness.transport import DirectProvider, ProviderFailure
 from balatro_horizons.storage.journal import Store
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
@@ -114,7 +114,7 @@ def test_no_zero_repeat_certification_and_immutable_records(store, episode, conf
 
 
 def test_trajectory_never_includes_unrevealed_state(store, episode):
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     opened = review.open(episode)
     assert [p["decision"] for p in opened["view"]["trajectory"]] == [0]
     review.advance(opened["review_token"])

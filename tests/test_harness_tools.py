@@ -22,7 +22,7 @@ from balatro_horizons.harness.contract import Operation
 from balatro_horizons.harness.helpers import helper
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure
 from balatro_horizons.runner import Runner
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 def config_for(provider="openai"):
@@ -355,7 +355,7 @@ def test_tools_inspect_calculate_correct_error_and_finish(store, monkeypatch, pr
     else:
         call, output = received[1]["messages"][-2:]
         assert call["content"][0]["id"] == output["content"][0]["tool_use_id"]
-    opened = ReviewService(store).open(result["episode_id"])
+    opened = WorkbenchService(store).open(result["episode_id"])
     assert "action_events" not in opened["view"]
 
 
