@@ -2,6 +2,10 @@
 
 ## 2026-09-22 — Budget continuations ported to the current packages (PR #25)
 
+- Added `bh evidence plan/collect --continuation-only` for a bounded unpaid
+  initial-blind fixture plus three fresh-process probes, without backend
+  deployment. Immutable receipts preserve failures and explicitly exclude
+  cost-stopped-root or later-phase certification.
 - Integrated current main, including #23, without rebasing the published branch.
   Budget preparation and ledger reconciliation now live in `workbench/`; probe
   certification and its native identity live in `evidence/`.

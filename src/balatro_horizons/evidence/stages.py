@@ -132,11 +132,18 @@ def stage_list(
     resume_actions: bool = False,
     gameplay_only: bool = False,
     connection_only: bool = False,
+    continuation_only: bool = False,
 ) -> tuple[Stage, ...]:
     """Select a non-executing plan, rejecting incompatible resume modes."""
-    selected = sum((resume_certification, resume_actions, gameplay_only, connection_only))
+    selected = sum((resume_certification, resume_actions, gameplay_only, connection_only, continuation_only))
     if selected > 1:
         raise ValueError("RESUME_MODES_ARE_MUTUALLY_EXCLUSIVE")
+    if continuation_only:
+        return (Stage(
+            "initial blind continuation fixture", 4, 4,
+            ("one unpaid fixture capture", "three fresh-process same-action restorations; stop on failure"),
+            "bh evidence collect --continuation-only --report PATH", "native-continuation-*.json",
+        ),)
     if connection_only:
         return (Stage(
             "Windows connection only", 1, 0,
@@ -163,6 +170,7 @@ def plan(**options) -> dict:
         "native_evidence_collected": False,
         "release_certification_requested": not (
             options.get("gameplay_only", False) or options.get("connection_only", False)
+            or options.get("continuation_only", False)
         ),
         "capability_activation_requested": False,
     }

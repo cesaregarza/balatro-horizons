@@ -119,6 +119,22 @@ This differs deliberately from the conservative ordinary replay policy above;
 The probe implementation participates in the native identity; its sequencing
 cannot be changed under harness-only evidence reuse. Old source hashes and frozen
 protocols are never rewritten to make an existing root executable on new code.
+For a clean-source native regression without a paid root or running backend:
+
+```bash
+uv run bh evidence plan --continuation-only
+uv run bh evidence collect --continuation-only --report reports/verification/native-continuation-UNIQUE.json
+```
+
+This bounded Red/White fixture uses at most four launches: one initial-blind
+checkpoint capture, then three fresh-process `select_blind` probes. It stops at
+the first failure and preserves an immutable, sanitized receipt, the original
+parent journal, and private divergence evidence. It requires an idle runtime,
+explicit Windows registration, and matching pinned instrumentation. No provider
+is called, backend started, old protocol rewritten, or capability activated.
+The evaluator-aborted fixture is not a cost-exhausted model run; a pass proves
+only that checkpoint and action, not later phases or a paid continuation.
+
 The native proof required by PR #25 remains an operator-gated step; offline
 doubles demonstrate control flow only, not Windows restoration fidelity.
 
