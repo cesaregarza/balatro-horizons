@@ -144,13 +144,13 @@ def test_readiness_wait_is_read_only_and_bounded(monkeypatch):
     bridge.rpc.return_value = {"bh": {"ready": True, "busy": False}}
     monkeypatch.setattr(connection.time, "sleep", Mock())
     monkeypatch.setattr(connection.time, "monotonic", Mock(side_effect=[0, 0.5]))
-    connection.wait_ready(bridge, {"bh": {"ready": False}})
+    connection.wait_ready(bridge, {"bh": {"ready": False, "busy": False}})
     bridge.rpc.assert_called_once_with("bh_inspect")
     assert bridge.verify_identity.call_count == 2
     bridge.rpc.reset_mock()
     monkeypatch.setattr(connection.time, "monotonic", Mock(side_effect=[0, 1]))
     with pytest.raises(ValueError, match="CONNECTION_READINESS_TIMEOUT"):
-        connection.wait_ready(bridge, {"bh": {"ready": False}})
+        connection.wait_ready(bridge, {"bh": {"ready": False, "busy": False}})
     bridge.rpc.assert_not_called()
 
 
@@ -161,3 +161,18 @@ def test_busy_native_lock_prevents_process_creation(harness, monkeypatch):
     assert result["status"] == "failed" and result["reason"] == "NATIVE_WORKER_BUSY"
     bridge.launch.assert_not_called()
     bridge.stop.assert_not_called()
+
+
+def test_main_menu_connection_does_not_claim_gameplay_readiness():
+    bridge = Mock(env=Environment())
+    result = connection.wait_ready(bridge, {"state": "MENU", "bh": {"ready": False, "busy": False}})
+    assert result == {"phase": "MENU", "gameplay_ready": False}
+    bridge.verify_identity.assert_called_once()
+    bridge.rpc.assert_not_called()
+
+
+def test_busy_menu_is_not_a_passing_connection(monkeypatch):
+    bridge = Mock(env=Environment(launch_timeout_seconds=1))
+    monkeypatch.setattr(connection.time, "monotonic", Mock(side_effect=[0, 1]))
+    with pytest.raises(ValueError, match="CONNECTION_READINESS_TIMEOUT"):
+        connection.wait_ready(bridge, {"state": "MENU", "bh": {"ready": False, "busy": True}})

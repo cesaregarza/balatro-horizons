@@ -87,8 +87,14 @@ def wait_ready(bridge, state):
     deadline = time.monotonic() + bridge.env.launch_timeout_seconds
     while True:
         bridge.verify_identity(state)
-        if state["bh"]["ready"] and not state["bh"]["busy"]:
-            return
+        # Lua's ready flag describes settled gameplay. Its menu endpoint instead
+        # waits for MENU; this zero-reset check must not require a started game.
+        if not state["bh"]["busy"] and (state.get("state") == "MENU" or state["bh"]["ready"]):
+            phase = state.get("state", "UNKNOWN")
+            return {
+                "phase": phase if isinstance(phase, str) and phase.isupper() and len(phase) < 50 else "UNKNOWN",
+                "gameplay_ready": bool(state["bh"]["ready"]),
+            }
         if time.monotonic() >= deadline:
             raise ValueError("CONNECTION_READINESS_TIMEOUT")
         time.sleep(0.1)
@@ -117,9 +123,10 @@ def recover_rpc(bridge):
     # This tests refresh and a fresh RPC subprocess, not actual socket destruction.
     register_session(load_session())
     state = bridge.rpc("bh_inspect")
-    wait_ready(bridge, state)
+    reconnected = wait_ready(bridge, state)
     return {"unregistered_rpc_refused": True, "registration_refreshed": True,
-            "rpc_reopened_same_game": True, "actual_socket_expiry_tested": False}
+            "rpc_reopened_same_game": True, "actual_socket_expiry_tested": False,
+            "reconnected": reconnected}
 
 
 def error_code(error):
@@ -134,8 +141,8 @@ def run_owned(bridge, result):
     try:
         raw = bridge.launch()
         result["native_launches"] = 1
-        wait_ready(bridge, raw)
         result["startup_identity_verified"] = True
+        result["startup"] = wait_ready(bridge, raw)
         result.update(recover_rpc(bridge))
     finally:
         try:

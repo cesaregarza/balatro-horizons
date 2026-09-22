@@ -51,6 +51,10 @@ Cleanup stops only that launch identity. It neither simulates actual socket
 destruction nor claims replay, gameplay, or capability certification. Every
 attempt gets a new immutable source/environment-bound receipt, including failures;
 no backend deployment, provider call, or certificate activation is performed.
+Main-menu connection readiness is distinct from Lua's settled-gameplay flag:
+an identity-verified, non-busy `MENU` response suffices for this zero-reset check.
+The receipt records phase and gameplay readiness separately, without asserting
+that a game action would be legal. Busy responses still fail the bounded wait.
 
 ```bash
 uv run bh evidence collect
