@@ -139,6 +139,7 @@ def _divergence(game, row, snapshot):
 def _hang(game, row):
     bridge = game.bridge
     original = bridge.env
+    primary = None
     bridge._close_rpc()
     bridge.env = original.model_copy(update={"http_timeout_seconds": 2, "rpc_response_margin_seconds": 2})
     try:
@@ -155,9 +156,16 @@ def _hang(game, row):
         if not row.get("held") or not row.get("detached"):
             raise ValueError("INTERRUPTION_HANG_CLEANUP_NOT_CONFIRMED")
         row["classification"] = "unknown_game_outcome"
+    except BaseException as error:
+        primary = error
+        raise
     finally:
         try:
             bridge._close_rpc()
+        except BaseException as error:
+            row["rpc_cleanup_reason"] = error_code(error)
+            if primary is None:
+                raise
         finally:
             bridge.env = original
 

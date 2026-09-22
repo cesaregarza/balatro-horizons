@@ -195,9 +195,12 @@ def test_hang_requires_real_transport_error_and_confirmed_detach(monkeypatch):
     assert row["classification"] == "unknown_game_outcome" and row["detached"]
     assert game.bridge.env is environment
     game.wait_ready.side_effect = NativeFailure("NATIVE_PROCESS_IDENTITY_MISMATCH")
+    game.bridge._close_rpc.side_effect = [None, NativeFailure("CLOSE_FAILED")]
+    row = {}
     with pytest.raises(NativeFailure, match="IDENTITY_MISMATCH"):
-        collector._hang(game, {})
+        collector._hang(game, row)
     assert game.bridge.env is environment
+    assert row["rpc_cleanup_reason"] == "CLOSE_FAILED"
 
 
 @pytest.mark.parametrize("extra", [[], ["--report", "x", "--continuation-only"], ["--report", "x", "--from-stage", "anything"]])
