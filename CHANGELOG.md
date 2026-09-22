@@ -11,6 +11,15 @@
 - Create the private parent with mode 0700 and files with 0600. Frozen credential
   and session tests remain unchanged; new cases use disposable Linux fixtures.
 
+## 2026-09-22 — Bounded admission and explicit menu regression guards (#51)
+
+- Bound the competing-worker request wait and release its guard before joining
+  the request thread, so blocking admission fails without hanging the suite.
+- Make an unexpected RPC poll from an identity-verified, idle menu fail with an
+  explicit assertion; keep menu readiness distinct from gameplay readiness.
+- Document the connection diagnostic's temporary registration rename and
+  hard-kill recovery window, and the accepted #25 fixture's limited native scope.
+
 ## 2026-09-22 — Credential apply failure reporting (#48)
 
 - Preflight both credential and service-drop-in destinations before replacing

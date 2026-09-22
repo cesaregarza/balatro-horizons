@@ -1,6 +1,8 @@
 """Offline regressions for session expiry and competing worker admission."""
 
 import json
+from concurrent.futures import Future
+from threading import Thread
 from unittest.mock import Mock
 
 import pytest
@@ -42,12 +44,33 @@ def test_batch_api_freezes_native_kind_before_session_preflight(store, config, m
     ("/api/batches/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/run", {"offline": True}),
     ("/api/verify", {"episode_id": "busy", "decision": 0}),
 ])
-def test_worker_reservation_returns_busy_without_waiting(store, workbench_config, endpoint, payload):
+def test_worker_reservation_returns_busy_without_waiting(store, workbench_config, endpoint, payload, monkeypatch):
     app = create_app(store.root, workbench_config)
-    with TestClient(app) as client, app.state.runs._guard:
-        response = client.post(endpoint, headers={"X-BH-Operator": app.state.operator_token}, json=payload)
-        assert response.status_code == 400
-        assert response.json()["error"] == "WORKER_BUSY"
+    launch = Mock(side_effect=AssertionError("competing request must not launch a worker"))
+    monkeypatch.setattr(app.state.runs, "_launch", launch)
+    result = Future()
+    with TestClient(app) as client:
+        def request():
+            try:
+                result.set_result(client.post(endpoint, headers={"X-BH-Operator": app.state.operator_token}, json=payload))
+            except Exception as exc:
+                result.set_exception(exc)
+
+        worker = Thread(target=request, daemon=True)
+        try:
+            with app.state.runs._guard:
+                worker.start()
+                try:
+                    response = result.result(timeout=2)
+                except TimeoutError:
+                    pytest.fail("competing admission waited instead of returning WORKER_BUSY")
+                assert response.status_code == 400
+                assert response.json()["error"] == "WORKER_BUSY"
+        finally:
+            # Release the guard before joining, including on a blocking-admission regression.
+            worker.join(timeout=2)
+            assert not worker.is_alive(), "competing request did not stop after releasing the guard"
+    launch.assert_not_called()
 
 
 @pytest.mark.parametrize("code", sorted(transport.SESSION_ERROR_CODES))
