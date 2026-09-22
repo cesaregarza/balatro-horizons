@@ -47,7 +47,7 @@ def exercise(unknown: bool, config: Any, *, game_factory=None) -> dict:
     with session.intercept_rpc_for_calibration(wrapper):
         spending = Spending.episode_only(
             store.root / "private_runs" / f"native-fault-{seed}-spending.json",
-            config.budgets.max_episode_cost_usd or 1,
+            config.budgets.max_batch_cost_usd,
         )
         summary = Runner(store, config, session, Baseline("heuristic"), spending).run(
             manifest={

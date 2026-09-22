@@ -8,8 +8,6 @@ from balatro_horizons.storage.journal import digest
 IMPLEMENTATION_FILES = (
     "config.py",
     "contracts.py",
-    "harness/loop.py",
-    "harness/money.py",
     "service.py",
     "workbench/branches.py",
 )

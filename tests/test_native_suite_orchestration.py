@@ -152,6 +152,7 @@ class FaultRunner:
     def __init__(self, store, config, game, policy, spending):
         self.game = game
         assert spending is not None
+        assert spending.cap == config.budgets.max_batch_cost_usd
 
     def run(self, *, manifest, private):
         try:
@@ -444,7 +445,7 @@ def test_fault_collection_restores_transport_and_keeps_unknown_last(monkeypatch,
     rpc_events = []
     config = SimpleNamespace(
         environment=environment,
-        budgets=SimpleNamespace(max_episode_cost_usd=1),
+        budgets=SimpleNamespace(max_episode_cost_usd=1, max_batch_cost_usd=7),
         public=lambda: {},
         model_dump=lambda: {},
     )
