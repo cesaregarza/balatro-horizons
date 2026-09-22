@@ -10,6 +10,7 @@ from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeGame
 from balatro_horizons.game.windows_context import load_session
 from balatro_horizons.harness.baselines import Baseline
+from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
 from balatro_horizons.harness.loop import run_episode
 from balatro_horizons.harness.money import (
     Spending,
@@ -19,7 +20,7 @@ from balatro_horizons.harness.money import (
     validate_paid_configuration,
 )
 from balatro_horizons.harness.transport import DirectProvider
-from balatro_horizons.service_execution import execute_locked, prepare_execution
+from balatro_horizons.service_execution import ExecutionRequest, execute_locked, prepare_execution
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
 from balatro_horizons.workbench.branches import prepare_branch
 from balatro_horizons.workbench.policies import (
@@ -105,24 +106,33 @@ class RunService:
         spending=None,
         human_steps=0,
     ):
-        plan = prepare_execution(
-            self,
-            config,
-            agent,
-            seed,
-            offline=offline,
-            calibration=calibration,
-            eid=eid,
-            extra=extra,
-            resume=resume,
-            prefix=prefix,
-            operations=operations,
-            spending=spending,
-            human_steps=human_steps,
-            root=ROOT,
-            load_session_fn=load_session,
+        request = ExecutionRequest(
+            config=config.model_copy(deep=True), agent=agent, seed=seed, offline=offline,
+            eid=eid, resume=resume, prefix=prefix, spending=spending,
         )
+        policy, prompt_bytes = self._execution_policy(request, operations, human_steps)
+        plan = prepare_execution(
+            self.store, request, policy, prompt_bytes, calibration=calibration,
+            extra=extra, assisted=bool(operations or human_steps), root=ROOT,
+        )
+        self.review.expose(plan.eid, "operator_configuration", model_identity_seen=True)
+        self.active_id = plan.eid
+        plan.lock_path.parent.mkdir(parents=True, exist_ok=True)
         return execute_locked(self, plan, run_episode_fn=run_episode)
+
+    def _execution_policy(self, request, operations, human_steps):
+        from balatro_horizons.harness.instructions import load_prompt
+
+        if request.resume:
+            validate_continuation(
+                restore_protocol(self.store, request.resume), request.config, request.agent,
+                human=request.agent == "human",
+            )
+        policy = self.policy(request.config, request.agent)
+        prompt_bytes = None if request.resume else load_prompt(ROOT)
+        if not request.offline and request.eid is None:
+            load_session()
+        return self._decorate_policy(policy, operations, human_steps), prompt_bytes
 
     def start(self, config, agent, seed, *, offline=False, calibration=False):
         config = config.model_copy(deep=True)

@@ -5,6 +5,8 @@
 - Split `RunService` execution preparation/locked lifecycle into
   `service_execution.py`; lock admission, native preflight, game cleanup, and
   terminal failure accounting remain ordered at the service boundary.
+- Pass a typed execution request with service-owned policy decoration, and keep
+  the frozen-rules path explicit rather than deriving it from the worker lock.
 - Moved human and intervention policy wrappers into `workbench/policies.py`;
   `service.py` keeps the orchestration import and public compatibility names.
 - Extracted batch-slot affordability preflight without changing stop, reservation,

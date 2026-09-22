@@ -5,141 +5,128 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from threading import Event
+from typing import Any, Protocol
 
 from balatro_horizons.config import Config
 from balatro_horizons.game.contract import GameSession
-from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
 from balatro_horizons.harness.contract import Policy, ProviderPolicy
 from balatro_horizons.harness.money import Spending
 from balatro_horizons.harness.terminals import INCOMPLETE_TERMINAL_REASON
-from balatro_horizons.storage.journal import digest
+from balatro_horizons.storage.journal import Store, digest
 
 
 @dataclass(frozen=True)
-class ExecutionPlan:
+class ExecutionRequest:
     config: Config
     agent: str
     seed: str
     offline: bool
+    eid: str | None
+    resume: dict[str, Any] | None
+    prefix: list[dict[str, Any]] | None
+    spending: Spending | None
+
+
+@dataclass(frozen=True)
+class ExecutionPlan:
+    request: ExecutionRequest
     calibration: bool
     eid: str
     policy: Policy
     spending: Spending
     prompt_bytes: bytes | None
-    resume: object
-    prefix: object
-    manifest: dict[str, Any]
+    evidence_kind: str
     lock_path: Path
+    rules_path: Path
+
+
+class ExecutionOwner(Protocol):
+    store: Store
+    stop: Event
+    active_id: str | None
+    error: str | None
+
+    def create_game(self, config: Config, seed: str, *, offline: bool,
+                    calibration: bool) -> GameSession: ...
 
 
 def prepare_execution(
-    owner: Any,
-    config: Config,
-    agent: str,
-    seed: str,
+    store: Store,
+    request: ExecutionRequest,
+    policy: Policy,
+    prompt_bytes: bytes | None,
     *,
-    offline: bool,
     calibration: bool,
-    eid: str | None,
     extra: dict[str, Any] | None,
-    resume: object,
-    prefix: object,
-    operations: list[object] | None,
-    spending: Spending | None,
-    human_steps: int,
+    assisted: bool,
     root: Path,
-    load_session_fn: Callable[[], object],
 ) -> ExecutionPlan:
-    config = config.model_copy(deep=True)
-    if resume:
-        validate_continuation(
-            restore_protocol(owner.store, resume), config, agent, human=agent == "human"
-        )
-    policy = owner.policy(config, agent)
-    from balatro_horizons.harness.instructions import load_prompt
-
-    prompt_bytes = None if resume else load_prompt(root)
-    if not offline and eid is None:
-        load_session_fn()
-    policy = owner._decorate_policy(policy, operations, human_steps)
-    if calibration and (isinstance(policy, ProviderPolicy) or policy.model or agent == "human"):
+    config = request.config
+    if calibration and (isinstance(policy, ProviderPolicy) or policy.model or request.agent == "human"):
         raise ValueError("CALIBRATION_REQUIRES_SCRIPTED_POLICY")
-    manifest = _execution_manifest(
-        config, agent, offline, calibration, resume, extra, operations, human_steps
-    )
-    eid = eid or owner.store.create(manifest, {"seed": seed, "config": config.model_dump()})
-    spending = spending or Spending.episode_only(
-        owner.store.root / "private_runs" / eid / "spending.json",
+    manifest = _execution_manifest(request, calibration, extra, assisted)
+    eid = request.eid or store.create(manifest, {"seed": request.seed, "config": config.model_dump()})
+    spending = request.spending or Spending.episode_only(
+        store.root / "private_runs" / eid / "spending.json",
         config.budgets.max_batch_cost_usd,
     )
-    owner.review.expose(eid, "operator_configuration", model_identity_seen=True)
-    owner.active_id = eid
-    lock_path = owner.store.root / "worker.lock" if offline else root / "private/native-worker.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
     return ExecutionPlan(
-        config=config,
-        agent=agent,
-        seed=seed,
-        offline=offline,
-        calibration=calibration,
+        request=request,
+        calibration=calibration or bool(request.resume),
         eid=eid,
         policy=policy,
         spending=spending,
         prompt_bytes=prompt_bytes,
-        resume=resume,
-        prefix=prefix,
-        manifest=manifest,
-        lock_path=lock_path,
+        evidence_kind=manifest["evidence_kind"],
+        lock_path=store.root / "worker.lock" if request.offline else root / "private/native-worker.lock",
+        rules_path=root / "private/rules.json",
     )
 
 
 def _execution_manifest(
-    config: Config,
-    agent: str,
-    offline: bool,
+    request: ExecutionRequest,
     calibration: bool,
-    resume: object,
     extra: dict[str, Any] | None,
-    operations: list[object] | None,
-    human_steps: int,
+    assisted: bool,
 ) -> dict[str, Any]:
+    config = request.config
     manifest = {
-        "evidence_kind": "SYNTHETIC_TEST" if offline else "NATIVE",
+        "evidence_kind": "SYNTHETIC_TEST" if request.offline else "NATIVE",
         "config": config.public(),
-        "agent": agent,
-        "evaluation_eligible": not offline and not calibration and not resume,
+        "agent": request.agent,
+        "evaluation_eligible": not request.offline and not calibration and not request.resume,
         "config_hash": digest(config.model_dump()),
         **(extra or {}),
     }
-    if agent == "human" or resume or operations or human_steps:
+    if request.agent == "human" or request.resume or assisted:
         manifest["evaluation_eligible"] = False
-        manifest["assistance"] = "human_takeover" if agent == "human" else "intervention"
+        manifest["assistance"] = "human_takeover" if request.agent == "human" else "intervention"
     return manifest
 
 
 def execute_locked(
-    owner: Any, plan: ExecutionPlan, *, run_episode_fn: Callable[..., object]
+    owner: ExecutionOwner, plan: ExecutionPlan, *, run_episode_fn: Callable[..., object]
 ) -> object:
     game = None
+    request = plan.request
     with plan.lock_path.open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             game = owner.create_game(
-                plan.config,
-                plan.seed,
-                offline=plan.offline,
-                calibration=plan.calibration or bool(plan.resume),
+                request.config,
+                request.seed,
+                offline=request.offline,
+                calibration=plan.calibration,
             )
             rules = {"core": "See the shared rules kernel."}
-            frozen = plan.lock_path.parent / "rules.json"
-            if not plan.offline and frozen.exists():
-                rules = json.loads(frozen.read_text())
+            if not request.offline and plan.rules_path.exists():
+                rules = json.loads(plan.rules_path.read_text())
                 if rules.get("environment_hash") != digest(game.lock):
                     raise ValueError("FROZEN_RULES_ENVIRONMENT_MISMATCH")
             return run_episode_fn(
                 owner.store,
-                plan.config,
+                request.config,
                 game,
                 plan.policy,
                 plan.spending,
@@ -147,8 +134,8 @@ def execute_locked(
                 rules=rules,
                 prompt_bytes=plan.prompt_bytes,
                 eid=plan.eid,
-                resume=plan.resume,
-                history_prefix=plan.prefix,
+                resume=request.resume,
+                history_prefix=request.prefix,
             )
         except Exception as error:
             _finish_failed_execution(owner, plan, game, error)
@@ -158,7 +145,7 @@ def execute_locked(
 
 
 def _finish_failed_execution(
-    owner: Any, plan: ExecutionPlan, game: GameSession | None, error: Exception
+    owner: ExecutionOwner, plan: ExecutionPlan, game: GameSession | None, error: Exception
 ) -> None:
     if game:
         try:
@@ -175,7 +162,7 @@ def _finish_failed_execution(
         plan.eid,
         {
             "episode_id": plan.eid,
-            "evidence_kind": plan.manifest["evidence_kind"],
+            "evidence_kind": plan.evidence_kind,
             "outcome": "INFRASTRUCTURE_FAILURE",
             "reason": reason,
             "cost_usd": 0,

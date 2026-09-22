@@ -1,10 +1,12 @@
 """Pure lifecycle-order guards for the extracted service execution helper."""
 
 import threading
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
+from balatro_horizons import service as service_module
 from balatro_horizons.config import Config
 from balatro_horizons.evidence.certification import verify_checkpoint
 from balatro_horizons.harness import instructions
@@ -14,7 +16,8 @@ from balatro_horizons.harness.money import Spending
 from balatro_horizons.review.decision_ledger import build_summary
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService
-from balatro_horizons.service_execution import execute_locked, prepare_execution
+from balatro_horizons.service_execution import ExecutionRequest, execute_locked, prepare_execution
+from balatro_horizons.storage.journal import atomic_json, digest
 from balatro_horizons.workbench.branches import prepare_branch
 
 
@@ -28,47 +31,44 @@ def test_native_preflight_and_constructor_order(monkeypatch, tmp_path):
             calls.append("create-record")
             return "episode"
 
-    class Owner:
-        def __init__(self):
-            self.store = Store()
-            self.review = SimpleNamespace(expose=lambda *args, **kwargs: calls.append("expose"))
-            self.stop = threading.Event()
-            self.active_id = None
-
-        def policy(self, config, agent):
-            calls.append("policy")
-            return Baseline("heuristic")
-
-        def _decorate_policy(self, policy, operations, human_steps):
-            return policy
-
-        def create_game(self, config, seed, *, offline, calibration):
-            calls.append("game-constructor")
-            return SimpleNamespace(lock={}, close=lambda: calls.append("close"))
-
-    monkeypatch.setattr(instructions, "load_prompt", lambda root: calls.append("prompt") or b"")
-    owner = Owner()
-    plan = prepare_execution(
-        owner,
-        Config(),
-        "heuristic",
-        "fixture",
-        offline=False,
-        calibration=False,
-        eid=None,
-        extra=None,
-        resume=None,
-        prefix=None,
-        operations=None,
-        spending=Spending(tmp_path / "spending.json", 1),
-        human_steps=0,
-        root=tmp_path / "root",
-        load_session_fn=lambda: calls.append("session-preflight"),
+    owner = RunService(
+        Store(), SimpleNamespace(expose=lambda *args, **kwargs: calls.append("expose"))
     )
-    execute_locked(owner, plan, run_episode_fn=lambda *args, **kwargs: calls.append("run"))
+    game = SimpleNamespace(lock={}, close=lambda: calls.append("close"))
+    monkeypatch.setattr(owner, "policy", lambda *args: calls.append("policy") or Baseline("heuristic"))
+    monkeypatch.setattr(owner, "create_game", lambda *args, **kwargs: calls.append("game-constructor") or game)
+    monkeypatch.setattr(service_module, "ROOT", tmp_path / "root")
+    monkeypatch.setattr(service_module, "load_session", lambda: calls.append("session-preflight"))
+    monkeypatch.setattr(service_module, "run_episode", lambda *args, **kwargs: calls.append("run"))
+    monkeypatch.setattr(instructions, "load_prompt", lambda root: calls.append("prompt") or b"")
+    owner.execute(
+        Config(), "heuristic", "fixture", offline=False,
+        spending=Spending(tmp_path / "spending.json", 1),
+    )
 
-    assert calls.index("session-preflight") < calls.index("game-constructor")
+    assert calls.index("session-preflight") < calls.index("create-record")
+    assert calls.index("create-record") < calls.index("game-constructor")
     assert calls.index("game-constructor") < calls.index("run")
+
+
+@pytest.mark.parametrize("offline", [False, True])
+def test_frozen_rules_path_does_not_follow_worker_lock(store, config, tmp_path, offline):
+    request = ExecutionRequest(config, "heuristic", "fixture", offline, None, None, None, None)
+    plan = prepare_execution(
+        store, request, Baseline("heuristic"), b"", calibration=False,
+        extra=None, assisted=False, root=tmp_path,
+    )
+    rules = {"core": "frozen rules", "environment_hash": digest({})}
+    atomic_json(tmp_path / "private/rules.json", rules)
+    moved_lock = tmp_path / "different/worker.lock"
+    moved_lock.parent.mkdir()
+    plan = replace(plan, lock_path=moved_lock)
+    owner = SimpleNamespace(
+        store=store, stop=threading.Event(), active_id=plan.eid, error=None,
+        create_game=lambda *args, **kwargs: SimpleNamespace(lock={}),
+    )
+    observed = execute_locked(owner, plan, run_episode_fn=lambda *args, **kwargs: kwargs["rules"])
+    assert observed == ({"core": "See the shared rules kernel."} if offline else rules)
 
 
 @pytest.mark.parametrize("failure_point", ["_log_episode_start", "finish"])

@@ -6,18 +6,11 @@ import json
 from pathlib import Path
 
 from balatro_horizons.evaluation.batches import summarize
-from balatro_horizons.evaluation.export import episode_export as assemble_episode_export
+from balatro_horizons.evaluation.export import episode_export as episode_export
 from balatro_horizons.evaluation.privacy import public_provider_payload as public_provider_payload
 from balatro_horizons.evaluation.privacy import scan
 from balatro_horizons.harness.money import batch_attempts, reconcile_stop
 from balatro_horizons.storage.journal import atomic_json, digest, identifier
-
-
-def episode_export(store, eid):
-    return assemble_episode_export(
-        store,
-        eid,
-    )
 
 
 def report_batch(store, bid, output):
