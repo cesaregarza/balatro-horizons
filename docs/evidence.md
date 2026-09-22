@@ -101,6 +101,88 @@ holds the worker reservation. [Issue #42](https://github.com/cesaregarza/balatro
 tracks evidence-based classification of ambiguous transport loss before any
 change to that conservative certificate-selection policy.
 
+### Bounded interruption study
+
+With explicit native-path authorization, `bh evidence plan --interruption-only`
+describes at most seven launches: one unpaid initial-blind fixture, three fresh
+seed-prefix comparisons, and one owned process each for deliberate divergence,
+a bounded game hang, and post-send transport loss. Run it with
+`bh evidence collect --interruption-only --report reports/verification/native-interruption-UNIQUE.json`.
+The immutable receipt binds clean committed source, pinned runtime, scenario
+order, identity, and cleanup. Stop on the first unexpected failure; there is no
+automatic retry or uncertain-action resend. All fixture and raw state remains
+private or excluded evaluator evidence, with zero provider calls.
+
+The divergence row perturbs actual native inventory before comparing the
+unchanged expected continuation hash; it is not a spontaneous restoration bug.
+The hang row verifies the owned executable, PID, nonce and start time, then uses
+an eight-second debugger hold with detach-on-helper-exit behavior. Transport
+loss terminates only the existing RPC subprocess after one action write/flush;
+accepted stdin bytes alone do not prove the game received or committed it.
+The adapter's single request-status query supplies the observed status.
+
+| Observed class | Interpretation and existing ordinary selection policy |
+| --- | --- |
+| Actual state mismatch | Proven divergence; retain private evidence, failed ordinary recheck can disable its mode's pass. |
+| Committed request and matching settled state | Reconciled connection interruption; never resend the action. |
+| Unknown request, timeout, EOF, or hung game without comparison | Unknown game outcome, not proven divergence; ordinary replay remains conservatively fail-closed. |
+| Explicit registered-session error before a repetition | Abort before the next launch or certificate write; preserve the selected pointer. |
+
+This collector uses the existing comparison functions but writes **no certificate
+records or pointers**. It does not change the ordinary or separate probe policy.
+Actual WSL socket expiry between repetitions is not exercised by this slice:
+`actual_socket_expiry_tested` and `complete_issue42_acceptance` remain false.
+Mocked expiry tests establish ordering only, not native socket-loss evidence.
+The partial study cannot close #42, authorize a live branch, or certify a release.
+
+The remaining row has its own nonexecuting plan, `bh evidence plan
+--session-expiry-only`, and command:
+
+```sh
+bh evidence collect --session-expiry-only --fixture-report reports/verification/native-interruption-PRIOR.json --report reports/verification/native-session-expiry-UNIQUE.json
+```
+
+It requires additional explicit authorization for the Windows `wsl.exe` path.
+One disposable command in the same distro reports its own interop socket; a
+shared operator socket is refused before any game launch. At most **one** fresh
+replay reuses the prior excluded fixture, only when its native identity, runtime,
+configuration, collector and replay oracle are unchanged. Historical source
+hashes are retained alongside the new source and prior-receipt digest, never
+rewritten or promoted to a certificate.
+Both native receipts are mode `0600`, stored under gitignored
+`reports/verification/`, and are not included in public exports or published.
+
+After the owned game closes, stdin requests normal exit of only the disposable
+command. The collector must observe actual socket disappearance and the real
+`WINDOWS_SESSION_EXPIRED` preflight before repetition two, with zero subsequent
+launches. No socket is removed and no distribution or WSL VM is stopped. A
+surviving socket or unexpected error fails the study without retry. Registration
+bytes are restored in `finally`, the operator socket identity must remain intact,
+and journal/certificate content is checked for changes. If an unexpected session
+expiry prevents normal game cleanup, the restored operator session may stop only
+the retained owned nonce; this is cleanup, never replay or action retry.
+Hard-killing the collector
+can still interrupt restoration: use `bh review session --apply` from an active
+Windows-connected terminal before further work; do not retry a native suite.
+
+The disposable child has an independent 180-second input deadline, but the
+collector's 20-second exit wait does not signal or kill it. On
+`DISPOSABLE_CHILD_EXIT_TIMEOUT`, an orphaned Windows `wsl.exe` command may survive
+the collector. Operator cleanup requires identifying that **specific** invocation
+in Windows process inspection by its checkout, module, and unique `--child`
+argument, then closing only that command; never terminate all `wsl.exe` processes,
+the distro, or the WSL VM. Receipt child/relay PIDs are Linux identities, not
+Windows process IDs. If the invocation cannot be identified unambiguously, stop
+for operator investigation rather than guessing or retrying.
+
+Microsoft
+[WSL source](https://github.com/microsoft/WSL/blob/56244fdb65508a4628c38865f0e2278f779b81f4/src/linux/init/init.cpp#L2166-L2171)
+resets the relay's interop server before exit, but actual disappearance is an
+observation requirement, not an assumption about the installed Windows version.
+Only the combined passed receipts cover #42's classification matrix. They still
+do not grant restoration certification, a live branch, or a release, and do not
+change either certificate-selection policy.
+
 ### Cost-stopped continuation probes
 
 A terminal budget boundary may have no recorded replay suffix. Its separate

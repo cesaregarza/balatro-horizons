@@ -127,17 +127,43 @@ def _resume_certification_stages() -> tuple[Stage, ...]:
     )
 
 
+def _interruption_stages() -> tuple[Stage, ...]:
+    return (Stage(
+        "replay interruption classification", 7, 7,
+        ("one unpaid initial-blind fixture", "three fresh-process seed-prefix comparisons",
+         "one deliberate native divergence", "one bounded owned-game hang",
+         "one post-send RPC loss; no uncertain action resend",
+         "stop on unexpected failure; actual socket expiry not included; no certificate writes"),
+        "bh evidence collect --interruption-only --report PATH", "native-interruption-*.json",
+    ),)
+
+
 def stage_list(
     *, resume_certification: bool = False,
     resume_actions: bool = False,
     gameplay_only: bool = False,
     connection_only: bool = False,
     continuation_only: bool = False,
+    interruption_only: bool = False,
+    session_expiry_only: bool = False,
 ) -> tuple[Stage, ...]:
     """Select a non-executing plan, rejecting incompatible resume modes."""
-    selected = sum((resume_certification, resume_actions, gameplay_only, connection_only, continuation_only))
+    selected = sum((resume_certification, resume_actions, gameplay_only, connection_only,
+                    continuation_only, interruption_only, session_expiry_only))
     if selected > 1:
         raise ValueError("RESUME_MODES_ARE_MUTUALLY_EXCLUSIVE")
+    if session_expiry_only:
+        return (Stage(
+            "session expiry between repetitions", 1, 1,
+            ("reuse unchanged excluded fixture from a passed interruption receipt",
+             "one fresh replay; close game before normally ending disposable WSL command",
+             "observe actual socket disappearance; repetition two must refuse before launch",
+             "restore registration exactly; no socket deletion, WSL shutdown, or certificate writes"),
+            "bh evidence collect --session-expiry-only --fixture-report PRIOR --report NEW",
+            "native-session-expiry-*.json",
+        ),)
+    if interruption_only:
+        return _interruption_stages()
     if continuation_only:
         return (Stage(
             "initial blind continuation fixture", 4, 4,
@@ -171,6 +197,8 @@ def plan(**options) -> dict:
         "release_certification_requested": not (
             options.get("gameplay_only", False) or options.get("connection_only", False)
             or options.get("continuation_only", False)
+            or options.get("interruption_only", False)
+            or options.get("session_expiry_only", False)
         ),
         "capability_activation_requested": False,
     }
