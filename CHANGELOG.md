@@ -10,6 +10,15 @@
 - Split public episode snapshot assembly into `evaluation/export.py`; report
   rendering retains the public privacy scan and provider-payload projection.
 
+## 2026-09-22 — Branch review action accounting (#43)
+
+- Keep decision exports and `bh summarize` episode-only while publishing explicit
+  own/inherited/total committed-action counts from verified public ancestry.
+  Preserve runner lineage totals and own-only recovery/pre-start terminal totals.
+- Cover nonzero-prefix branches, nested branches and budget children through
+  JSON/JSONL and CLI reports; preserve privacy scans and reject genuine count or
+  ancestry mismatches. No native execution or research metric changes.
+
 ## 2026-09-22 — Budget continuations ported to the current packages (PR #25)
 
 - Addressed the narrow follow-up bounce: preserve operational probe errors when

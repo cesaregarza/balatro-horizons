@@ -9,10 +9,11 @@ from collections import Counter
 from datetime import datetime
 from decimal import Decimal
 
-from balatro_horizons.contracts import ActionEnvelope, Observation
 from balatro_horizons.evaluation.reports import scan
 from balatro_horizons.harness.context.freeze import FROZEN_INTERFACE
+from balatro_horizons.review import action_accounting as action_totals
 from balatro_horizons.review.service import ReviewService
+from balatro_horizons.review.summary_projection import event_projection, manifest_projection
 from balatro_horizons.storage.journal import digest, locked
 
 
@@ -43,82 +44,11 @@ def summary_input(store, eid):
         records = store.events(eid)
         manifest = store.manifest(eid)
         summary = store.summary(eid)
-    events = []
-    for event in records:
-        kind, payload = event["type"], event["payload"]
-        if kind == "observation":
-            payload = Observation.model_validate(payload).model_dump(mode="json")
-        elif kind in ("action_commit", "action_intent"):
-            payload = ActionEnvelope.model_validate(payload).model_dump(mode="json")
-        elif kind == "provider_request":
-            payload = {
-                "body": {
-                    "tools": [
-                        {"name": tool.get("name")} for tool in payload["body"].get("tools", [])
-                    ]
-                }
-            }
-        elif kind == "provider_response":
-            body = payload.get("body")
-            usage = body.get("usage") if isinstance(body, dict) else None
-            usage = usage if isinstance(usage, dict) else {}
-            payload = {
-                "body": {
-                    "usage": {
-                        key: usage[key] for key in ("input_tokens", "output_tokens") if key in usage
-                    }
-                }
-            }
-        elif kind == "helper_result":
-            payload = {"operation": payload["operation"]}
-        elif kind == "action_rejected":
-            payload = {"code": payload["code"]}
-        elif kind == "agent_context":
-            # A decision may be waiting on helpers before any gameplay intent.
-            # The ledger needs only its presence, never the large context body.
-            payload = {}
-        else:
-            continue
-        events.append(
-            {
-                **{
-                    key: event.get(key)
-                    for key in (
-                        "event_id",
-                        "sequence",
-                        "type",
-                        "observation_id",
-                        "request_id",
-                        "actor",
-                    )
-                },
-                "payload": payload,
-            }
-        )
+    events = event_projection(records)
     public = {
-        "manifest": {
-            key: manifest[key]
-            for key in (
-                "schema_version",
-                "episode_id",
-                "created_at",
-                "evidence_kind",
-                "agent",
-                "config",
-                "evaluation_eligible",
-                "fixture",
-                "validation_purpose",
-                "parent_episode_id",
-                "parent_decision",
-                "assistance",
-                "batch_id",
-                "slot_id",
-                "certificate_id",
-                "budget_extension",
-            )
-            if key in manifest
-        },
+        "manifest": manifest_projection(manifest),
         "summary": summary,
+        "action_accounting": action_totals.action_accounting(store, eid, records, summary),
         "events": events,
         "journal_head": records[-1]["hash"] if records else None,
         "last_timestamp": records[-1]["timestamp"] if records else manifest["created_at"],
@@ -324,17 +254,8 @@ def reconcile_uncommitted(events, observations, settling, live):
     return uncommitted_actions(events, observations, settling=settling, live=live)
 
 
-def assert_action_total(summary, ledger):
-    if summary and len(ledger) != summary.get("committed_actions"):
-        raise ValueError("ACTION_TOTAL_MISMATCH")
-
-
-def summarize(public):
+def _committed_rows(public, observations, by_id):
     events = public["events"]
-    observations = [e for e in events if e["type"] == "observation"]
-    if not observations:
-        return {"manifest": public["manifest"], "summary": public["summary"], "actions": []}
-    by_id = {e["observation_id"]: e["payload"] for e in observations}
     ledger, rounds, skipped, purchases = [], [], [], []
     settling = set()
     current_round = None
@@ -382,6 +303,16 @@ def summarize(public):
         current_round = update_round_bookkeeping(rounds, current_round, kind, row, state, settled, after["phase"], resources, old_resources)
         aggregate_purchase(purchases, kind, row)
         ledger.append(row)
+    return ledger, rounds, skipped, purchases, settling, counts
+
+
+def summarize(public):
+    events = public["events"]
+    observations = [e for e in events if e["type"] == "observation"]
+    if not observations:
+        return action_totals.empty_summary(public)
+    by_id = {e["observation_id"]: e["payload"] for e in observations}
+    ledger, rounds, skipped, purchases, settling, counts = _committed_rows(public, observations, by_id)
     last = observations[-1]["payload"]
     summary = public["summary"] or {}
     accounting = token_cost_accounting(events)
@@ -389,6 +320,7 @@ def summarize(public):
         "manifest": public["manifest"],
         "summary": summary,
         "ledger_action_count": len(ledger),
+        "action_accounting": public["action_accounting"],
         "action_counts": dict(counts),
         "rounds": rounds,
         "skips": skipped,
@@ -413,7 +345,7 @@ def summarize(public):
         "uncommitted_actions": reconcile_uncommitted(events, by_id, settling, public["summary"] is None),
         "pending_decisions": pending_decisions(events, by_id, public["summary"] is None),
     }
-    assert_action_total(summary, ledger)
+    action_totals.assert_action_total(public, ledger)
     scan(result)
     return result
 

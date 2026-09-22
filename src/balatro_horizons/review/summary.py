@@ -90,6 +90,7 @@ def table(lines, headings, rows):
 def _header(result):
     manifest, summary = result["manifest"], result["summary"] or {}
     actions = result["actions"]
+    counts = result.get("action_accounting", {})
     return [
         f"# Decision summary — {cell(manifest.get('agent', 'agent'))}",
         "",
@@ -98,6 +99,9 @@ def _header(result):
         f"Harness-accounted cost: ${summary.get('cost_usd', 0):.4f}.",
         "",
         f"Evidence kind: {cell(manifest.get('evidence_kind', 'unspecified'))}.",
+        f"Episode-only ledger: {len(actions)} own; "
+        f"{counts.get('inherited_committed_actions', 0)} inherited committed actions. "
+        "Inherited actions are not repeated below.",
         "",
         "Decisions are grouped chronologically by ante. D numbers are the journal's "
         "zero-based pre-action decision IDs. Model notes are recorded claims, not expert "
