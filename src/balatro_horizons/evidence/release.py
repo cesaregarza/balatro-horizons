@@ -150,4 +150,3 @@ def certify_release(root=None, *, from_stage=None):
     atomic_json(root / "reports/verification/native-release.json", result)
     _settlement_evidence(root, store, result)
     return {"native_release_evidence": True, "branch": child, "parent": gold}
-
