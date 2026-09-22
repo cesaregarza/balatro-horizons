@@ -23,7 +23,7 @@ from balatro_horizons.harness.input_limits import request_size
 from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.tool_interface import ACTION_MODELS, decode_tool
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 def config_for(provider="openai"):
@@ -356,7 +356,7 @@ def test_tools_inspect_calculate_correct_error_and_finish(store, monkeypatch, pr
     else:
         call, output = received[1]["messages"][-2:]
         assert call["content"][0]["id"] == output["content"][0]["tool_use_id"]
-    opened = ReviewService(store).open(result["episode_id"])
+    opened = WorkbenchService(store).open(result["episode_id"])
     assert "action_events" not in opened["view"]
 
 

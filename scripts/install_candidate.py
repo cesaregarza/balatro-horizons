@@ -13,19 +13,14 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from balatro_horizons.evidence.lock import native_path as native
+
 # Issue #16 owns migration of this installer default to Environment.runtime.
 OWNED_RUNTIME = Path('/mnt/d/BalatroHorizonsRuntime')
 
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
-
-
-def native(path):
-    path = path.resolve()
-    if path.is_relative_to('/mnt'):
-        raise ValueError('MOUNTED_PATH_OUTSIDE_SCOPE')
-    return path
 
 
 def child(root, name):

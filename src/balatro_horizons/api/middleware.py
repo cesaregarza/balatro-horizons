@@ -100,6 +100,6 @@ def require_session(request: Request, x_review_token: str = Header(default="")):
     return x_review_token
 
 
-def ensure_loopback(host, allow_remote):
-    if host not in ("127.0.0.1", "localhost", "::1") and not allow_remote:
+def ensure_loopback(host):
+    if host not in ("127.0.0.1", "localhost", "::1"):
         raise ValueError("REMOTE_BIND_REQUIRES_ALLOW_REMOTE")

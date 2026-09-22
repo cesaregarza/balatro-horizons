@@ -16,7 +16,7 @@ from balatro_horizons.harness.context.build import context
 from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.money import Spending
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure, ProviderFailure
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 def luna():
@@ -191,7 +191,7 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
     assert len(logged) == len(received)
     assert logged[0]["payload"]["body"] == response({"kind": "arithmetic", "expression": "2+2"})
     assert "mock-only-not-a-real-credential" not in json.dumps(events)
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     session = review.open(summary["episode_id"])
     assert "MOCK_SUMMARY" not in json.dumps(session["view"])
     assert "MOCK_SUMMARY" in json.dumps(review.advance(session["review_token"]))
@@ -270,7 +270,7 @@ def test_quota_failure_is_not_retried_and_private_error_text_is_not_logged(
     errors = [e["payload"] for e in events if e["type"] == "provider_error"]
     assert errors[0]["provider_code"] == quota_code
     assert "PRIVATE_UPSTREAM_TEXT" not in json.dumps(events)
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     opened = review.open(result["episode_id"])
     assert quota_code not in json.dumps(opened["view"])
     assert quota_code in json.dumps(review.advance(opened["review_token"]))

@@ -9,11 +9,14 @@ from balatro_horizons.storage.journal import Store
 from .batch import run_batch_command
 from .branch import run_branch_command
 from .doctor import doctor
+from .evidence import run_evidence_command
 from .native import run_native_command
 from .review import run_review_command
 
 
 def dispatch(args):
+    if args.command == "evidence":
+        return run_evidence_command(args)
     if args.command == "native":
         return run_native_command(args)
     if args.command == "doctor":

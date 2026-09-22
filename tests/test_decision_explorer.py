@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from test_review_branches import annotation
 
 from balatro_horizons.api import create_app
+from balatro_horizons.review.service import ReviewService
 from balatro_horizons.workbench.service import ReviewError
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
 
 
 def test_prospective_tokens_cannot_enumerate_or_seek(store, episode, workbench_config):
@@ -80,7 +80,7 @@ def test_seek_uses_actual_ids_for_branches_and_rejects_missing_ids(store):
     observation = project(FakeGame().observe_private(), index=17).model_dump(mode="json")
     store.append(eid, "observation", observation, observation_id=17)
     review = ReviewService(store)
-    token = review.open(eid, retrospective=True)["review_token"]
+    token = review.open_explorer(eid)["review_token"]
     assert review.seek(token, 17)["decision"] == 17
     with pytest.raises(ReviewError, match="DECISION_NOT_AVAILABLE"):
         review.seek(token, 0)
@@ -99,7 +99,7 @@ def test_explorer_can_explain_a_run_that_failed_before_any_observation(store):
         },
     )
     review = ReviewService(store)
-    opened = review.open(eid, retrospective=True)
+    opened = review.open_explorer(eid)
     assert opened["view"] is None
     ledger = review.decisions(opened["review_token"])
     assert ledger["actions"] == []
@@ -118,7 +118,7 @@ def test_live_explorer_handles_intent_commit_settlement_and_terminal(store):
     before = project(game.observe_private()).model_dump(mode="json")
     store.append(eid, "observation", before, observation_id=0)
     review = ReviewService(store)
-    token = review.open(eid, retrospective=True)["review_token"]
+    token = review.open_explorer(eid)["review_token"]
     assert review.decisions(token)["actions"] == []
     action = {
         "observation_id": 0,

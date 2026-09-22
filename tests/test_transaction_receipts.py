@@ -8,7 +8,7 @@ from balatro_horizons.contracts import ActionEnvelope, LastAction, Observation, 
 from balatro_horizons.evaluation.reports import episode_export
 from balatro_horizons.game.state import normalize
 from balatro_horizons.observations.deltas import last_action
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 @pytest.mark.parametrize("kind", ["buy", "choose_pack", "reroll_shop", "reroll_boss", "sell"])
@@ -86,7 +86,7 @@ def test_receipt_is_journaled_exported_checkpointed_and_temporally_gated(store, 
         (store.episode_path(episode, True) / f"checkpoint-{after.observation_id}.json").read_text()
     )
     assert checkpoint["observation"]["last_action"]["transaction"] == receipt
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     session = review.open(episode)
     token = session["review_token"]
     for _ in range(after.last_action.from_observation_id * 3):

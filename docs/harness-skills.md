@@ -79,11 +79,11 @@ reconstructs the previous Luna trace with skill access and probes additional
 chapter reads. This checks request construction, not playing strength or whether
 a model will choose to consult the guide.
 
-Unpaid native checks use `scripts/native_runs.py --read-skills`: each ordinary
+Unpaid native checks use the `bh evidence collect` ordinary-run stage: each ordinary
 Red/White and Red/Gold calibration run uses rules operations to request a skill
 and reference before the
-unchanged heuristic baseline plays. `scripts/verify_release.py
---resume-certification` then repeats native restoration and branching checks.
+unchanged heuristic baseline plays. `bh evidence certify` then repeats native
+restoration and branching checks.
 Their recorded results are separate from mocked-provider and request-size tests.
 Live paid-provider use of the skill tool remains unverified until an explicitly
 budgeted model run exercises it.

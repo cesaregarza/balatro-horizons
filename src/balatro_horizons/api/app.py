@@ -25,11 +25,10 @@ def create_app(
     *,
     public_origin=None,
     bind_host="127.0.0.1",
-    allow_remote=False,
     output_root=None,
     workbench_enabled=None,
 ):
-    ensure_loopback(bind_host, allow_remote)
+    ensure_loopback(bind_host)
     store = Store(data_dir or ROOT / "data")
     cfg, settings_path = load_runtime_config(store, config, workbench_enabled)
     app = FastAPI(title="Balatro Horizons", docs_url=None, redoc_url=None, openapi_url=None)

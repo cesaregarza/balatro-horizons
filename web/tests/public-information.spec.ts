@@ -54,10 +54,16 @@ test("review distinguishes skip offers from owned effects and escapes descriptio
   await page.getByRole("button", { name: /Start test episode/ }).click();
   const response = await created;
   expect(response.ok(), await response.text()).toBe(true);
+  const { episode_id } = await response.json();
   await expect(page.getByRole("status")).toContainText("Run created");
+  // Run creation precedes the worker's first observation; this fixture needs a completed run.
+  await awaitIdleWorker(page);
+  const newRun = page.getByRole("row").filter({
+    has: page.getByText(episode_id.slice(0, 10), { exact: true }),
+  });
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await page.getByRole("button", { name: "Explore decisions" }).first().click();
+    await newRun.getByRole("button", { name: "Explore decisions" }).click();
     await expect(
       page.getByRole("heading", { name: "Decision explorer" }),
     ).toBeVisible();

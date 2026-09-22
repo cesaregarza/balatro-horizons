@@ -49,7 +49,7 @@ def collection(tmp_path, *, bad_delta=False, bad_public=False, omit_zero_interes
 
 def test_saved_native_settlement_gate_accepts_matched_collection(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    from verify_settlement_evidence import verify
+    from balatro_horizons.evidence.collect.settlement import verify
 
     result = verify(*collection(tmp_path))
     assert result == dict(cashouts=2, interest_rows=1, omitted_interest_rows=1, other_phases=2)
@@ -57,7 +57,7 @@ def test_saved_native_settlement_gate_accepts_matched_collection(tmp_path, monke
 
 def test_saved_native_settlement_gate_requires_zero_interest_coverage(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    from verify_settlement_evidence import verify
+    from balatro_horizons.evidence.collect.settlement import verify
 
     with pytest.raises(AssertionError, match="MISSING_ZERO_INTEREST_CASHOUT"):
         verify(*collection(tmp_path, omit_zero_interest=True))
@@ -66,7 +66,7 @@ def test_saved_native_settlement_gate_requires_zero_interest_coverage(tmp_path, 
 @pytest.mark.parametrize("defect", ["bad_delta", "bad_public"])
 def test_saved_native_settlement_gate_rejects_mismatch(tmp_path, monkeypatch, defect):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    from verify_settlement_evidence import verify
+    from balatro_horizons.evidence.collect.settlement import verify
 
     with pytest.raises(AssertionError):
         verify(*collection(tmp_path, **{defect: True}))
