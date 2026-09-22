@@ -213,7 +213,7 @@ class ReviewService:
             key: report.get(key)
             for key in (
                 "manifest", "summary", "actions", "uncommitted_actions", "pending_decisions",
-                "rounds", "action_counts", "money_range", "source_journal_head",
+                "rounds", "action_counts", "action_accounting", "money_range", "source_journal_head",
             )
         }
 

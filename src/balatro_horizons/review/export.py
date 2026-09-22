@@ -28,6 +28,10 @@ SUMMARY_FIELDS = (
     "outcome", "reason", "cost_usd", "attempted_actions", "committed_actions", "provider_calls",
     "agent_protocol", "terminal_event_id", "journal_head",
 )
+ACCOUNTING_FIELDS = (
+    "ledger_scope", "own_committed_actions", "inherited_committed_actions",
+    "total_committed_actions", "terminal_count_scope",
+)
 
 
 def safe_json(value, **kwargs):
@@ -71,6 +75,7 @@ def metadata(ledger, exported_at):
         "source_journal_head": ledger.get("source_journal_head"),
         "snapshot_status": "finished" if summary and summary.get("outcome") else "in_progress",
         "run_summary": pick(summary, SUMMARY_FIELDS) if summary else None,
+        "action_accounting": pick(ledger.get("action_accounting") or {}, ACCOUNTING_FIELDS),
         **({"cost_accounting": "Runner provider calls are inherited-inclusive; cost is own-only."}
            if manifest.get("budget_extension") else {}),
         "omitted_content": [
