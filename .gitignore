@@ -16,6 +16,8 @@ web/test-results/
 web/playwright-report/
 *.egg-info/
 web/.e2e-data/
+web/.e2e-data-dashboard/
+web/.e2e-data-workbench/
 web/tsconfig.tsbuildinfo
 web/.unit-dist/
 

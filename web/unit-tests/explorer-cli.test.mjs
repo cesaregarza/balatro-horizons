@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 test("browser explorer verification help and invalid arguments need no browser", () => {
   const script = fileURLToPath(
-    new URL("../../scripts/verify_browser_native.mjs", import.meta.url),
+    new URL("../scripts/verify_browser_native.mjs", import.meta.url),
   );
   const help = spawnSync(process.execPath, [script, "--help"], {
     encoding: "utf8",

@@ -5,11 +5,11 @@ import pytest
 from test_boundary import project
 from test_public_information import native_state, request
 
-from balatro_horizons.agents.costs import current_costs
-from balatro_horizons.agents.protocol import decision_context
-from balatro_horizons.agents.providers import context_payload
 from balatro_horizons.contracts import PublicCard
-from balatro_horizons.engine.native_state import normalize
+from balatro_horizons.game.state import normalize
+from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.context.game_quotes import current_costs
+from balatro_horizons.harness.transport import context_payload
 
 
 def prices(body, provider):

@@ -5,8 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from balatro_horizons.api import create_app
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.replay import restore_seed_prefix
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.game.replay import restore_seed_prefix
 from balatro_horizons.observations.projection import HandleIssuer
 from balatro_horizons.storage.journal import digest
 
@@ -37,11 +37,12 @@ def test_seed_restore_waits_before_first_comparison():
 
 
 def test_fixture_labels_and_export_download_are_separate_from_review(
-    store, config, monkeypatch, tmp_path
+    store, workbench_config, monkeypatch, tmp_path
 ):
     import balatro_horizons.api as api_module
 
     monkeypatch.setattr(api_module, "ROOT", tmp_path)
+    config = workbench_config
     app = create_app(store.root, config)
     with TestClient(app) as client:
         token = client.get("/api/bootstrap").json()["operator_token"]
@@ -84,11 +85,12 @@ def test_fixture_labels_and_export_download_are_separate_from_review(
 
 
 @pytest.mark.parametrize("mode", ["agent_continue", "short_human_sequence", "human_takeover"])
-def test_intervention_modes_use_shared_human_api(store, config, episode, mode):
+def test_intervention_modes_use_shared_human_api(store, workbench_config, episode, mode):
     """Drive synthetic human operations through the same endpoint as the browser/CLI."""
-    from balatro_horizons.agents.baselines import Baseline
-    from balatro_horizons.engine.certification import verify_checkpoint
+    from balatro_horizons.evidence.certification import verify_checkpoint
+    from balatro_horizons.harness.baselines import Baseline
 
+    config = workbench_config
     assert verify_checkpoint(store, config, episode, 0)["status"] == "passed"
     parent_head = store.summary(episode)["journal_head"]
     app = create_app(store.root, config)
@@ -135,12 +137,15 @@ def test_intervention_modes_use_shared_human_api(store, config, episode, mode):
             app.state.runs.thread.join(3)
 
 
-def test_direct_human_runs_cannot_be_scored_as_autonomous(store, config, monkeypatch):
+def test_direct_human_runs_cannot_be_scored_as_autonomous(store, workbench_config, monkeypatch):
+    from balatro_horizons import service as service_module
     from balatro_horizons.review.service import ReviewService
     from balatro_horizons.service import RunService
 
     service = RunService(store, ReviewService(store))
     monkeypatch.setattr(service, "_launch", lambda task: None)
+    monkeypatch.setattr(service_module, "load_session", lambda: {})
+    config = workbench_config
     eid = service.start(config, "human", "TEST_PANEL_SEED", offline=False)
     assert store.manifest(eid)["evaluation_eligible"] is False
     assert store.manifest(eid)["assistance"] == "human_takeover"

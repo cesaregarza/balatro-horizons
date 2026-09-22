@@ -1,16 +1,9 @@
-import importlib.util
 from copy import deepcopy
-from pathlib import Path
 
 import pytest
 
+from balatro_horizons.cli import register_player as module
 from balatro_horizons.config import ROOT, load_config
-
-spec = importlib.util.spec_from_file_location(
-    "register_player", Path(__file__).resolve().parents[1] / "scripts/register_player.py"
-)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
 
 
 def test_registration_preserves_existing_settings_and_rejects_replacement():

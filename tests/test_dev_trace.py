@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from balatro_horizons.api import create_app
 from balatro_horizons.review.dev_trace import decision_trace
-from balatro_horizons.review.service import ReviewError, ReviewService
+from balatro_horizons.workbench.service import ReviewError, WorkbenchService
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def recording(store, episode):
     observation = deepcopy(next(e["payload"] for e in store.events(episode) if e["type"] == "observation"))
     observation.update(episode_id=eid, observation_id=67)
     store.append(eid, "observation", observation, observation_id=67)
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     token = review.open(eid, retrospective=True)["review_token"]
     return eid, review, token, observation
 
@@ -101,12 +101,12 @@ def test_retries_invalid_multiple_calls_and_future_decision_isolation(recording,
     assert "LATER_DECISION_ONLY" not in json.dumps(trace) and "not public" not in json.dumps(trace)
 
 
-def test_trace_requires_retrospective_session_even_after_exposure(recording, store, config):
+def test_trace_requires_retrospective_session_even_after_exposure(recording, store, workbench_config):
     eid, review, token, _ = recording
     prospective = review.open(eid)["review_token"]
     with pytest.raises(ReviewError, match="RETROSPECTIVE_REVIEW_REQUIRED"):
         decision_trace(review, prospective, 67)
-    with TestClient(create_app(store.root, config)) as client:
+    with TestClient(create_app(store.root, workbench_config)) as client:
         path = "/api/review/decisions/67/trace"
         assert client.get(path).status_code == 403
         denied = client.get(path, headers={"X-Review-Token": prospective})

@@ -5,6 +5,7 @@ import {
   visualModifiers,
 } from "../src/cardPresentation";
 import { jokerChanges } from "../src/decisionPresentation";
+import { awaitIdleWorker } from "./runHelpers";
 
 test("modifier labels distinguish editions, sticker counts, false flags and concealment", () => {
   expect(cardLabel("Drunkard", ["edition: POLYCHROME", "eternal: True"])).toBe(
@@ -71,11 +72,12 @@ test("explorer shows pickup modifiers in live rows, details and the board on a p
     await page.request.get("/api/bootstrap")
   ).json();
   const headers = { "X-BH-Operator": operator_token };
+  await awaitIdleWorker(page, operator_token);
   const created = await page.request.post("/api/runs", {
     headers,
     data: { agent: "heuristic", offline: true },
   });
-  expect(created.ok()).toBe(true);
+  expect(created.ok(), await created.text()).toBe(true);
   const { episode_id } = await created.json();
   await expect
     .poll(async () => {
@@ -86,7 +88,7 @@ test("explorer shows pickup modifiers in live rows, details and the board on a p
         ?.summary?.outcome;
     })
     .toBe("WIN");
-  await page.route("**/api/review/decisions", async (route) => {
+  await page.route("**/api/explore/decisions", async (route) => {
     const response = await route.fetch();
     const ledger = await response.json();
     for (const row of ledger.actions)
@@ -102,7 +104,7 @@ test("explorer shows pickup modifiers in live rows, details and the board on a p
     ledger.summary = null;
     await route.fulfill({ response, json: ledger });
   });
-  await page.route("**/api/review/decisions/3", async (route) => {
+  await page.route("**/api/explore/decisions/3", async (route) => {
     const response = await route.fetch();
     const view = await response.json();
     view.transition.state.jokers = [

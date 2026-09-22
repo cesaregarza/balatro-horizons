@@ -4,16 +4,17 @@ from copy import deepcopy
 
 import pytest
 
-from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.frozen import freeze_protocol, restore_protocol
-from balatro_horizons.agents.outcomes import VERSION as ACTION_OUTCOME_VERSION
 from balatro_horizons.config import ROOT
-from balatro_horizons.engine.certification import read_checkpoint, verify_checkpoint
-from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.evaluation.reports import episode_export
-from balatro_horizons.review.branches import prepare_branch
-from balatro_horizons.runner import Runner
+from balatro_horizons.evidence.certification import read_checkpoint, verify_checkpoint
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.baselines import Baseline
+from balatro_horizons.harness.context.freeze import freeze_protocol, restore_protocol
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
+from balatro_horizons.harness.outcomes import VERSION as ACTION_OUTCOME_VERSION
 from balatro_horizons.storage.journal import digest
+from balatro_horizons.workbench.branches import prepare_branch
 
 
 def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
@@ -21,10 +22,14 @@ def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
 ):
     prompts = tmp_path / "source/configs/prompts"
     shutil.copytree(ROOT / "configs/prompts", prompts)
-    monkeypatch.setattr("balatro_horizons.agents.frozen.ROOT", prompts.parents[1])
-    monkeypatch.setattr("balatro_horizons.agents.protocol.ROOT", prompts.parents[1])
+    monkeypatch.setattr("balatro_horizons.harness.context.freeze.ROOT", prompts.parents[1])
+    monkeypatch.setattr("balatro_horizons.harness.context.build.ROOT", prompts.parents[1])
     path = prompts / "harness.txt"
     original = path.read_text()
+    spending = Spending.episode_only(
+        store.root / "private_runs" / "test-spending.json",
+        config.budgets.max_episode_cost_usd or 1,
+    )
 
     class Policy:
         paid = False
@@ -53,22 +58,26 @@ def test_prompt_edit_during_run_and_before_branch_cannot_change_requests(
             }
 
     policy = Policy()
-    result = Runner(store, config, FakeGame(), policy).run()
+    result = Runner(store, config, FakeGame(), policy, spending).run()
     assert result["reason"] == "AGENT_ABORT" and result["committed_actions"] == 1
     assert len(policy.contexts) == 4
-    assert all(ctx["prompt"] == original.strip() for ctx in policy.contexts)
+    from balatro_horizons.harness.context.render import render_prompt
+
+    rendered = render_prompt(original.encode()).decode()
+    # test_prompt_constants independently pins the renderer's output against config.
+    assert all(ctx["prompt"] == rendered.strip() for ctx in policy.contexts)
     eid = result["episode_id"]
     checkpoint = read_checkpoint(store, eid, 0)
     bundle = restore_protocol(store, checkpoint)
-    assert bundle["prompt_utf8"] == original
+    assert bundle["prompt_utf8"] == rendered
     assert verify_checkpoint(store, config, eid, 0)["status"] == "passed"
     child, checkpoint, prefix = prepare_branch(store, config, eid, 0, "agent_continue")
     continuation = Policy()
-    branched = Runner(store, config, FakeGame(), continuation).run(
+    branched = Runner(store, config, FakeGame(), continuation, spending).run(
         eid=child, resume=checkpoint, history_prefix=prefix
     )
     assert branched["reason"] == "AGENT_ABORT"
-    assert all(ctx["prompt"] == original.strip() for ctx in continuation.contexts)
+    assert all(ctx["prompt"] == rendered.strip() for ctx in continuation.contexts)
     assert result["agent_protocol"]["hash"] == branched["agent_protocol"]["hash"]
     exported = episode_export(store, child)
     assert exported["agent_protocol"] == branched["agent_protocol"]
@@ -99,9 +108,13 @@ def test_frozen_outcome_gate_survives_resume_and_branch(store, config, monkeypat
         return bundle
 
     old_policy = RecordingPolicy()
+    spending = Spending.episode_only(
+        store.root / "private_runs" / "test-spending.json",
+        config.budgets.max_episode_cost_usd or 1,
+    )
     with monkeypatch.context() as patch:
-        patch.setattr("balatro_horizons.runner.freeze_protocol", older_bundle)
-        old = Runner(store, config, FakeGame(), old_policy).run()
+        patch.setattr("balatro_horizons.harness.runtime.freeze_protocol", older_bundle)
+        old = Runner(store, config, FakeGame(), old_policy, spending).run()
     assert old["committed_actions"] == 2
     assert len(old_policy.contexts) == 3
     assert all("previous_action_outcome" not in ctx for ctx in old_policy.contexts)
@@ -110,7 +123,7 @@ def test_frozen_outcome_gate_survives_resume_and_branch(store, config, monkeypat
     assert verify_checkpoint(store, config, old["episode_id"], 1)["status"] == "passed"
     child, resume, prefix = prepare_branch(store, config, old["episode_id"], 1, "agent_continue")
     branch_policy = RecordingPolicy()
-    branched = Runner(store, config, FakeGame(), branch_policy).run(
+    branched = Runner(store, config, FakeGame(), branch_policy, spending).run(
         eid=child, resume=resume, history_prefix=prefix
     )
     assert branched["committed_actions"] == 2
@@ -119,7 +132,7 @@ def test_frozen_outcome_gate_survives_resume_and_branch(store, config, monkeypat
     )
 
     fresh_policy = RecordingPolicy()
-    fresh = Runner(store, config, FakeGame(), fresh_policy).run()
+    fresh = Runner(store, config, FakeGame(), fresh_policy, spending).run()
     assert fresh["committed_actions"] == 2
     assert fresh_policy.contexts[1]["previous_action_outcome"]["action_type"] == "select_blind"
     fresh_checkpoint = read_checkpoint(store, fresh["episode_id"], 1)
@@ -169,7 +182,11 @@ def test_config_mutation_does_not_change_running_allowance(store, config):
             config.budgets.max_game_actions = 1
             return super().decide(ctx, exchanges)
 
-    runner = Runner(store, config, FakeGame(), MutatingBaseline("heuristic"))
+    spending = Spending.episode_only(
+        store.root / "private_runs" / "test-spending.json",
+        config.budgets.max_episode_cost_usd or 1,
+    )
+    runner = Runner(store, config, FakeGame(), MutatingBaseline("heuristic"), spending)
     result = runner.run()
     assert result["outcome"] == "WIN" and result["committed_actions"] > 1
     assert runner.limits.max_game_actions == 1500

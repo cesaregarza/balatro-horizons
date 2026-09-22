@@ -9,13 +9,14 @@ from provider_transport import with_input_count
 from pydantic import ValidationError
 from test_boundary import project
 
-from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.protocol import context
-from balatro_horizons.agents.providers import DirectProvider, ProtocolFailure, ProviderFailure
 from balatro_horizons.config import ROOT, Limits, ModelConfig, load_config
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.review.service import ReviewService
-from balatro_horizons.runner import Runner
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.baselines import Baseline
+from balatro_horizons.harness.context.build import context
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
+from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure, ProviderFailure
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 def luna():
@@ -165,7 +166,16 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
         config.budgets,
         client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
-    summary = Runner(store, config, FakeGame(), policy).run()
+    summary = Runner(
+        store,
+        config,
+        FakeGame(),
+        policy,
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     assert summary["outcome"] == "WIN" and summary["evidence_kind"] == "SYNTHETIC_TEST"
     assert summary["provider_calls"] > summary["committed_actions"] > 0
     assert summary["cost_usd"] == pytest.approx(len(received) * 0.00044)
@@ -181,7 +191,7 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
     assert len(logged) == len(received)
     assert logged[0]["payload"]["body"] == response({"kind": "arithmetic", "expression": "2+2"})
     assert "mock-only-not-a-real-credential" not in json.dumps(events)
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     session = review.open(summary["episode_id"])
     assert "MOCK_SUMMARY" not in json.dumps(session["view"])
     assert "MOCK_SUMMARY" in json.dumps(review.advance(session["review_token"]))
@@ -203,7 +213,16 @@ def test_unknown_http_attempts_consume_budget_before_retry(store, monkeypatch):
         config.budgets,
         client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
-    summary = Runner(store, config, FakeGame(), policy).run()
+    summary = Runner(
+        store,
+        config,
+        FakeGame(),
+        policy,
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     assert summary["outcome"] == "BUDGET_EXHAUSTED"
     assert len(calls) == 1 and summary["committed_actions"] == 0
     assert summary["cost_usd"] == pytest.approx(0.0180224)
@@ -235,14 +254,23 @@ def test_quota_failure_is_not_retried_and_private_error_text_is_not_logged(
         config.budgets,
         client=httpx.Client(transport=httpx.MockTransport(with_input_count(receive))),
     )
-    result = Runner(store, config, FakeGame(), policy).run()
+    result = Runner(
+        store,
+        config,
+        FakeGame(),
+        policy,
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     events = store.events(result["episode_id"])
     assert len(requests) == result["provider_calls"] == 1
     assert result["outcome"] == "INFRASTRUCTURE_FAILURE"
     errors = [e["payload"] for e in events if e["type"] == "provider_error"]
     assert errors[0]["provider_code"] == quota_code
     assert "PRIVATE_UPSTREAM_TEXT" not in json.dumps(events)
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     opened = review.open(result["episode_id"])
     assert quota_code not in json.dumps(opened["view"])
     assert quota_code in json.dumps(review.advance(opened["review_token"]))

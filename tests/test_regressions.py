@@ -7,16 +7,19 @@ from pydantic import ValidationError
 from test_boundary import project
 from test_providers_evaluation import model
 
-from balatro_horizons.agents.budget import BudgetExhausted, Spending
-from balatro_horizons.agents.protocol import context
-from balatro_horizons.agents.providers import DirectProvider, ProviderFailure
 from balatro_horizons.config import Limits, ModelConfig
-from balatro_horizons.engine.certification import require_checkpoint_certificate, verify_checkpoint
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.native_state import normalize
 from balatro_horizons.evaluation.batches import summarize
-from balatro_horizons.review.service import ReviewService
+from balatro_horizons.evidence.certification import (
+    require_checkpoint_certificate,
+    verify_checkpoint,
+)
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.game.state import normalize
+from balatro_horizons.harness.context.build import context
+from balatro_horizons.harness.money import BudgetExhausted, Spending
+from balatro_horizons.harness.transport import DirectProvider, ProviderFailure
 from balatro_horizons.storage.journal import Store
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
@@ -111,7 +114,7 @@ def test_no_zero_repeat_certification_and_immutable_records(store, episode, conf
 
 
 def test_trajectory_never_includes_unrevealed_state(store, episode):
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     opened = review.open(episode)
     assert [p["decision"] for p in opened["view"]["trajectory"]] == [0]
     review.advance(opened["review_token"])

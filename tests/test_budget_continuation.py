@@ -8,23 +8,23 @@ import test_campaign_budget
 from fastapi.testclient import TestClient
 
 from balatro_horizons import service as service_module
-from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.budget import reservation_usd
-from balatro_horizons.agents.frozen import read_protocol, restore_protocol
 from balatro_horizons.api import create_app
-from balatro_horizons.engine.certification import (
+from balatro_horizons.evaluation.reports import episode_export
+from balatro_horizons.evidence.certification import (
     certificate_path,
     continuation_probe_path,
     read_checkpoint,
     require_checkpoint_certificate,
     require_continuation_probe_certificate,
 )
-from balatro_horizons.engine.continuation_probe import verify_continuation_probe
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.engine.native import NativeFailure
-from balatro_horizons.evaluation.reports import episode_export
-from balatro_horizons.review.budget_continuation import prepare_budget_continuation
+from balatro_horizons.evidence.continuation_probe import verify_continuation_probe
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.game.session import NativeFailure
+from balatro_horizons.harness.baselines import Baseline
+from balatro_horizons.harness.context.freeze import read_protocol, restore_protocol
+from balatro_horizons.harness.money import reservation_usd
 from balatro_horizons.storage.journal import atomic_json
+from balatro_horizons.workbench.budget_continuation import prepare_budget_continuation
 
 harness = test_campaign_budget.harness
 STOP_CAP_USD = 0.019
@@ -145,7 +145,7 @@ def test_failed_child_terminal_reconciles_three_retained_reservations(harness):
     h = harness
     eid, terminal, decision, action = stopped(h)
     certify(h, eid, decision, action)
-    h.fail_transport.append(True)
+    h.failures.append(True)
     service = h.service()
     child_id = service.continue_budget(eid, 1, expected_head=terminal["journal_head"])
     service.thread.join(10)
@@ -165,7 +165,7 @@ def test_failed_child_terminal_reconciles_three_retained_reservations(harness):
     retry = prepare_budget_continuation(h.store, eid, 1, expected_head=terminal["journal_head"])
     assert retry["resume"]["cost"] == pytest.approx(terminal["cost_usd"] + expected_retained)
     assert retry["resume"]["calls"] == terminal["provider_calls"] + 3
-    h.fail_transport.clear()
+    h.failures.clear()
     second = h.service()
     second_id = second.continue_budget(eid, 1, expected_head=terminal["journal_head"])
     second.thread.join(10)
@@ -219,7 +219,7 @@ def test_pre_run_child_failure_with_no_new_calls_allows_reconciliation(harness, 
 
 def test_root_retained_reservation_is_counted_and_can_be_extended(harness):
     h = harness
-    h.fail_transport.append(True)
+    h.failures.append(True)
     eid, terminal, decision, action = stopped(h)
     rows = json.loads((h.store.episode_path(eid, True) / "spending.json").read_text())
     assert len(rows) == terminal["provider_calls"]
@@ -295,7 +295,7 @@ def test_probe_fails_on_first_divergence_without_relaunch_loop(harness, monkeypa
             self.money += 1
             games.append(self)
 
-    monkeypatch.setattr("balatro_horizons.engine.continuation_probe.FakeGame", Divergent)
+    monkeypatch.setattr("balatro_horizons.evidence.continuation_probe.FakeGame", Divergent)
     failed = verify_continuation_probe(h.store, h.config, eid, decision, action)
     assert failed["status"] == "failed"
     assert len(games) == 1 and failed["completed_repetitions"] == 0
@@ -309,7 +309,7 @@ def test_probe_fails_on_first_divergence_without_relaunch_loop(harness, monkeypa
 def test_native_probe_start_failure_preserves_selected_certificate(harness, monkeypatch, tmp_path):
     from unittest.mock import Mock
 
-    from balatro_horizons.engine import continuation_probe as probe_module
+    from balatro_horizons.evidence import continuation_probe as probe_module
 
     h = harness
     eid, _, decision, action = stopped(h)
@@ -322,6 +322,7 @@ def test_native_probe_start_failure_preserves_selected_certificate(harness, monk
     checkpoint["game"]["seed"] = "PRIVATE_FIXTURE"
     monkeypatch.setattr(probe_module, "read_checkpoint", lambda *_: checkpoint)
     monkeypatch.setattr(probe_module, "ROOT", tmp_path)
+    monkeypatch.setattr(probe_module, "load_session", lambda: {})
     launch = Mock(side_effect=NativeFailure("WINDOWS_SESSION_NOT_CONFIGURED"))
     monkeypatch.setattr(probe_module, "NativeGame", launch)
     with pytest.raises(NativeFailure, match="WINDOWS_SESSION_NOT_CONFIGURED"):
@@ -343,7 +344,7 @@ def test_probe_keeps_divergence_result_when_cleanup_also_fails(harness, monkeypa
         def close(self):
             raise NativeFailure("NATIVE_BRIDGE_CLOSED")
 
-    monkeypatch.setattr("balatro_horizons.engine.continuation_probe.FakeGame", Divergent)
+    monkeypatch.setattr("balatro_horizons.evidence.continuation_probe.FakeGame", Divergent)
     failed = verify_continuation_probe(h.store, h.config, eid, decision, action)
     assert failed["status"] == "failed"
     assert [row["reason"] for row in failed["failures"]] == [
@@ -362,7 +363,7 @@ def test_probe_checks_the_result_of_the_action_too(harness, monkeypatch):
             self.money += len(games)
             games.append(self)
 
-    monkeypatch.setattr("balatro_horizons.engine.continuation_probe.FakeGame", Divergent)
+    monkeypatch.setattr("balatro_horizons.evidence.continuation_probe.FakeGame", Divergent)
     failed = verify_continuation_probe(h.store, h.config, eid, decision, action)
     assert failed["status"] == "failed" and len(games) == 2
     assert failed["failures"][0]["reason"] == "PROBE_CONTINUATION_DIVERGENCE"
@@ -373,8 +374,8 @@ def test_money_intervention_cannot_bypass_a_changed_frozen_protocol(harness, mon
     eid, terminal, decision, action = stopped(h)
     checkpoint = read_checkpoint(h.store, eid, decision)
     old = restore_protocol(h.store, checkpoint)
-    for module in ("agents.frozen", "review.budget_continuation", "engine.continuation_probe",
-                   "engine.certification"):
+    for module in ("harness.context.freeze", "workbench.budget_continuation", "evidence.continuation_probe",
+                   "evidence.certification"):
         monkeypatch.setattr(f"balatro_horizons.{module}.implementation_fingerprint", lambda: "f" * 64)
     with pytest.raises(ValueError, match="IMPLEMENTATION_CHANGED"):
         restore_protocol(h.store, checkpoint)
@@ -385,8 +386,9 @@ def test_money_intervention_cannot_bypass_a_changed_frozen_protocol(harness, mon
 
 
 def test_operator_token_and_finite_explicit_cap_required(store, config):
+    config.workbench_enabled = True
     with TestClient(create_app(store.root, config)) as client:
-        route = "/api/operator/episodes/unknown/continue-budget"
+        route = "/api/operator/episodes/" + "f" * 32 + "/continue-budget"
         body = {"combined_cap_usd": 10, "parent_terminal_hash": "a" * 64}
         assert client.post(route, json=body).status_code == 403
         token = client.get("/api/bootstrap").json()["operator_token"]
@@ -394,6 +396,7 @@ def test_operator_token_and_finite_explicit_cap_required(store, config):
         for invalid in (True, "10", 0, -1):
             assert client.post(route, json={**body, "combined_cap_usd": invalid},
                                headers=headers).status_code == 422
+        assert client.post(route, json=body, headers=headers).status_code == 404
 
 
 def test_ledger_and_terminal_must_agree(harness):
@@ -409,15 +412,10 @@ def test_ledger_and_terminal_must_agree(harness):
 
 
 def test_launch_plan_is_read_only_and_counts_only_targeted_restarts(harness):
-    import importlib.util
-
-    from balatro_horizons.config import ROOT
+    import balatro_horizons.cli.continue_budget as module
 
     h = harness
     eid, _, _, _ = stopped(h)
-    module_spec = importlib.util.spec_from_file_location("continue_budget", ROOT / "scripts/continue_budget.py")
-    module = importlib.util.module_from_spec(module_spec)
-    module_spec.loader.exec_module(module)
     before = (h.store.episode_path(eid) / "events.jsonl").read_bytes()
     plan = module.continuation_plan(h.store, eid)
     assert plan["launches"] == {"restoration_verification": 3, "paid_continuation": 1}

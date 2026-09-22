@@ -5,13 +5,14 @@ from copy import deepcopy
 import pytest
 from test_harness_memory import WorkingScript, annotated, note, play, public_event, select
 
-from balatro_horizons.agents.action_notes import ActionNoteLink
-from balatro_horizons.agents.notebook import RunNotebook
-from balatro_horizons.agents.protocol import decision_context
 from balatro_horizons.contracts import ActionEnvelope, Observation
-from balatro_horizons.engine.certification import read_checkpoint
-from balatro_horizons.engine.fake import FakeGame
-from balatro_horizons.runner import Runner
+from balatro_horizons.evidence.certification import read_checkpoint
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.action_notes import ActionNoteLink
+from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.context.memory import RunNotebook
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
 
 
 def events():
@@ -76,7 +77,11 @@ def test_failure_cannot_turn_a_saved_edit_into_a_later_action_receipt(kind):
 def test_later_helper_rewrite_does_not_replace_the_preaction_edit(store, config):
     policy = WorkingScript(annotated(select, text="I expect the blind to start"),
                            note("plan", "The blind started; now play"), play)
-    result = Runner(store, config, FakeGame(), policy).run()
+    spending = Spending.episode_only(
+        store.root / "private_runs" / "test-spending.json",
+        config.budgets.max_episode_cost_usd or 1,
+    )
+    result = Runner(store, config, FakeGame(), policy, spending).run()
     original = policy.contexts[1]["previous_action_outcome"]["recorded_note_update"]
     after_helper = policy.contexts[2]
     assert after_helper["run_notebook"]["entries"]["plan"] == "The blind started; now play"
@@ -88,7 +93,11 @@ def test_later_helper_rewrite_does_not_replace_the_preaction_edit(store, config)
 
 def test_paired_edit_survives_request_pruning_without_copying_arbitrary_fields(store, config):
     policy = WorkingScript(annotated(select))
-    result = Runner(store, config, FakeGame(), policy).run()
+    spending = Spending.episode_only(
+        store.root / "private_runs" / "test-spending.json",
+        config.budgets.max_episode_cost_usd or 1,
+    )
+    result = Runner(store, config, FakeGame(), policy, spending).run()
     checkpoint = read_checkpoint(store, result["episode_id"], 1)
     observation = Observation.model_validate(checkpoint["observation"])
     memory = deepcopy(checkpoint["working_memory"])

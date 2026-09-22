@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from balatro_horizons.agents.outcomes import previous_action_outcome
+from balatro_horizons.harness.outcomes import previous_action_outcome
 
 
 def evidence(action="play_hand", phase="SELECTING_HAND"):

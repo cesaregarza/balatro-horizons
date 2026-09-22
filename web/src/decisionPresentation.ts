@@ -1,5 +1,6 @@
 import type { DecisionRow } from "./api";
 import { cardLabel } from "./cardPresentation";
+import descriptors from "../../src/balatro_horizons/review/action_descriptors.json" with { type: "json" };
 
 export function humanize(value: string) {
   return value.replaceAll("_", " ").toLowerCase();
@@ -15,30 +16,13 @@ export function number(value: string | number | null | undefined) {
 
 export function actionTitle(row: DecisionRow) {
   const item = cardLabel(row.item || "item", row.effects);
-  switch (row.type) {
-    case "model_turn":
-      return "Model calls before game action";
-    case "play_hand":
-      return `Play ${row.hand_types?.join(" / ") || "hand"}`;
-    case "discard":
-      return `Discard ${row.cards?.length ?? ""} cards`;
-    case "buy":
-      return `${row.mode === "buy_and_use" ? "Buy & use" : "Buy"} ${item}`;
-    case "sell":
-      return `Sell ${item}`;
-    case "select_blind":
-      return `Face ${item}`;
-    case "skip_blind":
-      return `Skip ${item}`;
-    case "choose_pack":
-      return `Choose ${item}`;
-    case "use_consumable":
-      return `Use ${item}`;
-    case "reorder":
-      return `Reorder ${row.area}`;
-    default:
-      return humanize(row.type).replace(/^./, (char) => char.toUpperCase());
-  }
+  const descriptor = (descriptors as Record<string, { verb: string; subject: string; buy_and_use?: string; suffix?: string }>)[row.type];
+  if (!descriptor) return humanize(row.type).replace(/^./, (char) => char.toUpperCase());
+  if (row.type === "play_hand") return `${descriptor.verb} ${row.hand_types?.join(" / ") || "hand"}`;
+  if (row.type === "discard") return `${descriptor.verb} ${row.cards?.length ?? ""} cards`;
+  const subject = descriptor.subject === "item" ? item : descriptor.subject;
+  const verb = row.mode === "buy_and_use" ? descriptor.buy_and_use ?? descriptor.verb : descriptor.verb;
+  return [verb, subject].filter(Boolean).join(" ") + (descriptor.suffix ?? "");
 }
 
 export function jokerChanges(row: DecisionRow, change: "added" | "removed") {

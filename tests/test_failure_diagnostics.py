@@ -2,11 +2,12 @@ import json
 
 import pytest
 
-from balatro_horizons.agents.baselines import Baseline
-from balatro_horizons.agents.failures import HarnessFailure
-from balatro_horizons.engine.fake import FakeGame
 from balatro_horizons.evaluation.reports import episode_export
-from balatro_horizons.runner import Runner
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.baselines import Baseline
+from balatro_horizons.harness.failures import HarnessFailure
+from balatro_horizons.harness.loop import Runner
+from balatro_horizons.harness.money import Spending
 
 
 @pytest.mark.parametrize("known", [True, False])
@@ -22,7 +23,16 @@ def test_error_code_and_private_stack_without_secret_text(store, config, known):
                 )
             raise ValueError("PRIVATE_SENTINEL is an exception message, not an error code")
 
-    result = Runner(store, config, FakeGame(), FailingPolicy("heuristic")).run()
+    result = Runner(
+        store,
+        config,
+        FakeGame(),
+        FailingPolicy("heuristic"),
+        Spending.episode_only(
+            store.root / "private_runs" / "test-spending.json",
+            config.budgets.max_episode_cost_usd or 1,
+        ),
+    ).run()
     assert result["reason"] == ("LOCAL_CONTEXT_LIMIT" if known else "ValueError")
     eid = result["episode_id"]
     diagnostic = json.loads((store.episode_path(eid, True) / "failure-diagnostic.json").read_text())

@@ -71,6 +71,13 @@ class HandleIssuer:
             raise ValueError("UNKNOWN_PUBLIC_HANDLE")
         return target[1]
 
+    def current_area(self, handle):
+        """Resolve a current handle's public area without exposing the handle map."""
+        target = self._current.get(handle)
+        if target is None:
+            raise ValueError("UNKNOWN_PUBLIC_HANDLE")
+        return target[0]
+
     def snapshot(self):
         return {
             "salt": self._salt.hex(),
