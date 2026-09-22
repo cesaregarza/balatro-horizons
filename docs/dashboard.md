@@ -41,8 +41,8 @@ browser poll; its source journal head identifies the exported snapshot.
 Action labels come from the single packaged `review/action_descriptors.json`,
 also imported by TypeScript. Route names and accessible labels are versioned UI
 contracts; changes require matching browser coverage.
-Unknown edition text is escaped and never used as a CSS class. Browser decision
-numbers start at 1; journal observation IDs are zero-based.
+Unknown edition text is escaped and never used as a CSS class. Explorer decision
+numbers start at 1; journal IDs and workbench trajectory numbers are zero-based.
 
 Status polling reads a compact per-episode cache, not the full journal on every
 request. Device, inode, size, modification time, or change time invalidates the
