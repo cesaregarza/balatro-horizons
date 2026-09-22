@@ -8,7 +8,7 @@ from pathlib import Path
 
 from balatro_horizons.contracts import ActionEnvelope, Observation
 from balatro_horizons.evaluation.batches import summarize
-from balatro_horizons.evaluation.scheduling import batch_attempts, reconcile_stop
+from balatro_horizons.harness.money import batch_attempts, reconcile_stop
 from balatro_horizons.storage.journal import atomic_json, digest, identifier
 
 # Require a drive-letter boundary so a public https:// link is not treated as s:/.

@@ -9,10 +9,10 @@ from typing import Any
 
 import httpx
 
-from balatro_horizons.agents.input_limits import InputCounter, check_request_bytes
-from balatro_horizons.agents.tool_interface import decode_tool
 from balatro_horizons.config import PROVIDER_TIMEOUT_SECONDS
 from balatro_horizons.harness.contract import Context, Exchanges, RawOperation
+from balatro_horizons.harness.input_limits import InputCounter, check_request_bytes
+from balatro_horizons.harness.tool_interface import decode_tool
 
 
 class ProviderFailure(RuntimeError):

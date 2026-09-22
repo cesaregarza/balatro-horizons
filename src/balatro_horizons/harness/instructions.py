@@ -1,7 +1,7 @@
 """One renderer for editing and new-episode prompt admission."""
 
-from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.config import ALWAYS_LOADED_MAX_BYTES
+from balatro_horizons.harness.failures import HarnessFailure
 
 BEGIN = "<!-- BEGIN ALWAYS-LOADED.md -->"
 END = "<!-- END ALWAYS-LOADED.md -->"

@@ -7,11 +7,11 @@ from balatro_horizons.config import ROOT
 from balatro_horizons.storage.journal import digest
 
 IMPLEMENTATION_FILES = (
-    "config.py", "contracts.py", "runner.py", "service.py", "review/branches.py",
-    "evaluation/scheduling.py",
+    "config.py", "contracts.py", "harness/loop.py", "harness/money.py", "service.py",
+    "review/branches.py",
 )
 IMPLEMENTATION_DIRECTORIES = (
-    "game", "evidence", "observations", "actions", "agents", "storage", "harness"
+    "game", "evidence", "observations", "actions", "storage", "harness"
 )
 
 

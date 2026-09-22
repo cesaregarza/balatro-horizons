@@ -6,8 +6,8 @@ from copy import deepcopy
 
 import httpx
 
-from balatro_horizons.agents.failures import HarnessFailure
 from balatro_horizons.config import INPUT_TOKEN_SAFETY_MARGIN
+from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.storage.journal import digest
 
 

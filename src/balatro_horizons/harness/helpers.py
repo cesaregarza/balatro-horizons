@@ -1,9 +1,9 @@
 """Read-only public helper dispatch for a single agent operation."""
 
-from balatro_horizons.agents.skills import read_guide
 from balatro_horizons.harness.arithmetic import arithmetic
 from balatro_horizons.harness.context.committed_evidence import retrieve_action_result
 from balatro_horizons.harness.context.present import focused_helper
+from balatro_horizons.harness.skills import read_guide
 
 
 def helper(operation, events, rules, observation=None):

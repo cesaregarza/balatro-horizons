@@ -15,11 +15,11 @@ def test_batch_scheduling_source_invalidates_native_fingerprint(tmp_path, monkey
     from balatro_horizons.evidence import provenance
 
     monkeypatch.setattr(provenance, "ROOT", tmp_path)
-    source = tmp_path / "src/balatro_horizons/evaluation/scheduling.py"
+    source = tmp_path / "src/balatro_horizons/harness/money.py"
     source.parent.mkdir(parents=True)
-    source.write_text("original scheduling")
+    source.write_text("original money")
     before = provenance.implementation_fingerprint()
-    source.write_text("changed scheduling")
+    source.write_text("changed money")
     assert provenance.implementation_fingerprint() != before
 
 

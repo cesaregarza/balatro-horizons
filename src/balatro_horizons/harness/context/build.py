@@ -3,8 +3,6 @@
 import json
 from copy import deepcopy
 
-from balatro_horizons.agents.failures import HarnessFailure
-from balatro_horizons.agents.tool_interface import ACTION_MODELS
 from balatro_horizons.config import (
     CONTEXT_FRAMING_BYTES,
     CONTEXT_SETTINGS_BYTES,
@@ -22,6 +20,8 @@ from balatro_horizons.harness.context.memory import (
 from balatro_horizons.harness.context.present import focused_observation
 from balatro_horizons.harness.context.render import render_prompt, rules_kernel, tool_catalog
 from balatro_horizons.harness.contract import Context
+from balatro_horizons.harness.failures import HarnessFailure
+from balatro_horizons.harness.tool_interface import ACTION_MODELS
 
 
 def build_context(
@@ -74,7 +74,7 @@ def _memory_fields(notebook, working_memory):
 
 
 def _previous_outcome(original, history, frozen):
-    from balatro_horizons.agents.outcomes import VERSION, previous_action_outcome
+    from balatro_horizons.harness.outcomes import VERSION, previous_action_outcome
 
     deliver = frozen is None or frozen.get("memory_policy", {}).get("action_outcome") == VERSION
     return (previous_action_outcome(original, history) if deliver else None), deliver
