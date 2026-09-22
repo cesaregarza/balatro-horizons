@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-22 — Credential apply failure reporting (#48)
+
+- Preflight both credential and service-drop-in destinations before replacing
+  either file. A refused second destination leaves prior credential bytes intact.
+- Report sanitized per-file replacement state on partial apply, including an
+  error after a rename. Do not promise crash-atomic two-file updates or restart
+  the service automatically; preserve success/preview output and private modes.
+- Pin the five credential refusal codes requested by the #23 owner review and
+  document explicit recovery. Tests use disposable files and fake values only.
+
 ## 2026-09-22 — Run execution and export ownership (issue #44)
 
 - Split `RunService` execution preparation/locked lifecycle into
