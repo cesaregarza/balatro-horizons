@@ -14,6 +14,7 @@ uv run bh evidence plan
 uv run bh evidence plan --gameplay-only
 uv run bh evidence plan --resume-actions
 uv run bh evidence plan --resume-certification
+uv run bh evidence plan --connection-only
 ```
 
 The cold plan has 12 physical launches and 22 resets. Startup profile stability
@@ -38,6 +39,18 @@ collection" --episode-id EPISODE_ID`. A stage name selects the remaining suffix;
 it never turns missing prerequisite artifacts into completed evidence.
 The resume plans report 11 launches / 16 resets for actions, or 11 / 11 for
 certification. Selecting the gameplay-only stage requires `--gameplay-only`.
+
+For an authorized connection-only check, use `bh native diagnose --connection
+--config configs/smoke.yaml --report reports/verification/native-connection-UNIQUE.json`.
+Its plan is one calibration launch and zero game resets. It requires clean
+committed source, a matching pinned environment manifest/instrumentation, an
+explicit session registration, and an idle runtime/port. It temporarily removes
+only this checkout's registration to prove fail-closed RPC admission, restores
+and refreshes it, and opens a new RPC subprocess against the same owned game.
+Cleanup stops only that launch identity. It neither simulates actual socket
+destruction nor claims replay, gameplay, or capability certification. Every
+attempt gets a new immutable source/environment-bound receipt, including failures;
+no backend deployment, provider call, or certificate activation is performed.
 
 ```bash
 uv run bh evidence collect

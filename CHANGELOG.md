@@ -2,6 +2,12 @@
 
 ## 2026-09-22 — Explicit credentials and Windows connection (PR #23)
 
+- Added `bh evidence plan --connection-only` and `bh native diagnose
+  --connection --report PATH` for one owned calibration launch, fail-closed
+  unregistered RPC, registration refresh, same-process RPC reconnection, and
+  cleanup. Immutable receipts bind the source and environment without granting
+  capability or replay certification; offline doubles cover failure cleanup.
+
 - Integrated current main without rewriting the published PR history. Ported
   session isolation to `game/transport.py`, runtime status to the split API and
   run-library screen, and credential configuration to `bh credentials`.
