@@ -1,6 +1,5 @@
 """One-worker orchestration shared by the browser and CLI."""
 
-import fcntl
 import json
 import os
 import queue
@@ -12,8 +11,6 @@ from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeGame
 from balatro_horizons.game.windows_context import load_session
 from balatro_horizons.harness.baselines import Baseline
-from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
-from balatro_horizons.harness.contract import ProviderPolicy
 from balatro_horizons.harness.loop import OperatorAbort, run_episode
 from balatro_horizons.harness.money import (
     Spending,
@@ -23,6 +20,7 @@ from balatro_horizons.harness.money import (
     validate_paid_configuration,
 )
 from balatro_horizons.harness.transport import DirectProvider
+from balatro_horizons.service_execution import execute_locked, prepare_execution
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
 from balatro_horizons.workbench.branches import prepare_branch
 
@@ -186,6 +184,14 @@ class RunService:
             else NativeGame(config.environment, seed, calibration=calibration)
         )
 
+    def _decorate_policy(self, policy, operations, human_steps):
+        if operations:
+            policy = InterventionPolicy(operations, policy)
+        if human_steps:
+            self.human = HumanPolicy(self.stop)
+            policy = HumanSequencePolicy(self.human, policy, human_steps)
+        return policy
+
     def execute(
         self,
         config,
@@ -202,96 +208,24 @@ class RunService:
         spending=None,
         human_steps=0,
     ):
-        config = config.model_copy(deep=True)
-        if resume:
-            validate_continuation(
-                restore_protocol(self.store, resume), config, agent, human=agent == "human"
-            )
-        policy = self.policy(config, agent)
-        from balatro_horizons.harness.instructions import load_prompt
-
-        # NativeGame's constructor launches the game. Validate and capture prompt
-        # bytes before constructing it; ordinary branches use their original snapshot.
-        prompt_bytes = None if resume else load_prompt(ROOT)
-        if not offline and eid is None:
-            load_session()
-        if operations:
-            policy = InterventionPolicy(operations, policy)
-        if human_steps:
-            self.human = HumanPolicy(self.stop)
-            policy = HumanSequencePolicy(self.human, policy, human_steps)
-        if calibration and (isinstance(policy, ProviderPolicy) or policy.model or agent == "human"):
-            raise ValueError("CALIBRATION_REQUIRES_SCRIPTED_POLICY")
-        manifest = {
-            "evidence_kind": "SYNTHETIC_TEST" if offline else "NATIVE",
-            "config": config.public(),
-            "agent": agent,
-            "evaluation_eligible": not offline and not calibration and not resume,
-            "config_hash": digest(config.model_dump()),
-            **(extra or {}),
-        }
-        if agent == "human" or resume or operations or human_steps:
-            manifest["evaluation_eligible"] = False
-            manifest["assistance"] = "human_takeover" if agent == "human" else "intervention"
-        eid = eid or self.store.create(manifest, {"seed": seed, "config": config.model_dump()})
-        spending = spending or Spending.episode_only(
-            self.store.root / "private_runs" / eid / "spending.json",
-            config.budgets.max_batch_cost_usd,
+        plan = prepare_execution(
+            self,
+            config,
+            agent,
+            seed,
+            offline=offline,
+            calibration=calibration,
+            eid=eid,
+            extra=extra,
+            resume=resume,
+            prefix=prefix,
+            operations=operations,
+            spending=spending,
+            human_steps=human_steps,
+            root=ROOT,
+            load_session_fn=load_session,
         )
-        self.review.expose(eid, "operator_configuration", model_identity_seen=True)
-        self.active_id = eid
-        lock_path = (
-            self.store.root / "worker.lock" if offline else ROOT / "private/native-worker.lock"
-        )
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        game = None
-        with lock_path.open("a") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                game = self.create_game(
-                    config, seed, offline=offline, calibration=calibration or bool(resume)
-                )
-                rules = {"core": "See the shared rules kernel."}
-                frozen = ROOT / "private/rules.json"
-                if not offline and frozen.exists():
-                    rules = json.loads(frozen.read_text())
-                    if rules.get("environment_hash") != digest(game.lock):
-                        raise ValueError("FROZEN_RULES_ENVIRONMENT_MISMATCH")
-                return run_episode(
-                    self.store,
-                    config,
-                    game,
-                    policy,
-                    spending,
-                    stop=self.stop,
-                    rules=rules,
-                    prompt_bytes=prompt_bytes,
-                    eid=eid,
-                    resume=resume,
-                    history_prefix=prefix,
-                )
-            except Exception as error:
-                if game:
-                    try:
-                        game.close()
-                    except Exception:
-                        self.error = "NATIVE_CLEANUP_FAILED"
-                if not self.store.summary(eid):
-                    self.store.finish(
-                        eid,
-                        {
-                            "episode_id": eid,
-                            "evidence_kind": manifest["evidence_kind"],
-                            "outcome": "INFRASTRUCTURE_FAILURE",
-                            "reason": str(error) if str(error).isupper() else type(error).__name__,
-                            "cost_usd": 0,
-                            "committed_actions": 0,
-                            "provider_calls": 0,
-                        },
-                    )
-                raise
-            finally:
-                self.active_id = None
+        return execute_locked(self, plan, run_episode_fn=run_episode)
 
     def start(self, config, agent, seed, *, offline=False, calibration=False):
         config = config.model_copy(deep=True)

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-22 — Run execution and export ownership (issue #44)
+
+- Split `RunService` execution preparation/locked lifecycle into
+  `service_execution.py`; lock admission, native preflight, game cleanup, and
+  terminal failure accounting remain ordered at the service boundary.
+- Split public episode snapshot assembly into `evaluation/export.py`; report
+  rendering retains the public privacy scan and provider-payload projection.
+
 ## 2026-09-22 — Budget continuations ported to the current packages (PR #25)
 
 - Addressed the narrow follow-up bounce: preserve operational probe errors when

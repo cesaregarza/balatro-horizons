@@ -9,6 +9,7 @@ IMPLEMENTATION_FILES = (
     "config.py",
     "contracts.py",
     "service.py",
+    "service_execution.py",
     "workbench/branches.py",
     "workbench/budget_continuation.py",
     "workbench/budget_ledger.py",

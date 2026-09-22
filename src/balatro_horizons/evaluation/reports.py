@@ -3,139 +3,21 @@
 import csv
 import html
 import json
-import re
 from pathlib import Path
 
-from balatro_horizons.contracts import ActionEnvelope, Observation
 from balatro_horizons.evaluation.batches import summarize
+from balatro_horizons.evaluation.export import episode_export as assemble_episode_export
+from balatro_horizons.evaluation.privacy import public_provider_payload as public_provider_payload
+from balatro_horizons.evaluation.privacy import scan
 from balatro_horizons.harness.money import batch_attempts, reconcile_stop
 from balatro_horizons.storage.journal import atomic_json, digest, identifier
 
-# Require a drive-letter boundary so a public https:// link is not treated as s:/.
-FORBIDDEN = re.compile(
-    r"(?:sk-(?:proj-|ant-)?[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9_-]+|/mnt/|/root/|(?<![A-Za-z0-9+.-])[A-Za-z]:[\\/]|rng_state|hidden_draw_order|PRIVATE KEY)"
-)
-
-
-def scan(value, secrets=()):
-    serialized = json.dumps(value, ensure_ascii=False)
-    if FORBIDDEN.search(serialized) or any(secret and secret in serialized for secret in secrets):
-        raise ValueError("EXPORT_PRIVACY_SCAN_FAILED")
-
-
-def public_provider_payload(value):
-    """Remove opaque continuation material while retaining inspectable public output."""
-    if isinstance(value, list):
-        return [public_provider_payload(item) for item in value]
-    if not isinstance(value, dict):
-        return value
-    block_type = value.get("type")
-    result = {
-        key: public_provider_payload(item)
-        for key, item in value.items()
-        if key != "encrypted_content"
-        and not (block_type in ("thinking", "redacted_thinking") and key == "signature")
-        and not (block_type == "redacted_thinking" and key == "data")
-    }
-    omitted = (
-        "encrypted_content" in value
-        or (block_type in ("thinking", "redacted_thinking") and "signature" in value)
-        or (block_type == "redacted_thinking" and "data" in value)
-    )
-    if omitted:
-        result["opaque_continuation_omitted"] = True
-    return result
-
 
 def episode_export(store, eid):
-    manifest = store.manifest(eid)
-    public_manifest = {
-        k: manifest[k]
-        for k in (
-            "schema_version",
-            "episode_id",
-            "created_at",
-            "evidence_kind",
-            "agent",
-            "config",
-            "evaluation_eligible",
-            "fixture",
-            "validation_purpose",
-            "parent_episode_id",
-            "parent_decision",
-            "assistance",
-            "batch_id",
-            "slot_id",
-            "agent_protocol",
-            "certificate_id",
-            "budget_extension",
-        )
-        if k in manifest
-    }
-    events = []
-    for event in store.events(eid):
-        kind = event["type"]
-        if kind == "observation":
-            payload = Observation.model_validate(event["payload"]).model_dump(mode="json")
-        elif kind == "action_commit":
-            payload = ActionEnvelope.model_validate(event["payload"]).model_dump(mode="json")
-        elif kind == "terminal":
-            payload = store.summary(eid)
-        elif kind in (
-            "agent_context",
-            "agent_operation",
-            "provider_request",
-            "provider_response",
-            "helper_result",
-            "run_note",
-            "action_rejected",
-            "provider_input_check",
-            "harness_failure",
-        ):
-            payload = event["payload"]
-        else:
-            continue
-        payload = public_provider_payload(payload)
-        events.append(
-            {
-                "event_id": event["event_id"],
-                "sequence": event["sequence"],
-                "type": kind,
-                "observation_id": event["observation_id"],
-                "payload": payload,
-            }
-        )
-    from balatro_horizons.review.service import ReviewService
-
-    annotations = [
-        {k: v for k, v in row.items() if k != "reviewer_id"}
-        for row in ReviewService(store).annotations(eid)
-    ]
-    result = {
-        "agent_protocol": next(
-            (
-                e["payload"].get("agent_protocol")
-                for e in store.events(eid)
-                if e["type"] == "episode_start"
-            ),
-            None,
-        ),
-        "annotations": annotations,
-        "export_policy": "public-schema-v1",
-        "manifest": public_manifest,
-        "events": events,
-        "summary": store.summary(eid),
-    }
-    private = store.manifest(eid, True)
-    scan(result, [private.get("seed")])
-    ReviewService(store).expose(
+    return assemble_episode_export(
+        store,
         eid,
-        "public_export",
-        outcome_seen=True,
-        model_identity_seen=True,
-        max_event_seen=len(store.events(eid)) - 1,
     )
-    return result
 
 
 def report_batch(store, bid, output):

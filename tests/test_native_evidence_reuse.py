@@ -46,10 +46,11 @@ def test_harness_only_edits_change_full_identity_but_not_native_game_identity():
 
 
 @pytest.mark.parametrize('path', [
+    'service_execution.py',
     'workbench/budget_continuation.py',
     'workbench/budget_ledger.py',
 ])
-def test_budget_workbench_files_are_full_identity_only(path):
+def test_full_identity_only_files_do_not_change_native_identity(path):
     source = provenance.source_files(ROOT)
     key = 'src/balatro_horizons/' + path
     baseline = provenance.fingerprint_sources(source)
