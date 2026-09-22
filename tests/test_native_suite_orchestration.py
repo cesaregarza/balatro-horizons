@@ -9,6 +9,7 @@ import pytest
 
 from balatro_horizons.cli import main as cli_main
 from balatro_horizons.evidence import certification, stages
+from balatro_horizons.evidence import release as release_module
 from balatro_horizons.evidence.collect import (
     action_table,
     faults,
@@ -192,13 +193,44 @@ def test_plan_has_five_field_schema_and_frozen_totals():
     )
 
 
-def test_cli_plan_and_action_table_match_goldens(capsys):
+def test_cli_plan_and_action_table_match_goldens(capsys, monkeypatch):
     fixtures = Path(__file__).parent / "fixtures"
     expected_plan = json.loads((fixtures / "evidence-plan.json").read_text())
     expected_actions = json.loads((fixtures / "evidence-shop-actions.json").read_text())
     assert cli_main(["evidence", "plan"]) == 0
     assert json.loads(capsys.readouterr().out) == expected_plan
-    assert action_table.shop_action_types() == expected_actions
+
+    class RecordingAudit:
+        def __init__(self, skip_pack):
+            self.obs = SimpleNamespace(
+                available_action_types=["skip_pack"] if skip_pack else []
+            )
+            self.events = []
+
+        def take(self, action):
+            self.events.append(action["type"])
+
+        def fixture(self, case):
+            self.events.append({"fixture": case})
+
+        def capture(self):
+            self.events.append({"capture": True})
+
+    def record_rows(audit, rows):
+        for row in rows:
+            audit.take({"type": row.name})
+
+    monkeypatch.setattr(action_table, "run_action_table", record_rows)
+    monkeypatch.setattr(
+        action_table,
+        "fixture",
+        lambda audit, case, check=None: audit.fixture(case),
+    )
+    for skip_pack, key in ((True, "with_skip_pack"), (False, "without_skip_pack")):
+        audit = RecordingAudit(skip_pack)
+        action_table.run_shop_table(audit)
+        assert audit.events == expected_actions[key]
+        assert len(audit.events) == (33 if skip_pack else 32)
 
 
 @pytest.mark.parametrize(
@@ -287,7 +319,7 @@ def test_from_stage_dispatches_to_package_collector(monkeypatch, tmp_path):
     assert calls[0][3] is factory
     assert result["from_stage"] == "functional collection"
     monkeypatch.setattr(
-        certification,
+        release_module,
         "certify_release",
         lambda root, *, from_stage: {"root": root, "from_stage": from_stage},
     )
@@ -312,7 +344,7 @@ def test_gameplay_only_writes_one_collection_artifact_and_skips_certification(
     def fail_certification(*_args, **_kwargs):
         raise AssertionError("gameplay-only collection invoked certification")
 
-    monkeypatch.setattr(certification, "certify_release", fail_certification)
+    monkeypatch.setattr(release_module, "certify_release", fail_certification)
     monkeypatch.setattr(orchestrator, "implementation_fingerprint", lambda: "source")
     monkeypatch.setattr(orchestrator, "lock_digest", lambda root: "environment")
     monkeypatch.setattr(orchestrator, "load_config", lambda path: SimpleNamespace(environment=None))
@@ -472,28 +504,53 @@ def test_release_keeps_prefix_branch_after_failed_direct_proof(monkeypatch, tmp_
         {"actions": {"episode_id": "fixture"}, "win": {"outcome": "WIN"}},
     )
     certification.atomic_json(reports / "native-runs.json", {"pilot": {"episode_id": "gold"}})
-    store = SimpleNamespace(manifest=lambda *_: {"config": certification.Config().model_dump()})
-    monkeypatch.setattr(certification, "Store", lambda _: store)
-    monkeypatch.setattr(certification, "implementation_fingerprint", lambda: "source")
-    monkeypatch.setattr(certification, "lock_digest", lambda _: "environment")
-    monkeypatch.setattr(prefix, "certify_prefix", lambda *_: {"status": prefix_status})
-    failed_direct = {"status": "failed", "mode": "checkpoint"}
-    monkeypatch.setattr(certification, "verify_checkpoint", lambda *_, **__: failed_direct)
-    branches = []
-    monkeypatch.setattr(
-        certification, "_branch_restoration",
-        lambda *args: branches.append(args) or ("child", {"outcome": "WIN"}, "annotation"),
+    store = SimpleNamespace(
+        manifest=lambda *_: {
+            "config": release_module.Config().model_dump(), "evidence_kind": "SYNTHETIC_TEST",
+        },
+        episode_path=lambda eid, _private: tmp_path / "data/private_runs" / eid,
     )
-    monkeypatch.setattr(certification, "_settlement_evidence", lambda *_: None)
+    monkeypatch.setattr(release_module, "Store", lambda _: store)
+    monkeypatch.setattr(release_module, "implementation_fingerprint", lambda: "source")
+    monkeypatch.setattr(certification, "implementation_fingerprint", lambda: "source")
+    monkeypatch.setattr(release_module, "lock_digest", lambda _: "environment")
+    monkeypatch.setattr(certification, "read_checkpoint", lambda *_: {
+        "game": {"kind": "synthetic"}, "observation": {"phase": "BLIND_SELECT"},
+    })
+    monkeypatch.setattr(certification, "steps_for", lambda *_: [
+        {"kind": "action", "observation": {"observation_id": 1}},
+    ])
+    monkeypatch.setattr(certification, "prefix_snapshot", lambda *_: {"kind": "synthetic"})
+    monkeypatch.setattr(
+        certification, "_replay_failures",
+        lambda _store, _config, _eid, _decision, mode, *_: []
+        if mode == "seed_prefix" and prefix_status == "passed"
+        else [{"reason": "TEST_REPLAY_FAILED"}],
+    )
+    monkeypatch.setattr(prefix, "certify_prefix", lambda store, eid: certification.verify_checkpoint(
+        store, release_module.Config(), eid, 0, mode="seed_prefix",
+    ))
+    branches = []
+
+    def branch_restoration(store, _config, gold):
+        pointer = json.loads(certification.certificate_path(store, gold, 0).read_text())
+        assert pointer["mode"] == "seed_prefix" and pointer["status"] == "passed"
+        branches.append(pointer["certificate_id"])
+        return "child", {"outcome": "WIN"}, "annotation"
+
+    monkeypatch.setattr(release_module, "_branch_restoration", branch_restoration)
+    monkeypatch.setattr(release_module, "_settlement_evidence", lambda *_: None)
     release_path = reports / "native-release.json"
     if prefix_status == "failed":
         with pytest.raises(ValueError, match="CONTINUATION_CERTIFICATION_FAILED"):
-            certification.certify_release(tmp_path)
+            release_module.certify_release(tmp_path)
         assert branches == [] and not release_path.exists()
     else:
-        assert certification.certify_release(tmp_path)["branch"] == "child"
+        assert release_module.certify_release(tmp_path)["branch"] == "child"
         assert len(branches) == 1
-        assert json.loads(release_path.read_text())["direct_checkpoint"] == failed_direct
+        direct = json.loads(release_path.read_text())["direct_checkpoint"]
+        assert direct["mode"] == "checkpoint" and direct["status"] == "failed"
+        assert direct["certificate_id"] != branches[0]
 
 
 @pytest.mark.parametrize("defect, code", [
@@ -531,9 +588,9 @@ def test_settlement_evidence_binds_every_episode_checkpoint(monkeypatch, tmp_pat
             "game": {"environment": environment},
         }
 
-    monkeypatch.setattr(certification, "read_checkpoint", checkpoint)
+    monkeypatch.setattr(release_module, "read_checkpoint", checkpoint)
     monkeypatch.setattr(settlement, "verify", lambda _store, ids: {"episodes": ids})
-    result = certification._settlement_evidence(tmp_path, object(), release)
+    result = release_module._settlement_evidence(tmp_path, object(), release)
     assert result["status"] == "passed"
     assert set(result["checks"]["episodes"]) == episode_ids
 
@@ -553,6 +610,6 @@ def test_settlement_evidence_binds_every_episode_checkpoint(monkeypatch, tmp_pat
                     else environment
                 },
             }
-    monkeypatch.setattr(certification, "read_checkpoint", checkpoint)
+    monkeypatch.setattr(release_module, "read_checkpoint", checkpoint)
     with pytest.raises(ValueError, match=code):
-        certification._settlement_evidence(tmp_path, object(), release)
+        release_module._settlement_evidence(tmp_path, object(), release)

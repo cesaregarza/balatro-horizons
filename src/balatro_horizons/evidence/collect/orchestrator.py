@@ -150,7 +150,7 @@ def _resume_certification(root, smoke, session_factory):
     _validate_prior_profiles(root)
     with session_factory(smoke.environment, reason="startup") as session:
         acceptance.exercise_reorder(smoke, game_factory=session.new_game)
-    from balatro_horizons.evidence.certification import certify_release
+    from balatro_horizons.evidence.release import certify_release
 
     return certify_release(root)
 
@@ -167,7 +167,7 @@ def collect(*, from_stage=None, gameplay_only=False, action_episode_id=None,
     )
     first = selected[0].name if selected else None
     if selected and selected[0].collector == "certification":
-        from balatro_horizons.evidence.certification import certify_release
+        from balatro_horizons.evidence.release import certify_release
 
         return certify_release(root, from_stage=first)
     source = implementation_fingerprint()

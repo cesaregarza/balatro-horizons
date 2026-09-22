@@ -22,7 +22,7 @@ def run_evidence_command(args):
             action_episode_id=args.episode_id,
         )
     if operation == "certify":
-        from balatro_horizons.evidence.certification import certify_release
+        from balatro_horizons.evidence.release import certify_release
 
         return certify_release()
     if operation == "publish":

@@ -60,6 +60,15 @@ def test_native_edits_additions_and_removals_invalidate_compatibility(path):
         assert provenance.native_implementation_fingerprint(source) != before
 
 
+def test_fake_game_edits_do_not_change_native_identity():
+    source = provenance.source_files(ROOT)
+    before_native = provenance.native_implementation_fingerprint(source)
+    before_full = provenance.fingerprint_sources(source)
+    source["src/balatro_horizons/game/fake.py"] += b"\n# synthetic-only change\n"
+    assert provenance.native_implementation_fingerprint(source) == before_native
+    assert provenance.fingerprint_sources(source) != before_full
+
+
 def test_game_environment_defaults_are_tracked_but_model_budgets_are_separate():
     source = provenance.source_files(ROOT)
     config_key = 'src/balatro_horizons/config.py'

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import copy
-from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 from balatro_horizons.contracts import RemainingBudget
 from balatro_horizons.evidence.collect.action_rows import ActionRow
@@ -16,6 +17,13 @@ from balatro_horizons.observations.projection import HandleIssuer, project_publi
 
 if TYPE_CHECKING:
     from balatro_horizons.evidence.collect.acceptance import Audit
+
+
+@dataclass(frozen=True)
+class _ShopStep:
+    kind: Literal["row", "fixture", "capture"]
+    value: ActionRow | str | None = None
+    check: Callable[[Audit], None] | None = None
 
 
 def run_action_table(audit: Audit, rows: list[ActionRow]) -> None:
@@ -239,74 +247,64 @@ def _assert_masked_projection(audit: Audit) -> None:
     assert left == right
 
 
-def run_shop_table(audit: Audit) -> None:
-    """Run the complete historical shop action table in order."""
-    run_action_table(audit, _shop_rows(audit))
-    fixture(
-        audit,
-        "easy_blind",
-        lambda current: _require(
+def _rows(rows: list[ActionRow]) -> list[_ShopStep]:
+    return [_ShopStep("row", row) for row in rows]
+
+
+def _fixture_step(
+    case: str, check: Callable[[Audit], None] | None = None
+) -> _ShopStep:
+    return _ShopStep("fixture", case, check)
+
+
+def _shop_sequence(audit: Audit) -> list[_ShopStep]:
+    credit_rows = _credit_rows()
+    return [
+        *_rows(_shop_rows(audit)),
+        _fixture_step("easy_blind", lambda current: _require(
             current.obs.state.resources.target == "1", "EASY_BLIND_TARGET_MISMATCH"
-        ),
-    )
-    run_action_table(audit, _round_rows()[:1])
-    audit.capture()
-    run_action_table(audit, _round_rows()[1:])
-    fixture(
-        audit,
-        "shop",
-        lambda current: _require(
+        )),
+        *_rows(_round_rows()[:1]),
+        _ShopStep("capture"),
+        *_rows(_round_rows()[1:]),
+        _fixture_step("shop", lambda current: _require(
             len(current.obs.state.jokers) == 5
             and len(current.obs.state.consumables) == 2,
             "SHOP_INVENTORY_MISMATCH",
-        ),
-    )
-    run_action_table(audit, _inventory_rows())
-    audit.capture()
-    run_action_table(audit, _pack_rows())
-    fixture(audit, "another_pack")
-    credit_rows = _credit_rows()
-    run_action_table(audit, credit_rows[:2])
-    # Establish debt before rerolling; this proves credit permits a negative balance.
-    fixture(
-        audit,
-        "credit",
-        lambda current: _require(
+        )),
+        *_rows(_inventory_rows()),
+        _ShopStep("capture"),
+        *_rows(_pack_rows()),
+        _fixture_step("another_pack"),
+        *_rows(credit_rows[:2]),
+        _fixture_step("credit", lambda current: _require(
             current.obs.state.resources.money == "-5"
             and current.obs.state.resources.credit_limit == "20",
             "CREDIT_FIXTURE_MISMATCH",
-        ),
-    )
-    run_action_table(audit, credit_rows[2:])
-    audit.capture()
-    run_action_table(audit, _consumable_rows())
-    audit.capture()
-    fixture(audit, "mask_jokers", _assert_masked_projection)
-
-
-def shop_action_types(*, tag_pack_opened: bool = True) -> list[str | dict[str, str]]:
-    """Return action and fixture order for the non-executing shop golden."""
-    available = ["skip_pack"] if tag_pack_opened else []
-    audit = SimpleNamespace(obs=SimpleNamespace(available_action_types=available))
-
-    def names(rows):
-        return [row.name for row in rows]
-
-    credit_rows = _credit_rows()
-    return [
-        *names(_shop_rows(audit)),
-        {"fixture": "easy_blind"},
-        *names(_round_rows()),
-        {"fixture": "shop"},
-        *names(_inventory_rows()),
-        *names(_pack_rows()),
-        {"fixture": "another_pack"},
-        *names(credit_rows[:2]),
-        {"fixture": "credit"},
-        *names(credit_rows[2:]),
-        *names(_consumable_rows()),
-        {"fixture": "mask_jokers"},
+        )),
+        *_rows(credit_rows[2:]),
+        _ShopStep("capture"),
+        *_rows(_consumable_rows()),
+        _ShopStep("capture"),
+        _fixture_step("mask_jokers", _assert_masked_projection),
     ]
+
+
+def _run_shop_step(audit: Audit, step: _ShopStep) -> None:
+    if step.kind == "row":
+        assert isinstance(step.value, ActionRow)
+        run_action_table(audit, [step.value])
+    elif step.kind == "fixture":
+        assert isinstance(step.value, str)
+        fixture(audit, step.value, step.check)
+    else:
+        audit.capture()
+
+
+def run_shop_table(audit: Audit) -> None:
+    """Run the complete historical shop action table in order."""
+    for step in _shop_sequence(audit):
+        _run_shop_step(audit, step)
 
 
 def win_rows() -> list[ActionRow]:
