@@ -218,3 +218,26 @@ def test_review_parser_defaults_off_and_rejects_remote_hosts():
     assert parser.parse_args(["review", "--workbench"]).workbench is True
     with pytest.raises(SystemExit):
         parser.parse_args(["review", "--host", "0.0.0.0"])
+
+
+def test_review_dispatch_passes_workbench_flag_without_launching_server(monkeypatch):
+    from balatro_horizons.cli.commands import dispatch
+    from balatro_horizons.cli.parser import build_parser
+
+    created = []
+    launched = []
+
+    def fake_create_app(data_dir, **kwargs):
+        created.append((data_dir, kwargs))
+        return object()
+
+    def fake_uvicorn_run(app, **kwargs):
+        launched.append((app, kwargs))
+
+    monkeypatch.setattr("balatro_horizons.api.app.create_app", fake_create_app)
+    monkeypatch.setattr("uvicorn.run", fake_uvicorn_run)
+    parser = build_parser()
+    for arguments, expected in ((["review"], False), (["review", "--workbench"], True)):
+        assert dispatch(parser.parse_args(arguments)) is None
+        assert created[-1][1]["workbench_enabled"] is expected
+    assert len(created) == len(launched) == 2

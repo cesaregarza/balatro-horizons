@@ -22,7 +22,7 @@ from balatro_horizons.harness.transport import DirectProvider
 from balatro_horizons.runner import Runner
 from balatro_horizons.storage.journal import digest
 from balatro_horizons.workbench.branches import prepare_branch
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 def test_catalog_has_descriptions_without_loading_bodies_and_provider_parity():
@@ -183,7 +183,7 @@ def test_model_reads_skill_and_reference_then_completes_synthetic_run(
         (store.episode_path(result["episode_id"], True) / "knowledge.json").read_text()
     )
     assert digest(frozen) == started["rules_hash"]
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     opened = review.open(result["episode_id"])
     assert "helper_result" not in json.dumps(opened["view"])
     assert "helper_result" in json.dumps(review.advance(opened["review_token"]))

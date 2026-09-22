@@ -6,8 +6,7 @@ from fastapi.testclient import TestClient
 
 from balatro_horizons.api import create_app
 from balatro_horizons.review.dev_trace import decision_trace
-from balatro_horizons.workbench.service import ReviewError
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
+from balatro_horizons.workbench.service import ReviewError, WorkbenchService
 
 
 @pytest.fixture
@@ -18,7 +17,7 @@ def recording(store, episode):
     observation = deepcopy(next(e["payload"] for e in store.events(episode) if e["type"] == "observation"))
     observation.update(episode_id=eid, observation_id=67)
     store.append(eid, "observation", observation, observation_id=67)
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     token = review.open(eid, retrospective=True)["review_token"]
     return eid, review, token, observation
 

@@ -8,12 +8,11 @@ from balatro_horizons.contracts import AnnotationInput
 from balatro_horizons.evidence.certification import verify_checkpoint
 from balatro_horizons.service import RunService
 from balatro_horizons.workbench.branches import prepare_branch
-from balatro_horizons.workbench.service import ReviewError
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
+from balatro_horizons.workbench.service import ReviewError, WorkbenchService
 
 
 def test_prospective_open_does_not_claim_model_or_outcome_exposure(store, episode):
-    view = ReviewService(store).open(episode)["view"]
+    view = WorkbenchService(store).open(episode)["view"]
     assert view["review_mode"] == "prospective"
     assert view["exposure"]["model_identity_seen"] is False
     assert view["exposure"]["outcome_seen"] is False
@@ -80,7 +79,7 @@ def annotation(**kwargs):
 
 
 def test_AT17_revisions_preserve_original_provenance(store, episode):
-    r = ReviewService(store)
+    r = WorkbenchService(store)
     opened = r.open(episode)
     token = opened["review_token"]
     first = r.annotate(token, annotation())
@@ -103,7 +102,7 @@ def test_AT10_AT18_checkpoint_and_immutable_override(store, episode, workbench_c
     before = (store.episode_path(episode) / "events.jsonl").read_bytes()
     cert = verify_checkpoint(store, config, episode, 0, repetitions=3)
     assert cert["status"] == "passed" and cert["evidence_kind"] == "SYNTHETIC_TEST"
-    service = RunService(store, ReviewService(store))
+    service = RunService(store, WorkbenchService(store))
     initial = next(e["payload"] for e in store.events(episode) if e["type"] == "observation")
     action = {"type": "skip_blind", "blind_id": initial["state"]["revealed_blinds"][0]["id"]}
     bid = service.branch(config, episode, 0, "single_action_override", [action])

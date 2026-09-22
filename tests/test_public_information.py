@@ -22,9 +22,10 @@ from balatro_horizons.harness.helpers import helper
 from balatro_horizons.harness.transport import DirectProvider
 from balatro_horizons.observations.deltas import last_action
 from balatro_horizons.observations.projection import HandleIssuer
+from balatro_horizons.review.service import ReviewService
 from balatro_horizons.runner import Runner
 from balatro_horizons.service import RunService
-from balatro_horizons.workbench.service import WorkbenchService as ReviewService
+from balatro_horizons.workbench.service import WorkbenchService
 
 
 def native_state(phase="SHOP"):
@@ -341,7 +342,7 @@ def test_branch_retains_known_last_action_without_recomputing_parent_future(stor
 
 
 def test_last_action_remains_behind_prospective_consequence_gate(store, episode):
-    review = ReviewService(store)
+    review = WorkbenchService(store)
     opened = review.open(episode)
     assert opened["view"]["observation"]["last_action"] is None
     token = opened["review_token"]
