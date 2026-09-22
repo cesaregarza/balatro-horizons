@@ -5,7 +5,6 @@ Run from a working WSL shell. --apply restarts only balatro-horizons.service.
 Credentials and unrelated shell variables are never copied.
 """
 
-import argparse
 import fcntl
 import os
 import subprocess
@@ -53,10 +52,13 @@ def dropin(environment):
     return "\n".join(lines) + "\n"
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def configure_parser(parser):
+    parser.description = __doc__
     parser.add_argument("--apply", action="store_true")
-    args = parser.parse_args()
+    parser.set_defaults(operation_handler=run, operation_parser=parser)
+
+
+def run(args):
     environment = session_environment(os.environ)
     content = dropin(environment)
     print("Launch variables: " + ", ".join(sorted(environment)), flush=True)
@@ -78,7 +80,3 @@ def main():
         subprocess.run(["systemctl", "--user", "restart", UNIT], check=True)
         subprocess.run(["systemctl", "--user", "is-active", "--quiet", UNIT], check=True)
     print("Applied session context to the workbench service; credentials and budgets unchanged.")
-
-
-if __name__ == "__main__":
-    main()

@@ -51,14 +51,14 @@ under the writer lock. The cache retains no observations or provider bodies.
 Terminal journal facts override a lagging SQLite index, pending reservations
 remain in costs, and unchanged polls append no duplicate exposure. Browser polls
 never overlap, stop when hidden or disabled, and event-stream work stays off the
-server event loop. Use `scripts/workbench_status.py --timing` for a bounded check.
+server event loop. Use `uv run bh review status --timing` for a bounded check.
 
 After WSL or service recreation, preview and then apply only the required Windows
 session variables from a connected WSL shell:
 
 ```bash
-uv run scripts/configure_workbench_session.py
-uv run scripts/configure_workbench_session.py --apply
+uv run bh review session
+uv run bh review session --apply
 ```
 
 The apply step writes a service-only drop-in and restarts the idle service; it

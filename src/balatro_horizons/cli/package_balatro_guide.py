@@ -1,14 +1,13 @@
 """Validate and package the Balatro guide and its frozen read_rules lookup entries.
 
 Run with the repository environment:
-  uv run python scripts/package_balatro_guide.py --guide docs/balatro-guide \
+  uv run bh guide package --guide docs/balatro-guide \
     --output docs/balatro-guide.zip --report reports/verification/balatro-guide.json
 
 The rules.json payload supplies entries/aliases for the existing rules helper.
 It is not a replacement for an environment-bound native rules manifest.
 """
 
-import argparse
 import hashlib
 import io
 import json
@@ -56,10 +55,8 @@ def topic_key(path):
     raise ValueError(f"Unmapped guide chapter: {path}")
 
 
-def compile_guide(directory):
-    directory = native_path(directory)
-    documents, bodies, topics, skills = {}, {}, {}, []
-    catalog = []
+def _collect_documents(directory):
+    documents, bodies, topics, skills, catalog = {}, {}, {}, [], []
     for path in sorted(directory.rglob("*")):
         if path.is_symlink():
             raise ValueError(f"Symlink in guide: {path.relative_to(directory)}")
@@ -78,37 +75,45 @@ def compile_guide(directory):
         documents[relative.as_posix()] = content.encode()
         match = FRONTMATTER.match(content)
         if path.name == "SKILL.md":
-            if not match:
-                raise ValueError(f"Missing skill frontmatter: {relative}")
-            fields = yaml.safe_load(match.group(1))
-            if not isinstance(fields, dict):
-                raise ValueError(f"Invalid skill frontmatter: {relative}")
-            if fields.get("name") != path.parent.name or not re.fullmatch(
-                r"[a-z0-9]+(?:-[a-z0-9]+)*", str(fields.get("name", ""))
-            ):
-                raise ValueError(f"Invalid skill name: {relative}")
-            description = fields.get("description")
-            if (
-                not isinstance(description, str)
-                or not description.strip()
-                or len(description) > 1024
-            ):
-                raise ValueError(f"Invalid skill description: {relative}")
+            fields = _skill_fields(relative, path, match)
             skills.append(fields["name"])
             catalog.append(
                 {
                     "name": fields["name"],
-                    "description": description,
+                    "description": fields["description"],
                     "key": "guide/" + fields["name"],
                 }
             )
             content = content[match.end() :]
         bodies[relative] = content
         topics[relative] = topic_key(relative)
+    return documents, bodies, topics, skills, catalog
+
+
+def _skill_fields(relative, path, match):
+    if not match:
+        raise ValueError(f"Missing skill frontmatter: {relative}")
+    fields = yaml.safe_load(match.group(1))
+    if not isinstance(fields, dict):
+        raise ValueError(f"Invalid skill frontmatter: {relative}")
+    if fields.get("name") != path.parent.name or not re.fullmatch(
+        r"[a-z0-9]+(?:-[a-z0-9]+)*", str(fields.get("name", ""))
+    ):
+        raise ValueError(f"Invalid skill name: {relative}")
+    description = fields.get("description")
+    if not isinstance(description, str) or not description.strip() or len(description) > 1024:
+        raise ValueError(f"Invalid skill description: {relative}")
+    return {"name": fields["name"], "description": description}
+
+
+def _validate_topics(bodies, topics):
     if Path("README.md") not in bodies or ROOT_KEY not in topics.values():
         raise ValueError("Guide requires README.md and the orchestrator skill")
     if len({key for key in topics.values() if key}) != len(topics) - 1:
         raise ValueError("Guide topic keys must be unique")
+
+
+def _rewrite_entries(directory, bodies, topics):
     link_count = 0
 
     def rewrite_link(source, match):
@@ -138,6 +143,10 @@ def compile_guide(directory):
         rewritten = LINK.sub(lambda match, path=path: rewrite_link(path, match), body)
         if topics[path]:
             entries[topics[path]] = rewritten.strip()
+    return entries, link_count
+
+
+def _build_rules(documents, entries, catalog):
     content_hash = sha256(encode({path: sha256(data) for path, data in documents.items()}))
     rules = {
         "format": "balatro-horizons-guide-v1",
@@ -147,10 +156,17 @@ def compile_guide(directory):
         "skills": catalog,
     }
     rules["bundle_hash"] = sha256(
-        json.dumps(
-            rules, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode()
+        json.dumps(rules, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     )
+    return rules, content_hash
+
+
+def compile_guide(directory):
+    directory = native_path(directory)
+    documents, bodies, topics, skills, catalog = _collect_documents(directory)
+    _validate_topics(bodies, topics)
+    entries, link_count = _rewrite_entries(directory, bodies, topics)
+    rules, content_hash = _build_rules(documents, entries, catalog)
     return (
         documents,
         rules,
@@ -197,12 +213,25 @@ def atomic_write(path, data):
         temp_path.unlink(missing_ok=True)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def _portable_archive(archive, documents, rules):
+    with tempfile.TemporaryDirectory(prefix="balatro-guide-check-") as temporary:
+        with zipfile.ZipFile(io.BytesIO(archive)) as packaged:
+            packaged.extractall(temporary)
+        copied, copied_rules, _ = compile_guide(Path(temporary) / "balatro-guide")
+        if copied != documents or copied_rules != rules:
+            raise ValueError("Portable bundle reconstruction differs")
+
+
+def configure_parser(parser):
+    parser.description = __doc__
     parser.add_argument("--guide", required=True, type=Path)
     parser.add_argument("--output", type=Path, help="ZIP destination; omit for validation only")
     parser.add_argument("--report", type=Path, help="Optional JSON validation receipt")
-    args = parser.parse_args()
+    parser.set_defaults(operation_handler=run, operation_parser=parser)
+    return parser
+
+
+def run(args):
     try:
         guide = native_path(args.guide)
         if args.output and native_path(args.output).is_relative_to(guide):
@@ -210,13 +239,7 @@ def main():
         documents, rules, report = compile_guide(guide)
         if args.output:
             archive = archive_bytes(documents, rules)
-            # Confirm the bundle is independent of the original repository path.
-            with tempfile.TemporaryDirectory(prefix="balatro-guide-check-") as temporary:
-                with zipfile.ZipFile(io.BytesIO(archive)) as packaged:
-                    packaged.extractall(temporary)
-                copied, copied_rules, _ = compile_guide(Path(temporary) / "balatro-guide")
-                if copied != documents or copied_rules != rules:
-                    raise ValueError("Portable bundle reconstruction differs")
+            _portable_archive(archive, documents, rules)
             atomic_write(guide / "rules.json", encode(rules))
             atomic_write(args.output, archive)
             report.update(archive_sha256=sha256(archive), archive_bytes=len(archive), portable=True)
@@ -227,7 +250,3 @@ def main():
         print(f"Guide packaging failed: {error}", file=sys.stderr)
         return 1
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

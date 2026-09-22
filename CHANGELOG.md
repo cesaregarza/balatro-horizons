@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-21 — Operational commands move into the package (issue #40)
+
+- Moved the nine import-loaded scripts into `cli/` modules with `bh` homes;
+  their tests now import package modules and retain their behavioral properties.
+- Kept `scripts/check_offline.py` as the two-line CI entry point, preserving
+  the Python and web lane commands. Native bootstrap remains unchanged.
+- Moved worker status to `bh review status`, separate from environment doctor
+  checks, and browser-native verification to `web/scripts/` with its existing
+  web unit-test consumer. Retired the other Python script entry points.
+- Parser registration preserves existing command behavior, including paid-call
+  opt-in, caps, native diagnostic sequencing, and install/rollback safeguards.
+  Installer runtime defaults now come from the shared environment definition.
+- This packaging change supplies no new native or paid-provider certification.
+
 ## 2026-09-21 — Documentation consolidation (PR #39; issue #17)
 
 - Consolidated the README, architecture, game-interface, harness, dashboard,

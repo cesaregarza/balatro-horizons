@@ -1,18 +1,11 @@
-import importlib.util
 import json
 import os
-from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
+from balatro_horizons.cli import diagnose_native as module
 from balatro_horizons.game.session import NativeFailure
-
-spec = importlib.util.spec_from_file_location(
-    "startup_diagnostic", Path(__file__).resolve().parents[1] / "scripts/diagnose_native_startup.py"
-)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
 
 
 def test_metadata_omits_private_contents_and_detects_stale_loader_log(tmp_path):

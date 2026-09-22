@@ -1,9 +1,9 @@
-import importlib.util
 import shutil
 
 import pytest
 from test_boundary import project
 
+from balatro_horizons.cli import prompt_sync as sync_module
 from balatro_horizons.config import ROOT
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.context.build import decision_context
@@ -12,15 +12,9 @@ from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.harness.skills import prepare_rules
 from balatro_horizons.harness.transport import context_payload
 
-SPEC = importlib.util.spec_from_file_location(
-    "sync_prompt_instructions", ROOT / "scripts/sync_prompt_instructions.py"
-)
-sync_module = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(sync_module)
-
 
 def test_current_prompt_is_synced_and_delivered_to_both_providers(config):
-    assert sync_module.sync(ROOT), "Run scripts/sync_prompt_instructions.py --write"
+    assert sync_module.sync(ROOT), "Run bh prompt sync --write"
     config.skills = "balatro-guide-v1"
     rules = prepare_rules({}, config.skills)
 

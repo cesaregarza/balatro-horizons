@@ -1,14 +1,6 @@
-import importlib.util
-from pathlib import Path
-
 import pytest
 
-spec = importlib.util.spec_from_file_location(
-    "workbench_session",
-    Path(__file__).resolve().parents[1] / "scripts/configure_workbench_session.py",
-)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+from balatro_horizons.cli import workbench_session as module
 
 
 def test_session_context_copies_only_launch_allowlist():

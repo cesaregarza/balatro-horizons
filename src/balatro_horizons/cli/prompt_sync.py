@@ -1,14 +1,21 @@
-#!/usr/bin/env python3
 """Embed ALWAYS-LOADED.md in the current prompt; check freshness by default."""
 
-import argparse
 import os
 import tempfile
 from pathlib import Path
 
+from balatro_horizons.config import ROOT
 from balatro_horizons.harness.instructions import BEGIN as BEGIN
 from balatro_horizons.harness.instructions import END as END
 from balatro_horizons.harness.instructions import render as render
+
+
+def configure_parser(parser):
+    parser.description = __doc__
+    parser.add_argument("--root", type=Path, default=ROOT)
+    parser.add_argument("--write", action="store_true", help="atomically update the selected prompt")
+    parser.set_defaults(operation_handler=run, operation_parser=parser)
+    return parser
 
 
 def sync(root: Path, *, write: bool = False) -> bool:
@@ -40,11 +47,8 @@ def sync(root: Path, *, write: bool = False) -> bool:
     return True
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--write", action="store_true", help="atomically update the selected prompt")
-    args = parser.parse_args()
+def run(args):
+    parser = args.operation_parser
     try:
         current = sync(args.root, write=args.write)
     except (OSError, ValueError) as error:
@@ -53,7 +57,3 @@ def main() -> int:
         parser.exit(1, "Persistent instructions are stale; run with --write.\n")
     print("Persistent instructions are included in the harness prompt.")
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
