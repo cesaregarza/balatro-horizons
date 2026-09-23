@@ -18,6 +18,7 @@ from balatro_horizons.harness.transport.base import (
 from balatro_horizons.harness.transport.openai import CAPABILITIES as OPENAI_CAPABILITIES
 from balatro_horizons.harness.transport.openai import SPEC as OPENAI_SPEC
 from balatro_horizons.harness.transport.openai import public_capabilities as openai_public
+from balatro_horizons.harness.transport.openai import validate_settings as openai_validate
 
 SPECS = {"openai": OPENAI_SPEC, "anthropic": ANTHROPIC_SPEC}
 CAPABILITIES = {"openai": OPENAI_CAPABILITIES, "anthropic": ANTHROPIC_CAPABILITIES}
@@ -46,6 +47,8 @@ def validate_settings(provider, model, settings):
     for key, values in capabilities["unsupported_settings"](model).items():
         if settings.get(key) in values:
             raise ValueError(f"{model} does not support {settings[key]} {key}")
+    if provider == "openai":
+        openai_validate(model, settings)
 
 
 def public_capability_table(models):

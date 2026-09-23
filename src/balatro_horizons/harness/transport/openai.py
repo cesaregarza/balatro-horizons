@@ -13,6 +13,7 @@ from balatro_horizons.harness.transport.base import (
 
 MODEL_VERSION = re.compile(r"^gpt-(\d+)(?:\.(\d+))?(?:-|$)")
 DISPLAY_MODEL = re.compile(r"^gpt-(5\.6|6)-(luna|terra|sol|astra)$")
+GPT6_SOL_LUNA = frozenset({"gpt-6-sol", "gpt-6-luna"})
 
 
 def prompt_cache_diagnostics(model):
@@ -27,12 +28,23 @@ def explicit_cache_mode(model):
 
 
 def unsupported_settings(model):
-    # Luna rejects minimal effort upstream; declaring it prevents paid rejected requests.
-    return {"reasoning_effort": {"minimal"}} if model == "gpt-5.6-luna" else {}
+    # Reject unsupported efforts before a paid request.
+    if model == "gpt-5.6-luna" or model in GPT6_SOL_LUNA:
+        return {"reasoning_effort": {"minimal"}}
+    return {}
+
+
+def validate_settings(model, settings):
+    if (
+        model in GPT6_SOL_LUNA
+        and "temperature" in settings
+        and settings.get("reasoning_effort", "medium") != "none"
+    ):
+        raise ValueError(f"{model} supports temperature only with reasoning_effort none")
 
 
 def reasoning_efforts(model, pinned):
-    if re.match(r"^gpt-5\.6(?:-|$)", model):
+    if model in GPT6_SOL_LUNA or re.match(r"^gpt-5\.6(?:-|$)", model):
         return ("none", "low", "medium", "high", "xhigh", "max")
     if re.match(r"^gpt-6-astra(?:-|$)", model):
         return ("low", "medium", "high", "xhigh", "max")

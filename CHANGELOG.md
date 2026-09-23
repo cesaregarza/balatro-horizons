@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-22 — GPT-6 Sol and Luna model options
+
+- Add opt-in, single-model configurations with verified standard input, output,
+  cache-read and cache-write rates; keep existing aliases, defaults and budgets.
+- Expose both models' full reasoning choices in the capability-driven selector;
+  reject minimal effort and reasoning/temperature combinations before sending.
+- Pin request shape, category accounting, long-context refusal, additive
+  registration and browser persistence with offline-only tests. No paid calls,
+  native execution, historical configuration changes or certificate changes.
+
 ## 2026-09-22 — Disposable session expiry classification (#42)
 
 - Add `bh evidence plan/collect --session-expiry-only`: reuse the unchanged
