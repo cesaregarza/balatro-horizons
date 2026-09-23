@@ -13,6 +13,7 @@ from balatro_horizons.evaluation.reports import scan
 from balatro_horizons.harness.context.freeze import FROZEN_INTERFACE
 from balatro_horizons.review import action_accounting as action_totals
 from balatro_horizons.review.service import ReviewService
+from balatro_horizons.review.spend import run_spend
 from balatro_horizons.review.summary_projection import event_projection, manifest_projection
 from balatro_horizons.storage.journal import digest, locked
 
@@ -48,6 +49,7 @@ def summary_input(store, eid):
     public = {
         "manifest": manifest_projection(manifest),
         "summary": summary,
+        "spend": run_spend(records, summary),
         "action_accounting": action_totals.action_accounting(store, eid, records, summary),
         "events": events,
         "journal_head": records[-1]["hash"] if records else None,
@@ -368,6 +370,7 @@ def build_summary(store, eid):
     """Build a retrospective ledger with verified public provenance."""
     public = summary_input(store, eid)
     result = summarize(public)
+    result["spend"] = public["spend"]
     started = datetime.fromisoformat(public["manifest"]["created_at"])
     ended = datetime.fromisoformat(public["last_timestamp"])
     result["recorded_duration_seconds"] = (ended - started).total_seconds()

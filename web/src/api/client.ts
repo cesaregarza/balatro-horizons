@@ -94,6 +94,11 @@ export type DecisionRow = {
   status?: string;
   rejection_code?: string;
 };
+export type RunSpendTotals = {
+  accounted_usd: number | null;
+  response_usd: number | null;
+  reserved_usd: number | null;
+};
 export type DecisionLedger = {
   source_journal_head: string | null;
   manifest: {
@@ -112,6 +117,7 @@ export type DecisionLedger = {
     };
   };
   summary: { outcome?: string; reason?: string; cost_usd?: number } | null;
+  spend?: RunSpendTotals;
   actions: DecisionRow[];
   uncommitted_actions: DecisionRow[] | null;
   pending_decisions?: DecisionRow[];

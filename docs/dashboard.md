@@ -63,6 +63,17 @@ remain in costs, and unchanged polls append no duplicate exposure. Browser polls
 never overlap, stop when hidden or disabled, and event-stream work stays off the
 server event loop. Use `uv run bh review status --timing` for a bounded check.
 
+Decision Explorer leads with **API spend (USD)**, refreshed by its existing live
+poll, and live-status cards show the same episode-only accounting. The total
+includes recorded response costs plus pending/unknown-usage reservations;
+the breakdown labels both. Response costs are harness estimates and may retain
+the reservation when usage is unavailable: this is not a provider invoice or
+in-game cash. Terminal totals remain authoritative; missing historical detail
+shows an unavailable breakdown rather than inventing zero spend. Explorer
+marks paused/interrupted updates beside the last recorded total. No costs are
+added to the blinded library or staged prospective review, and journals,
+budget enforcement, and decision-download schemas are unchanged.
+
 After WSL or service recreation, preview and then apply only the required Windows
 session variables from a connected WSL shell:
 
