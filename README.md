@@ -58,6 +58,33 @@ environment fingerprints, and the evidence gates documented in the evidence
 guide. Credentials, seeds, raw engine state, saves, private manifests, and
 journals stay outside public exports.
 
+## GPT-6 Sol and Luna
+
+Additive, opt-in configurations are in [gpt6-sol-smoke.yaml](configs/gpt6-sol-smoke.yaml)
+and [gpt6-luna-smoke.yaml](configs/gpt6-luna-smoke.yaml); existing models and smoke
+defaults are unchanged. Select the matching alias, for example
+`bh smoke --config configs/gpt6-luna-smoke.yaml --agent luna6 --campaign gpt6-luna-smoke --dry-run`.
+This preflight does not authorize paid execution or certify the native runtime.
+
+Both expose reasoning efforts `none`, `low`, `medium` (default), `high`, `xhigh`,
+and `max`. `minimal` is refused; `temperature` requires explicit effort `none`.
+The existing Responses transport remains standard-tier, stateless, and explicit-cache.
+
+Standard short-context USD per million tokens, verified 2026-09-22:
+
+| Model | Input | Cache read | Cache write | Output |
+| --- | ---: | ---: | ---: | ---: |
+| GPT-6 Sol | 2.00 | 0.20 | 2.50 | 10.00 |
+| GPT-6 Luna | 0.10 | 0.01 | 0.125 | 0.50 |
+
+Sources: [Sol](https://developers.openai.com/api/docs/models/gpt-6-sol),
+[Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), and
+[pricing](https://developers.openai.com/api/docs/pricing). Input limits above
+272,000 tokens still fail closed because long-context pricing is not configured.
+Register either model in an existing dashboard with `bh human register` using a
+new alias, an existing model to clone, and all four rates above. Preview first;
+`--apply` saves the entry without starting a run or changing budgets.
+
 ## Checks and evidence
 
 Install the locked Python and web dependencies before running the offline gate:

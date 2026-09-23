@@ -1,0 +1,21 @@
+# Opt-in single-model plumbing configuration; no paid execution by default.
+# Standard short-context pricing verified 2026-09-22:
+# https://developers.openai.com/api/docs/models/gpt-6-sol
+# https://developers.openai.com/api/docs/pricing
+environment:
+  stake: WHITE
+budgets:
+  max_episode_cost_usd: 1
+  max_batch_cost_usd: 5
+models:
+  sol6:
+    provider: openai
+    model: gpt-6-sol
+    input_usd_per_million: 2
+    cached_input_usd_per_million: 0.20
+    cache_write_input_usd_per_million: 2.50
+    output_usd_per_million: 10
+    pricing_date: "2026-09-22"
+    settings:
+      reasoning_effort: medium
+      reasoning_summary: auto
