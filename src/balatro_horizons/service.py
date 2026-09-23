@@ -174,7 +174,8 @@ class RunService:
         self.thread = threading.Thread(target=target, daemon=True)
         self.thread.start()
 
-    def branch(self, config, parent, decision, mode, actions=None, agent=None, human_steps=3):
+    def branch(self, config, parent, decision, mode, actions=None, agent=None, human_steps=3,
+               *, calibration=False):
         with self.admission():
             actions = actions or []
             if mode == "single_action_override" and len(actions) != 1:
@@ -186,12 +187,17 @@ class RunService:
                 raise ValueError("INVALID_HUMAN_SEQUENCE")
             manifest = self.store.manifest(parent)
             chosen = "human" if mode == "human_takeover" else agent or manifest["agent"]
+            if calibration and (mode != "single_action_override"
+                                or chosen == "human" or chosen in config.models):
+                raise ValueError("CALIBRATION_REQUIRES_SCRIPTED_POLICY")
             if chosen not in ("human", manifest["agent"]):
                 raise ValueError("PROTOCOL_CHANGE_INTERVENTION_NOT_SUPPORTED")
             self.validate_policy(config, chosen)  # Validate before immutable child records.
             if manifest["evidence_kind"] != "SYNTHETIC_TEST":
                 load_session()
-            eid, checkpoint, prefix = prepare_branch(self.store, config, parent, decision, mode)
+            eid, checkpoint, prefix = prepare_branch(
+                self.store, config, parent, decision, mode, calibration=calibration,
+            )
             self.stop.clear()
             seed = self.store.manifest(parent, True)["seed"]
             self._launch(
@@ -200,6 +206,7 @@ class RunService:
                     chosen,
                     seed,
                     offline=manifest["evidence_kind"] == "SYNTHETIC_TEST",
+                    calibration=calibration,
                     eid=eid,
                     resume=checkpoint,
                     prefix=prefix,

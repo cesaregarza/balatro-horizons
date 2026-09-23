@@ -153,7 +153,7 @@ restarts. `REFUSAL_OUTCOMES` is the single reason/outcome vocabulary.
 ## Journals, branches, and tests
 
 Requests, helper receipts, rejections, actions, outcomes, memory edits, and
-budget settlements are hash-chained append-only records. A certified branch
+budget settlements are hash-chained append-only records. A state-checked branch
 inherits frozen protocol and knowledge but gets a new immutable identity. Human
 and assisted branches are diagnostic and excluded from autonomous scores.
 Offline fakes are application tests only. Native reuse requires an explicit

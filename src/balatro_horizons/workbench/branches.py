@@ -1,5 +1,6 @@
 """Immutable workbench interventions from a journal-bound public prefix."""
 
+from balatro_horizons.evidence.certification import require_checkpoint_certificate
 from balatro_horizons.evidence.recovery import recovery_checkpoint
 from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
 from balatro_horizons.harness.context.memory import restore_notebook, restore_working_memory
@@ -26,7 +27,16 @@ def inherited_events(store, eid, seen=None):
     return inherited_events(store, parent, seen) + events[:boundary["sequence"]]
 
 
-def prepare_branch(store, config, eid, decision, mode):
+def _restore_inputs(store, config, eid, decision, calibration):
+    if calibration:
+        checkpoint, cert = require_checkpoint_certificate(store, eid, decision)
+        return checkpoint, {"certificate_id": cert["certificate_id"],
+                            "validation_purpose": "release_branch"}
+    checkpoint, receipt = recovery_checkpoint(store, config, eid, decision)
+    return checkpoint, {"recovery": receipt}
+
+
+def prepare_branch(store, config, eid, decision, mode, *, calibration=False):
     if mode not in (
         "agent_continue",
         "single_action_override",
@@ -34,7 +44,7 @@ def prepare_branch(store, config, eid, decision, mode):
         "human_takeover",
     ):
         raise ValueError("UNKNOWN_BRANCH_MODE")
-    checkpoint, recovery = recovery_checkpoint(store, config, eid, decision)
+    checkpoint, restoration = _restore_inputs(store, config, eid, decision, calibration)
     restore_knowledge(store, checkpoint)
     parent = store.manifest(eid)
     protocol = restore_protocol(store, checkpoint)
@@ -60,7 +70,7 @@ def prepare_branch(store, config, eid, decision, mode):
         "parent_prefix_hash": boundary["hash"],
         "assistance": mode,
         "fixture": parent.get("fixture"),
-        "recovery": recovery,
+        **restoration,
         "agent_protocol": checkpoint["agent_protocol"],
     }
     private = {**store.manifest(eid, True), "branch_mode": mode}

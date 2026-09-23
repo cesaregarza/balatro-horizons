@@ -89,6 +89,10 @@ Admission readiness is not a replay pass: the worker must still reach the
 saved boundary successfully before deciding anything new. Recovery requires
 the checkpoint's exact frozen implementation and protocol; native evidence
 reuse does not migrate an older run across a harness-source change.
+The release collector's scripted branch is explicitly calibration-only and
+still requires checkpoint replay evidence; it can bootstrap release evidence
+without requiring the release certificate it is about to produce. That path
+is not exposed by the ordinary branch API and cannot run a paid or human policy.
 
 Every non-calibration launch needs a certificate matching source, environment,
 deck, stake, injector, bridge, and full mod tree. Filename classification alone

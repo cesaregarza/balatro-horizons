@@ -13,6 +13,8 @@
   in public exports without claiming an advance pass or changing prior records.
 - Keep caps, authorization and shared-budget accounting unchanged. This does
   not migrate older frozen-source runs or authorize deployment or paid calls.
+- Keep the release collector's certificate-backed scripted branch explicit,
+  separate from production recovery, so release certification can bootstrap.
 
 ## 2026-09-23 — Run spend first
 
