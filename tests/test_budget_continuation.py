@@ -15,11 +15,8 @@ from balatro_horizons.evidence.certification import (
     continuation_probe_path,
     read_checkpoint,
     require_checkpoint_certificate,
-    require_continuation_probe_certificate,
 )
 from balatro_horizons.evidence.continuation_probe import verify_continuation_probe
-from balatro_horizons.game.fake import FakeGame
-from balatro_horizons.game.session import NativeFailure
 from balatro_horizons.harness.baselines import Baseline
 from balatro_horizons.harness.context.freeze import read_protocol, restore_protocol
 from balatro_horizons.harness.money import reservation_usd
@@ -65,7 +62,6 @@ def test_extension_restores_game_and_charges_post_checkpoint_helpers(harness):
     original = restore_protocol(h.store, checkpoint)
     assert terminal["cost_usd"] > checkpoint["cost"]
     assert terminal["provider_calls"] > checkpoint["calls"]
-    certify(h, eid, decision, action)
     plan = prepare_budget_continuation(h.store, eid, 2, expected_head=terminal["journal_head"])
     assert plan["resume"]["cost"] == pytest.approx(terminal["cost_usd"])
     assert plan["resume"]["calls"] == terminal["provider_calls"]
@@ -85,7 +81,8 @@ def test_extension_restores_game_and_charges_post_checkpoint_helpers(harness):
     assert manifest["assistance"] == "budget_extension" and not manifest["evaluation_eligible"]
     assert manifest["parent_decision"] == decision
     exported = episode_export(h.store, child)["manifest"]
-    assert exported["certificate_id"] == manifest["certificate_id"]
+    assert exported["recovery"] == manifest["recovery"]
+    assert "certificate_id" not in exported
     assert exported["budget_extension"] == manifest["budget_extension"]
     assert exported["budget_extension"]["root_batch_cap_usd"] == 1
     assert exported["budget_extension"]["previous_cap_usd"] == STOP_CAP_USD
@@ -114,21 +111,18 @@ def test_budget_extension_review_export_preserves_provenance(harness, format):
     rows = [json.loads(content)] if format == "json" else [json.loads(row) for row in content.splitlines()]
     assert rows
     for row in rows:
-        assert row["episode"]["certificate_id"] == manifest["certificate_id"]
+        assert row["episode"]["recovery"] == manifest["recovery"]
         assert row["episode"]["budget_extension"] == manifest["budget_extension"]
         assert row["episode"]["budget_extension"]["root_batch_cap_usd"] == 1
         assert row["cost_accounting"] == "Runner provider calls are inherited-inclusive; cost is own-only."
     assert "PRIVATE_FIXTURE" not in content
 
 
-def test_extension_rejects_uncertified_changed_or_underfunded_parent(harness):
+def test_extension_rejects_changed_or_underfunded_parent_without_requiring_probe(harness):
     h = harness
     eid, terminal, decision, action = stopped(h)
     service = h.service()
     count = len(h.store.list_episodes())
-    with pytest.raises(ValueError, match="CHECKPOINT_NOT_CERTIFIED"):
-        service.continue_budget(eid, 1, expected_head=terminal["journal_head"])
-    certify(h, eid, decision, action)
     for cap, head, error in [
         (STOP_CAP_USD, terminal["journal_head"], "MUST_INCREASE_CAP"),
         (1, "0" * 64, "PARENT_CHANGED"),
@@ -309,92 +303,6 @@ def test_two_service_processes_cannot_admit_siblings_from_same_ledger(harness):
     assert len(children) == 1
 
 
-def test_probe_fails_on_first_divergence_without_relaunch_loop(harness, monkeypatch):
-    h = harness
-    eid, _, decision, action = stopped(h)
-    certify(h, eid, decision, action)
-    games = []
-
-    class Divergent(FakeGame):
-        def restore(self, snapshot):
-            super().restore(snapshot)
-            self.money += 1
-            games.append(self)
-
-    monkeypatch.setattr("balatro_horizons.evidence.continuation_probe.FakeGame", Divergent)
-    failed = verify_continuation_probe(h.store, h.config, eid, decision, action)
-    assert failed["status"] == "failed"
-    assert len(games) == 1 and failed["completed_repetitions"] == 0
-    assert failed["failures"][0]["reason"] == "PRIVATE_CONTINUATION_DIVERGENCE"
-    with pytest.raises(ValueError, match="CERTIFICATE_INVALID"):
-        require_continuation_probe_certificate(h.store, eid, decision)
-    with pytest.raises(ValueError, match="CHECKPOINT_NOT_CERTIFIED"):
-        require_checkpoint_certificate(h.store, eid, decision)
-
-
-def test_native_probe_start_failure_preserves_selected_certificate(harness, monkeypatch, tmp_path):
-    from unittest.mock import Mock
-
-    from balatro_horizons.evidence import continuation_probe as probe_module
-
-    h = harness
-    eid, _, decision, action = stopped(h)
-    certify(h, eid, decision, action)
-    path = continuation_probe_path(h.store, eid, decision)
-    selected = path.read_bytes()
-    records = list(path.parent.glob("certificate-record-*.json"))
-    checkpoint = read_checkpoint(h.store, eid, decision)
-    checkpoint["game"]["kind"] = "native"
-    checkpoint["game"]["seed"] = "PRIVATE_FIXTURE"
-    monkeypatch.setattr(probe_module, "read_checkpoint", lambda *_: checkpoint)
-    monkeypatch.setattr(probe_module, "ROOT", tmp_path)
-    monkeypatch.setattr(probe_module, "load_session", lambda: {})
-    launch = Mock(side_effect=NativeFailure("WINDOWS_SESSION_NOT_CONFIGURED"))
-    monkeypatch.setattr(probe_module, "NativeGame", launch)
-    with pytest.raises(NativeFailure, match="WINDOWS_SESSION_NOT_CONFIGURED"):
-        verify_continuation_probe(h.store, h.config, eid, decision, action)
-    launch.assert_called_once()
-    assert path.read_bytes() == selected
-    assert list(path.parent.glob("certificate-record-*.json")) == records
-
-
-def test_probe_keeps_divergence_result_when_cleanup_also_fails(harness, monkeypatch):
-    h = harness
-    eid, _, decision, action = stopped(h)
-
-    class Divergent(FakeGame):
-        def restore(self, snapshot):
-            super().restore(snapshot)
-            self.money += 1
-
-        def close(self):
-            raise NativeFailure("NATIVE_BRIDGE_CLOSED")
-
-    monkeypatch.setattr("balatro_horizons.evidence.continuation_probe.FakeGame", Divergent)
-    failed = verify_continuation_probe(h.store, h.config, eid, decision, action)
-    assert failed["status"] == "failed"
-    assert [row["reason"] for row in failed["failures"]] == [
-        "PRIVATE_CONTINUATION_DIVERGENCE", "NATIVE_CLEANUP_FAILED"
-    ]
-
-
-def test_probe_checks_the_result_of_the_action_too(harness, monkeypatch):
-    h = harness
-    eid, _, decision, action = stopped(h)
-    games = []
-
-    class Divergent(FakeGame):
-        def apply_public_action(self, *args):
-            super().apply_public_action(*args)
-            self.money += len(games)
-            games.append(self)
-
-    monkeypatch.setattr("balatro_horizons.evidence.continuation_probe.FakeGame", Divergent)
-    failed = verify_continuation_probe(h.store, h.config, eid, decision, action)
-    assert failed["status"] == "failed" and len(games) == 2
-    assert failed["failures"][0]["reason"] == "PROBE_CONTINUATION_DIVERGENCE"
-
-
 def test_money_intervention_cannot_bypass_a_changed_frozen_protocol(harness, monkeypatch):
     h = harness
     eid, terminal, decision, action = stopped(h)
@@ -444,7 +352,7 @@ def test_launch_plan_is_read_only_and_counts_only_targeted_restarts(harness):
     eid, _, _, _ = stopped(h)
     before = (h.store.episode_path(eid) / "events.jsonl").read_bytes()
     plan = module.continuation_plan(h.store, eid)
-    assert plan["launches"] == {"restoration_verification": 3, "paid_continuation": 1}
+    assert plan["launches"] == {"restoration_verification": 0, "paid_continuation": 1}
     assert plan["original_spent_usd"] == pytest.approx(plan["all_attempts_committed_usd"])
     assert plan["unsettled_usd"] == 0
     assert "PRIVATE_FIXTURE" not in json.dumps(plan)

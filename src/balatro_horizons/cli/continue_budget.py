@@ -24,8 +24,8 @@ def continuation_plan(store, eid):
         "original_spent_usd": terminal["cost_usd"],
         "all_attempts_committed_usd": sum(e["cost"] for e in ledger.values()),
         "unsettled_usd": sum(e["cost"] for e in ledger.values() if not e["settled"]),
-        "launches": {"restoration_verification": 3, "paid_continuation": 1},
-        "reason": "Three fresh restorations and same-action probes, then one restored model run.",
+        "launches": {"restoration_verification": 0, "paid_continuation": 1},
+        "reason": "One checked restore/replay, then continuation in the same game instance.",
         "funding": "Explicit combined cap includes the original run and all continuation attempts.",
         "status": run_status(store, eid),
     }
@@ -36,7 +36,7 @@ def configure_parser(parser):
     parser.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--plan", action="store_true", help="Read-only launch plan (default)")
-    mode.add_argument("--verify", action="store_true", help="Three unpaid restoration checks; requires Windows authorization")
+    mode.add_argument("--verify", action="store_true", help="Optional three-launch diagnostic, not required to start; requires Windows authorization")
     mode.add_argument("--start", action="store_true", help="Start the paid continuation; requires explicit spending authorization")
     parser.add_argument("--combined-cap-usd", type=float)
     parser.set_defaults(operation_handler=run)

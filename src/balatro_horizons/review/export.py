@@ -22,7 +22,7 @@ ROW_FIELDS = (
 MANIFEST_FIELDS = (
     "episode_id", "created_at", "agent", "evidence_kind", "evaluation_eligible", "fixture",
     "validation_purpose", "parent_episode_id", "parent_decision", "assistance", "batch_id",
-    "slot_id", "certificate_id", "budget_extension",
+    "slot_id", "certificate_id", "recovery", "budget_extension",
 )
 SUMMARY_FIELDS = (
     "outcome", "reason", "cost_usd", "attempted_actions", "committed_actions", "provider_calls",

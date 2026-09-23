@@ -4,8 +4,8 @@ import json
 from copy import deepcopy
 
 from balatro_horizons.config import Config
-from balatro_horizons.evidence.certification import require_continuation_probe_certificate
 from balatro_horizons.evidence.provenance import implementation_fingerprint
+from balatro_horizons.evidence.recovery import recovery_checkpoint
 from balatro_horizons.harness.context.freeze import (
     read_protocol,
     restore_protocol,
@@ -36,11 +36,11 @@ def _read_parent(store, parent_id, expected_head):
 
 def _restore_state(store, parent_id, parent, events, boundary, terminal, combined_cap, expected_head):
     decision = boundary["observation_id"]
-    checkpoint, cert = require_continuation_probe_certificate(store, parent_id, decision)
+    config = Config.model_validate(store.manifest(parent_id, True)["config"])
+    checkpoint, recovery = recovery_checkpoint(store, config, parent_id, decision)
     if (checkpoint["public_prefix_hash"] != boundary["hash"]
             or checkpoint["committed"] != terminal["committed_actions"]):
         raise ValueError("BUDGET_EXTENSION_CHECKPOINT_MISMATCH")
-    config = Config.model_validate(store.manifest(parent_id, True)["config"])
     old_cap = config.budgets.max_episode_cost_usd
     root_batch_cap = config.budgets.max_batch_cost_usd
     if old_cap is None or combined_cap <= old_cap:
@@ -58,7 +58,7 @@ def _restore_state(store, parent_id, parent, events, boundary, terminal, combine
         "combined_cap_usd": combined_cap,
         "recorded_implementation_hash": original_protocol["implementation_hash"],
         "implementation_hash": implementation_fingerprint(),
-        "certificate_id": cert["certificate_id"],
+        "recovery": recovery,
         "spending_owner_episode_id": parent_id,
         "memory_boundary": "pre_decision",
     }
@@ -71,7 +71,7 @@ def _restore_state(store, parent_id, parent, events, boundary, terminal, combine
     restore_notebook(resume.get("run_notebook"), prefix, config.budgets.memory_max_characters)
     restore_working_memory(resume.get("working_memory"), prefix, resume["observation"])
 
-    return config, extension, resume, events[:boundary["sequence"]], cert
+    return config, extension, resume, events[:boundary["sequence"]], recovery
 
 
 def _admit_ledger(store, parent_id, terminal, combined_cap, resume, extension):
@@ -91,10 +91,10 @@ def _admit_ledger(store, parent_id, terminal, combined_cap, resume, extension):
 
 
 def prepare_budget_continuation(store, parent_id, combined_cap, *, expected_head):
-    """Prepare a certified continuation without changing the stopped root."""
+    """Prepare one checked restore without changing the stopped root."""
     validate_caps(combined_cap, combined_cap)
     parent, events, terminal, boundary = _read_parent(store, parent_id, expected_head)
-    config, extension, resume, prefix, cert = _restore_state(
+    config, extension, resume, prefix, recovery = _restore_state(
         store, parent_id, parent, events, boundary, terminal, combined_cap, expected_head
     )
     path = _admit_ledger(store, parent_id, terminal, combined_cap, resume, extension)
@@ -107,7 +107,7 @@ def prepare_budget_continuation(store, parent_id, combined_cap, *, expected_head
         "evaluation_eligible": False, "assistance": "budget_extension",
         "parent_episode_id": parent_id, "parent_decision": decision,
         "parent_event_id": boundary["event_id"], "parent_prefix_hash": boundary["hash"],
-        "certificate_id": cert["certificate_id"], "budget_extension": extension,
+        "recovery": recovery, "budget_extension": extension,
     }
     return {
         "config": config, "manifest": manifest, "resume": resume, "prefix": prefix,

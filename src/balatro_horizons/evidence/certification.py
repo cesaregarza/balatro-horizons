@@ -45,7 +45,7 @@ PROBE_SCOPE = "original_state_and_generated_same_action_probe"
 
 
 def continuation_probe_path(store, eid, decision):
-    # Probe evidence cannot replace a replay certificate used by ordinary branches.
+    # Keep optional same-action diagnostics separate from suffix replay evidence.
     return store.episode_path(eid, True) / f"continuation-probe-{decision}.json"
 
 def read_checkpoint(store, eid, decision):
@@ -55,8 +55,12 @@ def private_hash(store, eid, decision):
     path = store.episode_path(eid, True) / f"raw-{decision}.json"
     return continuation_fingerprint(json.loads(path.read_text())) if path.exists() else None
 
-def steps_for(store, eid):
+def steps_for(store, eid, *, through=None):
     events = store.events(eid)
+    if through is not None:
+        boundary = next(e for e in events if e["type"] == "observation"
+                        and e["observation_id"] == through)
+        events = events[:boundary["sequence"] + 1]
     steps = []
     for i, event in enumerate(events):
         if event["type"] not in ("action_commit", "evaluator_fixture"):
@@ -258,12 +262,12 @@ def _require_certificate(store, eid, decision, *, probe):
 
 
 def require_checkpoint_certificate(store, eid, decision):
-    """Only suffix-replay evidence authorizes an ordinary branch."""
+    """Require suffix-replay evidence for release checks and explicit diagnostics."""
     return _require_certificate(store, eid, decision, probe=False)
 
 
 def require_continuation_probe_certificate(store, eid, decision):
-    """Only a same-action probe authorizes an explicit budget intervention."""
+    """Validate the selected optional same-action diagnostic evidence."""
     return _require_certificate(store, eid, decision, probe=True)
 
 

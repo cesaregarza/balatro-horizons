@@ -1,11 +1,20 @@
 import { test, expect } from "@playwright/test";
 import { awaitIdleWorker } from "./runHelpers";
 
-test("synthetic run, progressive reveal, escaped annotation, verified branch", async ({
+test("synthetic run, progressive reveal, escaped annotation, replay-ready branch", async ({
   page,
 }) => {
   const failures: string[] = [];
+  let verificationPosts = 0;
   page.on("pageerror", (e) => failures.push(e.message));
+  page.on("request", (request) => {
+    if (
+      request.url().endsWith("/api/verify") &&
+      request.method() === "POST"
+    ) {
+      verificationPosts += 1;
+    }
+  });
   await page.goto("/");
   await expect(
     page.getByRole("heading", { name: /Every choice leaves/ }),
@@ -58,10 +67,12 @@ test("synthetic run, progressive reveal, escaped annotation, verified branch", a
   await expect(
     page.getByRole("heading", { name: "After the action" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Verify continuation" }).click();
   await expect(
     page.getByRole("button", { name: "Explore an alternative" }),
   ).toBeEnabled();
+  await expect(
+    page.getByText(/recorded snapshot is restored/),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Explore an alternative" }).click();
   await expect(
     page.getByRole("heading", { name: "Branch from this decision" }),
@@ -72,6 +83,7 @@ test("synthetic run, progressive reveal, escaped annotation, verified branch", a
   });
   await page.getByRole("button", { name: "Skip blind", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Branch created:");
+  expect(verificationPosts).toBe(0);
   await page.getByRole("button", { name: "Runs", exact: true }).click();
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page

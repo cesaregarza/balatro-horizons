@@ -22,8 +22,8 @@ def test_package_budget_plan_does_not_contact_worker(harness, monkeypatch, capsy
     monkeypatch.setattr(continue_budget, "operator_request", request)
     assert main(["continue-budget", eid, "--data-dir", str(harness.store.root)]) == 0
     result = json.loads(capsys.readouterr().out)
-    assert result["launches"] == {"restoration_verification": 3, "paid_continuation": 1}
-    assert result["status"]["continuation"]["restoration"] == "CHECKPOINT_NOT_CERTIFIED"
+    assert result["launches"] == {"restoration_verification": 0, "paid_continuation": 1}
+    assert result["status"]["continuation"]["restoration"] == "ready_for_single_restore"
     assert result["status"]["continuation"]["checkpoint_saved"]
     request.assert_not_called()
 
@@ -90,13 +90,10 @@ def test_documented_workbench_route_counts(tmp_path):
     assert ("/api/operator/episodes/{eid}/continue-budget", "post") in on - off
 
 
-def test_cost_stopped_status_uses_probe_certificate(harness, monkeypatch):
+def test_cost_stopped_status_checks_recovery_readiness_without_a_probe(harness, monkeypatch):
     eid, _, _, _ = stopped(harness)
-    probe = Mock(side_effect=ValueError("PROBE_SENTINEL"))
-    ordinary = Mock(side_effect=AssertionError("ordinary certificate is insufficient"))
-    monkeypatch.setattr(run_status, "require_continuation_probe_certificate", probe)
-    monkeypatch.setattr(run_status, "require_checkpoint_certificate", ordinary)
+    recovery = Mock(side_effect=ValueError("RECOVERY_SENTINEL"))
+    monkeypatch.setattr(run_status, "recovery_checkpoint", recovery)
     result = run_status.run_status(harness.store, eid)
-    assert result["continuation"]["restoration"] == "PROBE_SENTINEL"
-    probe.assert_called_once()
-    ordinary.assert_not_called()
+    assert result["continuation"]["restoration"] == "RECOVERY_SENTINEL"
+    recovery.assert_called_once()

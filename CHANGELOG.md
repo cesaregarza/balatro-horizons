@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-23 — Single-restore recovery (#56)
+
+- Replace ordinary branch and budget-continuation certificate admission with
+  journal-bound recovery inputs. Replay the native prefix once and continue in
+  the same owned process; no extra verification launches or future suffix.
+- Preserve native release/profile and frozen source/protocol gates; reject
+  missing private evidence, mismatches, evaluator fixtures, and unknown action
+  status before provider execution. Reconstruct only the selected ancestry.
+- Remove mandatory verification controls from review; keep explicit diagnostics
+  and three-pass release evidence separate. Report the inline recovery policy
+  in public exports without claiming an advance pass or changing prior records.
+- Keep caps, authorization and shared-budget accounting unchanged. This does
+  not migrate older frozen-source runs or authorize deployment or paid calls.
+
 ## 2026-09-23 — Run spend first
 
 - Lead Decision Explorer with a prominent, live-updating API-spend total in USD;

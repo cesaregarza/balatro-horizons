@@ -73,7 +73,7 @@ def prepare_execution(
     )
     return ExecutionPlan(
         request=request,
-        calibration=calibration or bool(request.resume),
+        calibration=calibration,
         eid=eid,
         policy=policy,
         spending=spending,
