@@ -6,6 +6,7 @@ It retains aggregates, not observations, provider bodies, or engine state.
 
 from threading import Lock
 
+from balatro_horizons.review.spend import run_spend
 from balatro_horizons.storage.journal import locked
 
 
@@ -19,26 +20,18 @@ def journal_stamp(path):
 
 def aggregate(events):
     summary = next((e["payload"] for e in reversed(events) if e["type"] == "terminal"), None)
+    spend = run_spend(events, summary)
     progress = None
     if summary is None:
         last = next((e["payload"] for e in reversed(events) if e["type"] == "observation"), None)
-        settled = {
-            e["request_id"]: e["payload"]["cost_usd"]
-            for e in events
-            if e["type"] == "provider_response"
-        }
         progress = {
             "committed_actions": sum(e["type"] == "action_commit" for e in events),
             "provider_calls": sum(e["type"] == "provider_request" for e in events),
-            "cost_usd": sum(
-                settled.get(e["request_id"], e["payload"]["reserved_usd"])
-                for e in events
-                if e["type"] == "provider_request"
-            ),
+            "cost_usd": spend["accounted_usd"],
             "phase": last["phase"] if last else "STARTING",
             "ante": last["state"]["progress"]["ante"] if last else None,
         }
-    return {"summary": summary, "progress": progress}, len(events) - 1
+    return {"summary": summary, "progress": progress, "spend": spend}, len(events) - 1
 
 
 class OperatorStatus:

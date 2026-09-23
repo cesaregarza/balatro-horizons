@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-23 — Run spend first
+
+- Lead Decision Explorer with a prominent, live-updating API-spend total in USD;
+  reuse the display in opt-in operator live status. Preserve sub-cent amounts.
+- Separate recorded response costs from pending/unknown-usage reservations,
+  keep terminal totals authoritative, and label unavailable breakdowns and stale
+  explorer updates. Never describe harness estimates as confirmed invoices.
+- Remove the buried outcome-card cost and duplicate operator cost aggregation.
+  Leave paid execution, journals, exports and prospective review unchanged.
+
 ## 2026-09-22 — GPT-6 Sol and Luna model options
 
 - Add opt-in, single-model configurations with verified standard input, output,

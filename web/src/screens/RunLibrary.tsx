@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { bootstrap, listEpisodes, saveSettings, startRun, stopRun, type Episode } from "../api/client";
 import { ModelControls } from "../ModelControls";
+import { RunSpend } from "../RunSpend";
 import { usePolling } from "../usePolling";
 import { useRunAction } from "./useRunAction";
 import { RuntimeConnection, useRuntimeConnection } from "./RuntimeConnection";
@@ -110,7 +111,11 @@ export function RunLibrary({
           <p className="eyebrow">OPERATOR VIEW</p><h2>Live progress</h2>
           <p>Watching reveals the agent and its progress. That exposure is recorded before later review.</p>
           <button onClick={() => setWatch(!watch)}>{watch ? "Hide live status" : "Watch live status"}</button>
-          {watch && status && <div><p className="status-line"><span className={"dot " + (status.running ? "" : "idle")} />{status.running ? "Worker running" : "Worker idle"}</p>{status.error && <p className="error">{status.error}</p>}{status.episodes.slice(0, 3).map((row: any) => <p key={row.episode_id}><b>{config.models[row.agent] ? modelLabel(config.models[row.agent], capabilities) : row.agent}</b> · {row.summary?.outcome || row.progress?.phase || "In progress"}<br /><small>{row.summary?.committed_actions ?? row.progress?.committed_actions ?? 0} actions · ${(row.summary?.cost_usd ?? row.progress?.cost_usd ?? 0).toFixed(4)}</small></p>)}</div>}
+          {watch && status && <div><p className="status-line"><span className={"dot " + (status.running ? "" : "idle")} />{status.running ? "Worker running" : "Worker idle"}</p>{status.error && <p className="error">{status.error}</p>}{status.episodes.slice(0, 3).map((row: any) => <div key={row.episode_id}>
+            <p><b>{config.models[row.agent] ? modelLabel(config.models[row.agent], capabilities) : row.agent}</b> · <code>{row.episode_id.slice(0, 10)}</code></p>
+            <RunSpend compact spend={row.spend} fallbackCost={row.summary?.cost_usd ?? row.progress?.cost_usd} status={row.summary?.outcome ? "Final recorded total" : "Latest recorded total"} />
+            <p>{row.summary?.outcome || row.progress?.phase || "In progress"} · {row.summary?.committed_actions ?? row.progress?.committed_actions ?? 0} actions</p>
+          </div>)}</div>}
         </section>
       </div>
       <RunTable workbench={workbench} episodes={episodes} busy={busy} openExplorer={openExplorer} openReview={openReview} onCompare={onCompare} priorSeedExposure={priorSeedExposure} setPriorSeedExposure={setPriorSeedExposure} />
