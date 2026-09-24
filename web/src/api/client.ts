@@ -236,7 +236,6 @@ export const saveAnnotation = (token: string, input: AnnotationInput) => request
 export const listReviewAnnotations = (token: string, decision?: number) => request<any[]>(`/review/annotations${decision === undefined ? "" : `?decision=${decision}`}`, "GET", undefined, token);
 export const saveReviewAnnotation = (token: string, input: AnnotationInput) => request<any>("/review/annotations", "POST", input, token);
 export const branchCapability = (token: string) => request<{ enabled: boolean; reason: string | null }>("/review/branch-capability", "GET", undefined, token);
-export const verifyContinuation = (input: unknown) => request<any>("/verify", "POST", input);
 export const createBranch = (input: unknown) => request<{ episode_id: string }>("/branches", "POST", input);
 export const compareBranch = (episodeId: string) => request<any>(`/operator/branches/${episodeId}/comparison`);
 export const humanStatus = () => request<any>("/operator/human");

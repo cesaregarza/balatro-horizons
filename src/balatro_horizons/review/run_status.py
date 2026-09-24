@@ -4,11 +4,9 @@ import json
 import re
 from collections import Counter
 
+from balatro_horizons.config import Config
 from balatro_horizons.evaluation.reports import scan
-from balatro_horizons.evidence.certification import (
-    require_checkpoint_certificate,
-    require_continuation_probe_certificate,
-)
+from balatro_horizons.evidence.recovery import recovery_checkpoint
 from balatro_horizons.harness.context.freeze import restore_protocol
 from balatro_horizons.review.decision_ledger import summary_input
 
@@ -17,7 +15,7 @@ def _safe_code(value):
     return value if isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", value) else None
 
 
-def _continuation_status(store, eid, observation, summary):
+def _continuation_status(store, eid, observation):
     decision = observation["observation_id"]
     result = {"decision": decision, "phase": observation["phase"],
               "progress": observation["state"]["progress"]}
@@ -27,25 +25,21 @@ def _continuation_status(store, eid, observation, summary):
         return result
     checkpoint = json.loads(path.read_text())
     result.update(checkpoint_cost=checkpoint.get("cost"), checkpoint_calls=checkpoint.get("calls"))
-    # Cost-stopped roots need the probe pointer; an ordinary replay pass cannot
-    # authorize funding an unobserved future at a terminal boundary.
-    certificate = (require_continuation_probe_certificate
-                   if summary.get("outcome") in ("BUDGET_EXHAUSTED", "CAMPAIGN_INTERRUPTED")
-                   else require_checkpoint_certificate)
+    config = Config.model_validate(store.manifest(eid, True).get("config", {}))
     for name, check in (
         ("protocol", lambda: restore_protocol(store, checkpoint)),
-        ("restoration", lambda: certificate(store, eid, decision)),
+        ("restoration", lambda: recovery_checkpoint(store, config, eid, decision)),
     ):
         try:
             check()
-            result[name] = "verified"
+            result[name] = "ready_for_single_restore" if name == "restoration" else "verified"
         except (ValueError, FileNotFoundError) as error:
             result[name] = _safe_code(str(error)) or "UNAVAILABLE"
     return result
 
 
 def run_status(store, eid):
-    """Describe saved versus certified state without exposing checkpoint bodies."""
+    """Describe read-only admission readiness, not a replay pass or funding grant."""
     public = summary_input(store, eid)
     manifest, summary = public["manifest"], public["summary"] or {}
     model = manifest.get("config", {}).get("models", {}).get(manifest.get("agent"), {})
@@ -63,7 +57,7 @@ def run_status(store, eid):
         result[key] = summary.get(key)
     latest = next((event for event in reversed(public["events"]) if event["type"] == "observation"), None)
     if latest:
-        result["continuation"] = _continuation_status(store, eid, latest["payload"], summary)
+        result["continuation"] = _continuation_status(store, eid, latest["payload"])
     context = summary.get("cost_context", {})
     result["cost_context"] = {key: context[key] for key in (
         "episode_cap_usd", "episode_committed_usd", "campaign_cap_usd",

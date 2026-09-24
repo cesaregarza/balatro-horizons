@@ -19,10 +19,10 @@ from balatro_horizons.api.models import (
 )
 from balatro_horizons.evidence.certification import (
     read_checkpoint,
-    require_checkpoint_certificate,
     verify_checkpoint,
 )
 from balatro_horizons.evidence.continuation_probe import verify_continuation_probe
+from balatro_horizons.evidence.recovery import recovery_checkpoint
 from balatro_horizons.game.windows_context import load_session
 from balatro_horizons.harness.context.freeze import restore_protocol
 from balatro_horizons.harness.skills import restore_knowledge
@@ -85,8 +85,11 @@ def branch_capability(request: Request, token=Depends(require_session)):
     review = request.app.state.workbench
     view = review.view(token)
     try:
-        checkpoint, _ = require_checkpoint_certificate(
-            request.app.state.store, view["episode_id"], view["decision"]
+        state = request.app.state
+        parent = state.store.manifest(view["episode_id"], True)
+        config = state.config.model_validate(parent.get("config", state.config.model_dump()))
+        checkpoint, _ = recovery_checkpoint(
+            state.store, config, view["episode_id"], view["decision"]
         )
         restore_knowledge(request.app.state.store, checkpoint)
         restore_protocol(request.app.state.store, checkpoint)
@@ -94,8 +97,9 @@ def branch_capability(request: Request, token=Depends(require_session)):
     except (ValueError, OSError):
         return {
             "enabled": False,
-            "reason": "This decision needs a current passing replay certificate and frozen "
-            "knowledge and agent-protocol snapshots.",
+            "reason": "This decision needs a journal-matched checkpoint, a supported native "
+            "environment, and unchanged frozen knowledge and agent protocol. "
+            "Replay is checked when the continuation starts.",
         }
 
 

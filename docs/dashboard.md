@@ -132,21 +132,21 @@ Use the owning checkout and an idle backend started with `bh review --workbench`
 
 ```bash
 bh continue-budget EPISODE_ID --plan
-# Separately authorized native access: three unpaid restoration/probe launches.
+# Optional diagnostic, not a start prerequisite: three authorized unpaid launches.
 bh continue-budget EPISODE_ID --verify
-# Separately authorized provider spending: one model-run launch.
+# Explicit provider funding: replay once, then continue in the same game process.
 bh continue-budget EPISODE_ID --start --combined-cap-usd 10
 ```
 
 The default plan contacts no game/provider and distinguishes a saved checkpoint
-from the required probe certificate. Reading status records review exposure.
+from readiness for a single checked restore. Reading status records review exposure.
 Verification and starts use the operator-protected worker so the dashboard can
 stop the child. Verification does not grant spending permission; each start
 requires an explicit cap higher than the root's original cap, not necessarily
 higher than a prior child's. Action/call limits and batch slots are not extended.
 Diagnose a timed-out request before retrying; timeout does not prove that the
 worker stopped or that the action was not committed.
-The child's exported metadata includes its certificate, cap, source identities,
+The child's exported metadata includes its recovery policy, cap, source identities,
 admission ledger hash, and `root_batch_cap_usd` (the original campaign ceiling,
 distinct from `previous_cap_usd`, the original episode cap). Provider-call totals
 include inherited calls; the child's terminal cost records its own spend only.

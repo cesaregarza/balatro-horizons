@@ -1,9 +1,21 @@
 from types import SimpleNamespace
 
 import pytest
+import test_campaign_budget
+from test_budget_continuation import certify, stopped
 
 from balatro_horizons.evidence import continuation_probe as probe
+from balatro_horizons.evidence.certification import (
+    continuation_probe_path,
+    read_checkpoint,
+    require_checkpoint_certificate,
+    require_continuation_probe_certificate,
+)
+from balatro_horizons.evidence.continuation_probe import verify_continuation_probe
 from balatro_horizons.game.contract import NativeFailure
+from balatro_horizons.game.fake import FakeGame
+
+harness = test_campaign_budget.harness
 
 
 class _Store:
@@ -237,3 +249,89 @@ def test_unaccompanied_cleanup_failure_still_aborts_probe(tmp_path, monkeypatch,
         probe._run_repetitions(_Store(tmp_path), SimpleNamespace(), "episode", 2, {}, object(), False, 3)
     launch.assert_called_once()
     game.close.assert_called_once()
+
+
+def test_probe_fails_on_first_divergence_without_relaunch_loop(harness, monkeypatch):
+    h = harness
+    eid, _, decision, action = stopped(h)
+    certify(h, eid, decision, action)
+    games = []
+
+    class Divergent(FakeGame):
+        def restore(self, snapshot):
+            super().restore(snapshot)
+            self.money += 1
+            games.append(self)
+
+    monkeypatch.setattr("balatro_horizons.evidence.continuation_probe.FakeGame", Divergent)
+    failed = verify_continuation_probe(h.store, h.config, eid, decision, action)
+    assert failed["status"] == "failed"
+    assert len(games) == 1 and failed["completed_repetitions"] == 0
+    assert failed["failures"][0]["reason"] == "PRIVATE_CONTINUATION_DIVERGENCE"
+    with pytest.raises(ValueError, match="CERTIFICATE_INVALID"):
+        require_continuation_probe_certificate(h.store, eid, decision)
+    with pytest.raises(ValueError, match="CHECKPOINT_NOT_CERTIFIED"):
+        require_checkpoint_certificate(h.store, eid, decision)
+
+
+def test_native_probe_start_failure_preserves_selected_certificate(harness, monkeypatch, tmp_path):
+    from unittest.mock import Mock
+
+    from balatro_horizons.evidence import continuation_probe as probe_module
+
+    h = harness
+    eid, _, decision, action = stopped(h)
+    certify(h, eid, decision, action)
+    path = continuation_probe_path(h.store, eid, decision)
+    selected = path.read_bytes()
+    records = list(path.parent.glob("certificate-record-*.json"))
+    checkpoint = read_checkpoint(h.store, eid, decision)
+    checkpoint["game"]["kind"] = "native"
+    checkpoint["game"]["seed"] = "PRIVATE_FIXTURE"
+    monkeypatch.setattr(probe_module, "read_checkpoint", lambda *_: checkpoint)
+    monkeypatch.setattr(probe_module, "ROOT", tmp_path)
+    monkeypatch.setattr(probe_module, "load_session", lambda: {})
+    launch = Mock(side_effect=NativeFailure("WINDOWS_SESSION_NOT_CONFIGURED"))
+    monkeypatch.setattr(probe_module, "NativeGame", launch)
+    with pytest.raises(NativeFailure, match="WINDOWS_SESSION_NOT_CONFIGURED"):
+        verify_continuation_probe(h.store, h.config, eid, decision, action)
+    launch.assert_called_once()
+    assert path.read_bytes() == selected
+    assert list(path.parent.glob("certificate-record-*.json")) == records
+
+
+def test_probe_keeps_divergence_result_when_cleanup_also_fails(harness, monkeypatch):
+    h = harness
+    eid, _, decision, action = stopped(h)
+
+    class Divergent(FakeGame):
+        def restore(self, snapshot):
+            super().restore(snapshot)
+            self.money += 1
+
+        def close(self):
+            raise NativeFailure("NATIVE_BRIDGE_CLOSED")
+
+    monkeypatch.setattr("balatro_horizons.evidence.continuation_probe.FakeGame", Divergent)
+    failed = verify_continuation_probe(h.store, h.config, eid, decision, action)
+    assert failed["status"] == "failed"
+    assert [row["reason"] for row in failed["failures"]] == [
+        "PRIVATE_CONTINUATION_DIVERGENCE", "NATIVE_CLEANUP_FAILED"
+    ]
+
+
+def test_probe_checks_the_result_of_the_action_too(harness, monkeypatch):
+    h = harness
+    eid, _, decision, action = stopped(h)
+    games = []
+
+    class Divergent(FakeGame):
+        def apply_public_action(self, *args):
+            super().apply_public_action(*args)
+            self.money += len(games)
+            games.append(self)
+
+    monkeypatch.setattr("balatro_horizons.evidence.continuation_probe.FakeGame", Divergent)
+    failed = verify_continuation_probe(h.store, h.config, eid, decision, action)
+    assert failed["status"] == "failed" and len(games) == 2
+    assert failed["failures"][0]["reason"] == "PROBE_CONTINUATION_DIVERGENCE"

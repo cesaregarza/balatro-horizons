@@ -57,6 +57,7 @@ def _branch_restoration(store, config, gold):
         0,
         "single_action_override",
         [{"type": "skip_blind", "blind_id": observation["state"]["revealed_blinds"][0]["id"]}],
+        calibration=True,
     )
     service.thread.join()
     summary = store.summary(child)

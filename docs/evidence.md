@@ -81,6 +81,18 @@ The failure artifact is `divergence-*.json`. Inspect its boundary summary with
 `private/capability-certificate.json` selects the active immutable certificate.
 Seed-prefix failure aborts certification; direct-checkpoint failure is recorded
 in `native-release.json` while the passing seed-prefix capability remains usable.
+This three-pass certification is release evidence and remains separate from
+ordinary recovery: a branch replays its recorded prefix once, checks public and
+private state along the replay and at its target, then continues in that same
+game process before any provider call.
+Admission readiness is not a replay pass: the worker must still reach the
+saved boundary successfully before deciding anything new. Recovery requires
+the checkpoint's exact frozen implementation and protocol; native evidence
+reuse does not migrate an older run across a harness-source change.
+The release collector's scripted branch is explicitly calibration-only and
+still requires checkpoint replay evidence; it can bootstrap release evidence
+without requiring the release certificate it is about to produce. That path
+is not exposed by the ordinary branch API and cannot run a paid or human policy.
 
 Every non-calibration launch needs a certificate matching source, environment,
 deck, stake, injector, bridge, and full mod tree. Filename classification alone
@@ -89,7 +101,7 @@ fingerprint must be checked. Absent evidence is named as skipped, never counted
 as passing; a passed record naming a missing artifact fails as corrupt.
 Headless and accelerated modes remain uncertified.
 
-Native replay checks the explicitly registered Windows connection at admission
+Explicit replay certification checks the registered Windows connection at admission
 and again under the native lock before each repetition. A recognized session
 configuration/expiry error aborts without writing a failed certificate or
 changing the selected checkpoint certificate. It is not replay evidence.
@@ -185,26 +197,32 @@ change either certificate-selection policy.
 
 ### Cost-stopped continuation probes
 
-A terminal budget boundary may have no recorded replay suffix. Its separate
-`checkpoint_probe` mode compares the original private continuation hash in at
-least three fresh processes, applies the same validated public action each time,
-and compares the resulting hashes. `bh continue-budget EPISODE_ID --plan`
-reports three unpaid verification launches and one separately funded continuation
-launch; it executes neither. Fresh processes are necessary here to test
-restoration, not to retry a failed same-process reset.
+A terminal budget boundary may have no recorded replay suffix. Ordinary budget
+continuation uses the same single-replay recovery path: it replays the recorded
+prefix once, checks public and private state through the target, and continues
+in that same game process before any provider call. `bh continue-budget
+EPISODE_ID --plan` reports zero verification launches and one separately funded
+continuation launch; it executes neither. The optional `--verify` diagnostic
+can still run the separate `checkpoint_probe`, which compares the original
+private continuation hash in at least three fresh processes, applies the same
+validated public action each time, and compares the resulting hashes. Those
+fresh processes provide diagnostic evidence and are not required before an
+ordinary budget continuation.
 
 Generated actions are private evaluator evidence, never parent history or a
 claim about the parent's unobserved future. Probe records use a separate pointer
-and cannot authorize ordinary branches; ordinary replay certificates cannot
-authorize budget extensions. The probe checks explicit session registration at
-admission and again before each locked repetition. Its owner-requested policy
+and cannot authorize ordinary branches. In particular, an evaluator-fixture
+checkpoint or its probe result is not an ordinary production recovery prefix.
+Replay certificates alone do not grant budget-extension spending authority. The probe
+checks explicit session registration at admission and again before each locked
+repetition. Its owner-requested policy
 preserves the selected probe on operational errors, while proven private-state
 or same-action divergence records failure and invalidates it, even if cleanup
 also fails. It stops at the first divergence and has no automatic replay fallback.
 If cleanup also fails during an operational error, the original error stays
 primary; a sanitized cleanup-code exception note is retained and copied into the
 collector receipt's `probe_cleanup_reasons`, without changing the selected certificate.
-This differs deliberately from the conservative ordinary replay policy above;
+This differs deliberately from the conservative suffix-replay diagnostic policy above;
 #42 must justify any future unification using native failure evidence.
 
 The probe implementation participates in the native identity; its sequencing

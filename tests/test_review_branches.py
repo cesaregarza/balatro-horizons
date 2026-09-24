@@ -5,8 +5,9 @@ from fastapi.testclient import TestClient
 
 from balatro_horizons.api import create_app
 from balatro_horizons.contracts import AnnotationInput
-from balatro_horizons.evidence.certification import verify_checkpoint
+from balatro_horizons.evidence.certification import read_checkpoint
 from balatro_horizons.service import RunService
+from balatro_horizons.storage.journal import atomic_json
 from balatro_horizons.workbench.branches import prepare_branch
 from balatro_horizons.workbench.service import ReviewError, WorkbenchService
 
@@ -100,8 +101,6 @@ def test_AT17_revisions_preserve_original_provenance(store, episode):
 def test_AT10_AT18_checkpoint_and_immutable_override(store, episode, workbench_config):
     config = workbench_config
     before = (store.episode_path(episode) / "events.jsonl").read_bytes()
-    cert = verify_checkpoint(store, config, episode, 0, repetitions=3)
-    assert cert["status"] == "passed" and cert["evidence_kind"] == "SYNTHETIC_TEST"
     service = RunService(store, WorkbenchService(store))
     initial = next(e["payload"] for e in store.events(episode) if e["type"] == "observation")
     action = {"type": "skip_blind", "blind_id": initial["state"]["revealed_blinds"][0]["id"]}
@@ -110,16 +109,22 @@ def test_AT10_AT18_checkpoint_and_immutable_override(store, episode, workbench_c
     assert store.summary(bid)["outcome"] == "WIN"
     assert store.manifest(bid)["evaluation_eligible"] is False
     assert store.manifest(bid)["parent_episode_id"] == episode
+    assert store.manifest(bid)["recovery"]["policy"] == "single_restore_v1"
+    assert "certificate_id" not in store.manifest(bid)
     assert (store.episode_path(episode) / "events.jsonl").read_bytes() == before
     first = next(e for e in store.events(bid) if e["type"] == "agent_context")
     assert "memory" not in first["payload"]["context"]["observation"]
     assert "original future" not in json.dumps(first)
 
 
-def test_AT24_uncertified_branch_is_rejected(store, episode, workbench_config):
-    config = workbench_config
-    with pytest.raises(ValueError, match="CHECKPOINT_NOT_CERTIFIED"):
-        prepare_branch(store, config, episode, 0, "agent_continue")
+def test_unbound_checkpoint_is_rejected_before_child_creation(store, episode, workbench_config):
+    checkpoint = read_checkpoint(store, episode, 0)
+    checkpoint["public_prefix_hash"] = "0" * 64
+    atomic_json(store.episode_path(episode, True) / "checkpoint-0.json", checkpoint)
+    count = len(store.list_episodes())
+    with pytest.raises(ValueError, match="CHECKPOINT_PREFIX_MISMATCH"):
+        prepare_branch(store, workbench_config, episode, 0, "agent_continue")
+    assert len(store.list_episodes()) == count
 
 
 def test_operator_cross_origin_is_rejected(store, workbench_config):

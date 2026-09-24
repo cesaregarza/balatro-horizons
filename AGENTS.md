@@ -3,7 +3,15 @@
 - Keep all game seeds, raw engine state, native saves, credentials, and private manifests outside the public trace and exports.
 - Offline fake episodes are test evidence only. Never report them as native Balatro results.
 - Do not make paid provider calls without explicit operator authorization and episode and batch cost caps.
-- Do not claim checkpoint fidelity from a save call alone. Disable live branches until the pinned native environment has a passing phase-specific certificate.
+- Ordinary production recovery replays the recorded prefix once in the same
+  game process and verifies matching public and private state along the replay
+  and at its target before continuing or making any provider call. Admission
+  still requires the retained release, environment/profile, and frozen
+  protocol compatibility gates. A save call alone does not establish fidelity.
+  Evaluator-fixture prefixes and checkpoint-probe results do not admit ordinary
+  production recovery. Never rewrite frozen source hashes or protocol
+  identities; runs from another source revision need separate compatibility
+  work.
 - Preserve original run journals and annotation revisions; use append-only records.
 
 ## Documentation and change rules

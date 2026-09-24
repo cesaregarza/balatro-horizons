@@ -151,6 +151,8 @@ class Runner(RuntimeDiagnosticsMixin, DecisionRuntimeMixin):
         self.previous_action = None
         if not resume:
             return
+        if not resume.get("continuation_hash"):
+            raise ValueError("CHECKPOINT_CONTINUATION_MISSING")
         self.notebook = restore_notebook(
             resume.get("run_notebook"), self.history_prefix, self.limits.memory_max_characters
         )
