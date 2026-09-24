@@ -23,6 +23,7 @@ PUBLIC_MANIFEST_KEYS = (
     "agent_protocol",
     "certificate_id",
     "recovery",
+    "restoration",
     "budget_extension",
 )
 PUBLIC_EVENT_TYPES = (

@@ -7,6 +7,7 @@ MANIFEST_FIELDS = (
     "evaluation_eligible", "fixture", "validation_purpose", "parent_episode_id",
     "parent_decision", "assistance", "batch_id", "slot_id", "certificate_id", "budget_extension",
     "recovery",
+    "restoration",
 )
 EVENT_FIELDS = ("event_id", "sequence", "type", "observation_id", "request_id", "actor")
 

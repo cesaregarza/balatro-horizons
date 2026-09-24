@@ -12,7 +12,7 @@ def _total(values):
     return None if None in amounts else fsum(amounts)
 
 
-def run_spend(events, summary):
+def run_spend(events, summary, *, restoration=None):
     """Project numbers only, preserving unknown usage and authoritative terminals.
 
     Response costs are harness estimates, potentially reservation fallbacks, not
@@ -35,4 +35,8 @@ def run_spend(events, summary):
     ):
         # Old or recovered runs may lack the journal detail for a trustworthy split.
         recorded = pending = None
-    return {"accounted_usd": accounted, "response_usd": recorded, "reserved_usd": pending}
+    result = {"accounted_usd": accounted, "response_usd": recorded, "reserved_usd": pending}
+    if restoration is not None:
+        prior = _amount(restoration.get("prior_cost_usd"))
+        result.update(prior_usd=prior, combined_usd=_total((prior, accounted)))
+    return result

@@ -74,7 +74,7 @@ def _ordered_children(store, parent_id, entries):
         raise ValueError("BUDGET_EXTENSION_LEDGER_MISMATCH")
 
 
-def _child_own_spend(child, events, prior_calls):
+def child_own_spend(child, events, prior_calls):
     """Runner counts inherited calls; pre-run failure and recovery count own calls.
 
     All three terminal producers record only the child's own cost, including
@@ -107,7 +107,7 @@ def reconcile_shared_ledger(store, parent_id, terminal, entries):
         if child is None:
             raise ValueError("BUDGET_EXTENSION_CHILD_UNRESOLVED")
         child_rows = [row for row in entries.values() if row["episode_id"] == child_id]
-        child_calls, child_cost = _child_own_spend(child, store.events(child_id), prior_calls)
+        child_calls, child_cost = child_own_spend(child, store.events(child_id), prior_calls)
         if not _matching_spend(child_rows, child_calls, child_cost):
             raise ValueError("BUDGET_EXTENSION_CHILD_SPEND_MISMATCH")
     return sum(row["cost"] for row in entries.values()), len(entries)

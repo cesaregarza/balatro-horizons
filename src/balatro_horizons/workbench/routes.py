@@ -14,6 +14,7 @@ from balatro_horizons.api.models import (
     BranchInput,
     BudgetContinuationInput,
     OpenReview,
+    RestoreInput,
     SeekReview,
     VerifyInput,
 )
@@ -29,6 +30,24 @@ from balatro_horizons.harness.skills import restore_knowledge
 from balatro_horizons.review.export import export_response
 
 router = APIRouter()
+
+
+@router.get("/api/operator/episodes/{eid}/restore", dependencies=[Depends(require_operator)])
+def restore_preview(request: Request, eid: str):
+    from balatro_horizons.service_restore import restore_preview
+
+    state = request.app.state
+    return restore_preview(state.runs, eid, paid_enabled=state.config.budgets.paid_calls_enabled)
+
+
+@router.post("/api/operator/episodes/{eid}/restore", dependencies=[Depends(require_operator)])
+def restore_run(request: Request, eid: str, data: RestoreInput):
+    from balatro_horizons.service_restore import start_restore
+
+    state = request.app.state
+    return {"episode_id": start_restore(
+        state.runs, eid, data, paid_enabled=state.config.budgets.paid_calls_enabled,
+    )}
 
 
 @router.post("/api/reviews", dependencies=[Depends(require_operator)])

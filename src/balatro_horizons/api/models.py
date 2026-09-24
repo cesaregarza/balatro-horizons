@@ -66,6 +66,13 @@ class BudgetContinuationInput(Input):
     parent_terminal_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class RestoreInput(Input):
+    parent_head: str = Field(pattern=r"^[a-f0-9]{64}$")
+    plan_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    authorize_paid: bool = Field(default=False, strict=True)
+    accept_compatible_update: bool = Field(default=False, strict=True)
+
+
 class SettingsInput(Input):
     skills: Literal["balatro-guide-v1", "none"] = "balatro-guide-v1"
     budgets: dict

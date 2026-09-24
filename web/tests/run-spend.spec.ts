@@ -117,3 +117,14 @@ test("live-status spend remains opt-in and prominent above action progress", asy
   await page.getByRole("button", { name: "Hide live status", exact: true }).click();
   await expect(spend).toHaveCount(0);
 });
+
+test("restored run leads with prior attempts plus current spending", async ({ page }) => {
+  await mockRun(page, { accounted_usd: 0.23, response_usd: 0.03, reserved_usd: 0.2,
+    prior_usd: 0.6, combined_usd: 0.83 });
+  await page.goto(`/#explore/${eid}`);
+  const spend = page.getByRole("region", { name: "Run API spend" });
+  await expect(spend.locator(".run-spend-total")).toHaveText("$0.83");
+  await expect(spend).toContainText("$0.60 before this restoration · $0.23 this attempt");
+  await expect(spend).toContainText("Current attempt breakdown:");
+  await expect(spend).toContainText("$0.20 reserved for pending / unknown usage");
+});

@@ -13,12 +13,13 @@ dashboard always mounts the run library, live status, decision exploration,
 cost/model-budget settings, batches, reports, and cheap append-only
 retrospective annotations under the `/api/explore...` and core namespaces.
 These surfaces remain usable when the flag is off; workbench-only routes are
-registered separately, including budget-continuation admission. There are 24
-mounted routes flag-off, 41 flag-on, and 17 workbench-only routes.
+registered separately, including budget-continuation and restore admission. There are 24
+mounted routes flag-off, 43 flag-on, and 19 workbench-only routes.
 
 The workbench owns staged reveal/review, branching and comparison, human
 takeover, budget continuation, and verification. Its `/api/review*`,
 `/api/branches*`, `/api/operator/human`, `/api/operator/episodes/{eid}/continue-budget`,
+`/api/operator/episodes/{eid}/restore`,
 and `/api/verify` routes are absent and
 return 404 when the flag is off. Workbench controls and screens are hidden in
 that mode; exploration and annotation are not. DevTrace is a development
@@ -64,7 +65,9 @@ never overlap, stop when hidden or disabled, and event-stream work stays off the
 server event loop. Use `uv run bh review status --timing` for a bounded check.
 
 Decision Explorer leads with **API spend (USD)**, refreshed by its existing live
-poll, and live-status cards show the same episode-only accounting. The total
+poll, and live-status cards show the same accounting. Ordinary totals are episode-only;
+restoration children lead with prior-attempt spending plus the current attempt,
+with both amounts labeled separately. The current-attempt total
 includes recorded response costs plus pending/unknown-usage reservations;
 the breakdown labels both. Response costs are harness estimates and may retain
 the reservation when usage is unavailable: this is not a provider invoice or
@@ -106,6 +109,45 @@ selected decision boundary without mutating the read-only explore cursor.
 optional ante-grouped Markdown recap. Reading the whole run records review
 exposure; the command contacts no game or provider and refuses existing output
 files. Recorded model notes remain claims, separate from observed transitions.
+
+### Restore unfinished runs
+
+Open an unfinished run in **Decision Explorer**, then **Restore run**. The
+workbench-only control first fetches a read-only plan: latest saved pre-decision
+boundary, spend across all attempts, original episode/batch caps, remaining
+allowance, and whether an explicit compatible-code update is required. It does
+not launch a game or contact a provider. Confirm paid execution and, when
+shown, the compatible-code update before **Restore and continue**. A stale
+plan or changed funding requires refreshing and confirming again.
+
+The worker creates a separate `assistance: restoration` child, never scored as
+an autonomous evaluation. The parent journal, annotations, checkpoint and frozen
+protocol remain unchanged. One checked seed-prefix replay reaches the saved
+boundary in the same process that continues playing; there are zero preliminary
+verification launches. Public/private divergence or unknown action status stops
+before a provider call. New decisions keep the original model, prompt, knowledge,
+memory policy and limits. Later helper work beyond the saved boundary is not
+reconstructed, but every attempted call remains charged, including unknown-usage
+reservations. Restore children share the root's spending ledger and provider-call
+allowance; neither retries nor code updates reset a cap.
+
+GET `/api/operator/episodes/{eid}/restore` returns the plan or a named refusal.
+POST requires its `parent_head` and `plan_hash`, plus strict booleans
+`authorize_paid` and `accept_compatible_update` when applicable. Both routes require
+the operator token and workbench flag. Confirmation switches to live status.
+
+Supported parents are standalone failed, interrupted or unterminated runs and
+their restoration children with a safe latest checkpoint. Completed games, an
+already-completed restoration, campaign members, evaluator fixtures, budget
+extensions/other intervention lineages, unsettled actions, missing evidence,
+incomplete terminals, incompatible source and exhausted original caps return
+explicit refusals. A sibling restoration still in progress also blocks admission.
+There is no silent rewind or reuse of a discarded future. Dollar-cap increases
+remain the distinct budget-continuation workflow below.
+
+Older runs require the [source-compatibility proof](evidence.md#older-run-source-compatibility),
+not rewritten source hashes. A passing plan is admission evidence, not a claim
+that the upcoming replay has already succeeded.
 
 ### Explicit budget continuation
 

@@ -18,9 +18,9 @@ def journal_stamp(path):
     return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
 
 
-def aggregate(events):
+def aggregate(events, *, restoration=None):
     summary = next((e["payload"] for e in reversed(events) if e["type"] == "terminal"), None)
-    spend = run_spend(events, summary)
+    spend = run_spend(events, summary, restoration=restoration)
     progress = None
     if summary is None:
         last = next((e["payload"] for e in reversed(events) if e["type"] == "observation"), None)
@@ -55,7 +55,9 @@ class OperatorStatus:
                     # A concurrent append must not look like a torn/corrupt journal.
                     with locked(directory / ".writer.lock"):
                         stamp = journal_stamp(path)
-                        data, sequence = aggregate(self.store.events(eid))
+                        data, sequence = aggregate(
+                            self.store.events(eid), restoration=row["manifest"].get("restoration"),
+                        )
                     cached = (stamp, data, sequence)
                     self._cache[eid] = cached
                 _, data, sequence = cached

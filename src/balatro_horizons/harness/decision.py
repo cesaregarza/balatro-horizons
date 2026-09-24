@@ -90,7 +90,8 @@ class DecisionRuntimeMixin(ProviderRuntimeMixin):
                 exchanges.append(self._exchange(raw, feedback))
 
     def _check_protocol_integrity(self):
-        if self.protocol and self.protocol["implementation_hash"] != implementation_fingerprint():
+        if self.protocol and getattr(self, "execution_implementation_hash",
+                                     self.protocol["implementation_hash"]) != implementation_fingerprint():
             raise HarnessFailure("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED", stage="decision_start")
 
     def _check_decision_stop(self):

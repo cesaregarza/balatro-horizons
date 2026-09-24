@@ -87,8 +87,9 @@ private state along the replay and at its target, then continues in that same
 game process before any provider call.
 Admission readiness is not a replay pass: the worker must still reach the
 saved boundary successfully before deciding anything new. Recovery requires
-the checkpoint's exact frozen implementation and protocol; native evidence
-reuse does not migrate an older run across a harness-source change.
+the checkpoint's exact frozen implementation and protocol, or an explicit
+run-level source-compatibility receipt as described below. Native evidence
+reuse alone does not migrate an older run across a harness-source change.
 The release collector's scripted branch is explicitly calibration-only and
 still requires checkpoint replay evidence; it can bootstrap release evidence
 without requiring the release certificate it is about to produce. That path
@@ -100,6 +101,32 @@ cannot establish scope: the manifest's explicit runtime/source scope and
 fingerprint must be checked. Absent evidence is named as skipped, never counted
 as passing; a passed record naming a missing artifact fails as corrupt.
 Headless and accelerated modes remain uncertified.
+
+### Older-run source compatibility
+
+The operator's run-level Restore may admit an older source identity only with an
+immutable `restore-source-v1` receipt on the new child. The planner resolves every
+checkpoint/protocol source identity against committed Git source and compares
+byte-identical native components plus AST identity for all harness, configuration,
+policy and restore-worker coordinator code. Historical files are parsed, never
+imported or executed. Missing Git history and changed executable contracts refuse
+admission; retired interfaces and missing frozen snapshots remain unsupported.
+
+The comparison normalizes only the exact reviewed recovery changes: current
+executor binding instead of historical-source equality, the added continuation
+hash requirement, compatibility-reference persistence, and production release
+gating for resumed workers. Unrelated service entry points are outside this
+identity; methods consumed by Restore, imports, class state and new helpers are
+included. Arbitrary edits in the normalized methods are not ignored.
+
+The receipt binds historical commits, the original protocol hash, native/agent
+identities and the exact accepted current implementation. It is revalidated at
+execution and carried into child checkpoints; historical protocol bytes retain
+their original source hash. The decision loop still rejects code changing during
+execution. The UI requires explicit compatible-update acceptance separately from
+paid authorization. No checkpoint/release certificate, parent record, environment
+gate or paid cap is rewritten. Release certification/reuse and the actual single
+checked replay remain separate requirements; a source proof is not a native pass.
 
 Explicit replay certification checks the registered Windows connection at admission
 and again under the native lock before each repetition. A recognized session

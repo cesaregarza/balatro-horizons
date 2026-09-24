@@ -10,10 +10,13 @@ IMPLEMENTATION_FILES = (
     "contracts.py",
     "service.py",
     "service_execution.py",
+    "service_restore.py",
     "workbench/branches.py",
     "workbench/policies.py",
     "workbench/budget_continuation.py",
     "workbench/budget_ledger.py",
+    "workbench/restoration.py",
+    "workbench/restore_ledger.py",
 )
 IMPLEMENTATION_DIRECTORIES = (
     "game", "evidence", "observations", "actions", "storage", "harness"

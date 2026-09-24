@@ -49,7 +49,7 @@ def summary_input(store, eid):
     public = {
         "manifest": manifest_projection(manifest),
         "summary": summary,
-        "spend": run_spend(records, summary),
+        "spend": run_spend(records, summary, restoration=manifest.get("restoration")),
         "action_accounting": action_totals.action_accounting(store, eid, records, summary),
         "events": events,
         "journal_head": records[-1]["hash"] if records else None,
