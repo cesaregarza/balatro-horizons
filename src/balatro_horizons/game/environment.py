@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from balatro_horizons.game.contract import NativeFailure
 
 ROOT = Path(__file__).resolve().parents[3]
+VISIBLE_GAME_SPEED = 16
 DEFAULT_LAUNCH_HANDSHAKE_TIMEOUT_SECONDS = 45
 DEFAULT_HTTP_TIMEOUT_SECONDS = 90
 DEFAULT_RPC_RESPONSE_MARGIN_SECONDS = 5
@@ -149,3 +150,5 @@ def verify_identity(
         raise NativeFailure("RUNTIME_CALIBRATION_POLICY_MISMATCH")
     if bh.get("profile_policy") != "fully_unlocked_v1" or bh.get("headless") or bh.get("fast"):
         raise NativeFailure("RUNTIME_POLICY_MISMATCH")
+    if bh.get("gamespeed") != VISIBLE_GAME_SPEED:
+        raise NativeFailure("RUNTIME_GAME_SPEED_MISMATCH")

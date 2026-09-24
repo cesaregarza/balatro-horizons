@@ -14,6 +14,7 @@ from balatro_horizons.evidence.provenance import (
     native_implementation_fingerprint,
 )
 from balatro_horizons.evidence.validation import require
+from balatro_horizons.game.environment import VISIBLE_GAME_SPEED
 from balatro_horizons.game.session import WindowsBridge
 from balatro_horizons.storage.journal import Store, atomic_json, digest, now
 
@@ -108,7 +109,8 @@ def _certificate(lock_hash: str, source: str, native_hash: str, profiles: dict, 
         "accepted_implementation_hash": source, "native_implementation_hash": native_hash,
         "validation_kind": "native_suite", "configurations": [["RED", "WHITE"], ["RED", "GOLD"]],
         "profile_hashes": profiles, "phases": sorted(phases), "headless": False,
-        "accelerated": False, "paid_provider_validation": False,
+        "accelerated": True, "gamespeed": VISIBLE_GAME_SPEED, "fast": False,
+        "paid_provider_validation": False,
         "evidence": "reports/verification/native-release.json",
     }
 

@@ -100,7 +100,13 @@ deck, stake, injector, bridge, and full mod tree. Filename classification alone
 cannot establish scope: the manifest's explicit runtime/source scope and
 fingerprint must be checked. Absent evidence is named as skipped, never counted
 as passing; a passed record naming a missing artifact fails as corrupt.
-Headless and accelerated modes remain uncertified.
+The launcher uses visible 16× game speed, without headless or fast/animation-skip
+mode. New capability records explicitly report `gamespeed: 16`, `accelerated:
+true`, and `fast: false`; they require matching native collection and replay
+evidence, not relabelled 1× records. The live identity check refuses a missing or
+different actual speed. Other speeds and headless/fast modes remain outside
+this scope. Changing the pinned launcher/instrumentation does not migrate older
+checkpoints or certify their restoration into the new environment.
 
 ### Older-run source compatibility
 

@@ -48,8 +48,11 @@ interest hidden behind omitted rows remains unknown. The first seven public
 settlement rows and native omitted-row count are preserved.
 
 Native evidence is configuration-scoped: Red/White and Red/Gold are supported,
-visible speed-1 execution is certified, and headless or accelerated modes are
-not implied. Public economy fields distinguish transaction, balance, and cost;
+the launcher uses visible 16× game speed with headless and fast/animation-skip
+modes disabled. The private native identity reports the actual game speed and
+refuses a different or missing value. Admission still requires fresh matching
+native evidence: a prior 1× certificate does not certify this runtime. Other
+speeds, headless and fast modes are not implied. Public economy fields distinguish transaction, balance, and cost;
 the harness must not infer hidden values from the adapter.
 `public-economy-v1` records committed cashouts/shop exits, sampled debt rounds,
 and known score/target ratios. Unknown settlements are distinct from zero;
