@@ -115,6 +115,9 @@ add `--apply` to update only `native/bridge.ps1` and matching
 complete update from that snapshot. The caller must stop the idle service and
 hold the native worker lock before either operation, then restart and verify via
 the normal native lifecycle. This command controls no system services.
+It only replaces existing bridge/patch files: it does not add new patches,
+install dependencies, or replay the bootstrap's other mod/endpoint/injector
+edits. Use the bootstrap workflow for those changes.
 
 ### Older-run source compatibility
 

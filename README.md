@@ -95,6 +95,7 @@ retain the former scripts' defaults, guards, and output formats:
 | --- | --- |
 | `offline [--web] [--report PATH]` | Python checks, optional web lane, source-bound receipt |
 | `deploy frontend` / `deploy candidate` | Frontend publication / idle candidate installation and rollback |
+| `deploy runtime` | Dry-run-first update of existing bridge/Lua instrumentation, with snapshot and rollback; caller owns service/worker admission |
 | `guide package` / `prompt sync` | Guide validation and packaging / persistent prompt freshness |
 | `human register` | Preview or register a saved player's settings; does not start a run |
 | `smoke` | Capped provider smoke; paid execution requires `--allow-paid` |
