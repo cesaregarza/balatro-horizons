@@ -10,6 +10,7 @@ from . import (
     package_balatro_guide,
     prompt_sync,
     register_player,
+    runtime_update,
     smoke,
     workbench_session,
     workbench_status,
@@ -25,6 +26,7 @@ def add_operational_commands(sub):
     targets = deploy.add_subparsers(dest="deploy_operation", required=True)
     deploy_frontend.configure_parser(targets.add_parser("frontend"))
     install_candidate.configure_parser(targets.add_parser("candidate"))
+    runtime_update.configure_parser(targets.add_parser("runtime"))
     guide = sub.add_parser("guide", help="Validate and package the Balatro guide")
     package_balatro_guide.configure_parser(
         guide.add_subparsers(dest="guide_operation", required=True).add_parser("package")

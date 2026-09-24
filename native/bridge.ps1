@@ -26,7 +26,7 @@ if ($Mode -eq 'launch') {
   $env:BALATROBOT_PORT = "$Port"
   $env:BALATROBOT_HEADLESS = '0'
   $env:BALATROBOT_FAST = '0'
-  $env:BALATROBOT_GAMESPEED = '1'
+  $env:BALATROBOT_GAMESPEED = '16'
   $env:BALATROBOT_ANIMATION_FPS = '60'
   $env:BALATROBOT_DEBUG = '0'
   $process = Start-Process -FilePath "$Runtime\Balatro.exe" -WorkingDirectory $Runtime -PassThru -RedirectStandardOutput "$Runtime\stdout.log" -RedirectStandardError "$Runtime\stderr.log"

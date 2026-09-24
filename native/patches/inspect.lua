@@ -103,7 +103,8 @@ local inspect = {}
           (G.GAME.used_vouchers.v_directors_cut and
             not G.GAME.round_resets.boss_rerolled))) or false,
       profile_policy='fully_unlocked_v1', headless=BB_SETTINGS.headless,
-      fast=BB_SETTINGS.fast, rng=G.GAME.pseudorandom, tags={}, deck_composition={}}
+      fast=BB_SETTINGS.fast, gamespeed=G.SETTINGS.GAMESPEED,
+      rng=G.GAME.pseudorandom, tags={}, deck_composition={}}
     for _, tag in ipairs(G.GAME.tags or {}) do table.insert(state.bh.tags, tag.key) end
     public.extend(state)
     state.bh.settlement = context.settlement_visible and context.settlement_visible() or nil

@@ -130,10 +130,10 @@ def _install_files(root, candidate, rows):
             raise ValueError("INSTALL_CHECKSUM_MISMATCH")
 
 
-def snapshot_runtime(backup):
+def snapshot_runtime(backup, *, runtime=None):
     """Back up pinned instrumentation only; never copy saves, checkpoints or tokens."""
     backup = native(backup)
-    runtime = Path(Environment().runtime)
+    runtime = Path(Environment().runtime if runtime is None else runtime)
     if runtime.resolve() != runtime or not (runtime / "horizons-owned.json").is_file():
         raise ValueError("OWNED_RUNTIME_REQUIRED")
     files = [runtime / name for name in ("horizons-owned.json", "bridge.ps1", "version.dll", "environment.lock.json")]

@@ -33,16 +33,31 @@ def run_action_table(audit: Audit, rows: list[ActionRow]) -> None:
         row.expected(audit, before)
 
 
-def _shop_rows(audit: Audit) -> list[ActionRow]:
-    skip_blind = ActionRow(
+def _skip_opening_blind(audit: Audit) -> None:
+    run_action_table(audit, [ActionRow(
         "skip_blind",
         lambda current: {
             "type": "skip_blind",
             "blind_id": current.obs.state.revealed_blinds[0].id,
         },
-    )
-    rows = [
-        skip_blind,
+        expected=lambda current, _before: _require(
+            current.obs.state.progress.blind == "Big", "SKIP_BLIND_DID_NOT_ADVANCE"
+        ),
+    )])
+    # A skip reward can open a pack; inspect the post-skip observation before
+    # constructing the next action, not the initial blind-selection state.
+    if "skip_pack" in audit.obs.available_action_types:
+        run_action_table(audit, [ActionRow(
+            "skip_pack",
+            lambda _current: {"type": "skip_pack"},
+            expected=lambda current, _before: _require(
+                current.obs.state.progress.blind == "Big", "SKIP_PACK_DID_NOT_ADVANCE"
+            ),
+        )])
+
+
+def _shop_rows() -> list[ActionRow]:
+    return [
         ActionRow(
             "select_blind",
             lambda current: {
@@ -73,26 +88,6 @@ def _shop_rows(audit: Audit) -> list[ActionRow]:
             ),
         ),
     ]
-    if "skip_pack" in audit.obs.available_action_types:
-        rows.insert(
-            1,
-            ActionRow(
-                "skip_pack",
-                lambda _current: {"type": "skip_pack"},
-                expected=lambda current, _before: _require(
-                    current.obs.state.progress.blind == "Big", "SKIP_PACK_DID_NOT_ADVANCE"
-                ),
-            ),
-        )
-    else:
-        rows[0] = ActionRow(
-            skip_blind.name,
-            skip_blind.action,
-            expected=lambda current, _before: _require(
-                current.obs.state.progress.blind == "Big", "SKIP_BLIND_DID_NOT_ADVANCE"
-            ),
-        )
-    return rows
 
 
 def _round_rows() -> list[ActionRow]:
@@ -257,10 +252,10 @@ def _fixture_step(
     return _ShopStep("fixture", case, check)
 
 
-def _shop_sequence(audit: Audit) -> list[_ShopStep]:
+def _shop_sequence() -> list[_ShopStep]:
     credit_rows = _credit_rows()
     return [
-        *_rows(_shop_rows(audit)),
+        *_rows(_shop_rows()),
         _fixture_step("easy_blind", lambda current: _require(
             current.obs.state.resources.target == "1", "EASY_BLIND_TARGET_MISMATCH"
         )),
@@ -303,7 +298,8 @@ def _run_shop_step(audit: Audit, step: _ShopStep) -> None:
 
 def run_shop_table(audit: Audit) -> None:
     """Run the complete historical shop action table in order."""
-    for step in _shop_sequence(audit):
+    _skip_opening_blind(audit)
+    for step in _shop_sequence():
         _run_shop_step(audit, step)
 
 

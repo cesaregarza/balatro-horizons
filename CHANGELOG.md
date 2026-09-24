@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-24 — Visible 16× game speed
+
+- Raise the dedicated launcher's game-speed multiplier from 1× to 16× without
+  installing another mod or enabling headless/fast animation skipping.
+- Report actual game speed through the private native identity and refuse
+  missing or mismatched values. Label new release evidence with its 16× scope;
+  retain fresh source/environment certification and frozen-checkpoint gates.
+- Pin launcher settings, live Lua speed reporting, runtime refusal, and
+  certificate metadata with offline regressions. No paid calls are added.
+- Add a dry-run-first runtime instrumentation update with checksum-verified
+  backup and explicit rollback; dependency reinstalls and Steam access are not
+  needed for the speed change.
+- Fix the native action fixture's skip-reward branch to inspect the observation
+  after skipping the blind. Pin both pack and non-pack paths; settling and
+  gameplay policy are unchanged.
+
 ## 2026-09-23 — Restore unfinished runs (#58)
 
 - Add a workbench-only run-level Restore preview and explicit confirmation in

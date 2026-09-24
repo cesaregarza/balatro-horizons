@@ -100,7 +100,24 @@ deck, stake, injector, bridge, and full mod tree. Filename classification alone
 cannot establish scope: the manifest's explicit runtime/source scope and
 fingerprint must be checked. Absent evidence is named as skipped, never counted
 as passing; a passed record naming a missing artifact fails as corrupt.
-Headless and accelerated modes remain uncertified.
+The launcher uses visible 16× game speed, without headless or fast/animation-skip
+mode. New capability records explicitly report `gamespeed: 16`, `accelerated:
+true`, and `fast: false`; they require matching native collection and replay
+evidence, not relabelled 1× records. The live identity check refuses a missing or
+different actual speed. Other speeds and headless/fast modes remain outside
+this scope. Changing the pinned launcher/instrumentation does not migrate older
+checkpoints or certify their restoration into the new environment.
+
+For a committed runtime-only candidate, `bh deploy runtime --root CANDIDATE
+--baseline PRIOR_RELEASE --backup NEW_LINUX_SNAPSHOT` prints a dry-run plan;
+add `--apply` to update only `native/bridge.ps1` and matching
+`native/patches/*.lua` instrumentation files. `--rollback` restores a partial or
+complete update from that snapshot. The caller must stop the idle service and
+hold the native worker lock before either operation, then restart and verify via
+the normal native lifecycle. This command controls no system services.
+It only replaces existing bridge/patch files: it does not add new patches,
+install dependencies, or replay the bootstrap's other mod/endpoint/injector
+edits. Use the bootstrap workflow for those changes.
 
 ### Older-run source compatibility
 

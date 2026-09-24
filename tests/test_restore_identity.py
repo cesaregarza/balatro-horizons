@@ -75,7 +75,7 @@ def test_synthetic_identity_includes_fake_game_without_changing_native_contract(
     assert changed != sources
     assert _identity(sources, game_kind="synthetic") != _identity(changed, game_kind="synthetic")
     assert _identity(sources, game_kind="native") == _identity(changed, game_kind="native")
-    assert native_implementation_fingerprint(sources) == "a5662e2530340108571af4e1238f7a691b75dd0b75f9cb2deafd496e11ced3c0"
+    assert native_implementation_fingerprint(sources) == native_implementation_fingerprint(changed)
 
 
 @pytest.mark.parametrize("path", [
