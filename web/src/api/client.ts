@@ -98,7 +98,20 @@ export type RunSpendTotals = {
   accounted_usd: number | null;
   response_usd: number | null;
   reserved_usd: number | null;
+  prior_usd?: number | null;
+  combined_usd?: number | null;
 };
+export type RestorePlan = {
+  parent_head: string;
+  plan_hash: string;
+  decision: number;
+  requires_paid_authorization: boolean;
+  source_compatibility: "same_source" | "compatible_update";
+  costs: { accounted_usd: number; remaining_episode_usd: number | null; remaining_batch_usd: number | null };
+  limits: { max_episode_cost_usd: number | null; max_batch_cost_usd: number | null };
+  launches: { verification: 0; continuation: 1 };
+};
+export type RestorePreview = { episode_id: string; available: boolean; reason: string | null; plan: RestorePlan | null };
 export type DecisionLedger = {
   source_journal_head: string | null;
   manifest: {
@@ -218,6 +231,8 @@ async function request<T>(path: string, method = "GET", body?: unknown, reviewTo
 
 export const bootstrap = () => request<Bootstrap>("/bootstrap");
 export const listEpisodes = () => request<Episode[]>("/episodes");
+export const restorePreview = (episodeId: string) => request<RestorePreview>("/operator/episodes/" + episodeId + "/restore");
+export const restoreRun = (episodeId: string, input: { parent_head: string; plan_hash: string; authorize_paid: boolean; accept_compatible_update: boolean }) => request<{ episode_id: string }>("/operator/episodes/" + episodeId + "/restore", "POST", input);
 export const startRun = (input: RunInput) => request<{ episode_id: string }>("/runs", "POST", input);
 export const stopRun = () => request<{ stop_requested: boolean }>("/stop", "POST", {});
 export const operatorStatus = () => request<any>("/operator/status");

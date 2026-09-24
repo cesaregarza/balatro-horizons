@@ -97,8 +97,9 @@ def restore_protocol(store, checkpoint):
     extension = checkpoint.get("budget_extension")
     current_implementation = implementation_fingerprint()
     if bundle["implementation_hash"] != current_implementation:
-        # Raising the money cap is not permission to change the delivered protocol.
-        raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")
+        from balatro_horizons.evidence.compatibility import require_protocol_compatibility
+
+        require_protocol_compatibility(store, checkpoint, bundle)
     if extension is not None:
         from balatro_horizons.harness.money import validate_caps
 

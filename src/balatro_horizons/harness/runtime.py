@@ -101,6 +101,7 @@ class Runner(RuntimeDiagnosticsMixin, DecisionRuntimeMixin):
 
     def freeze_or_restore_protocol(self, resume):
         """Freeze the protocol once, or validate the immutable resume contract."""
+        self.execution_implementation_hash = implementation_fingerprint()
         if isinstance(self.policy, Policy) and self.policy.model is not None:
             validate_paid_configuration(self.policy.model, self.limits)
         self.rules = restore_knowledge(self.store, resume) if resume else prepare_rules(
@@ -112,6 +113,7 @@ class Runner(RuntimeDiagnosticsMixin, DecisionRuntimeMixin):
         self._validate_resume_protocol(resume)
         if self.protocol["knowledge_hash"] != digest(self.rules):
             raise ValueError("AGENT_PROTOCOL_KNOWLEDGE_CHANGED")
+        self.source_compatibility = deepcopy(resume.get("source_compatibility")) if resume else None
 
     def _validate_resume_protocol(self, resume):
         if not resume:
@@ -266,6 +268,7 @@ class Runner(RuntimeDiagnosticsMixin, DecisionRuntimeMixin):
             "knowledge": self.knowledge_reference,
             "agent_protocol": deepcopy(self.protocol_reference),
             "issuer": self.issuer.snapshot(),
+            "source_compatibility": deepcopy(self.source_compatibility),
             "observation": self.observation.model_dump(mode="json"),
             "memory": self.memory,
             "committed": self.committed,

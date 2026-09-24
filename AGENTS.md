@@ -11,7 +11,10 @@
   Evaluator-fixture prefixes and checkpoint-probe results do not admit ordinary
   production recovery. Never rewrite frozen source hashes or protocol
   identities; runs from another source revision need separate compatibility
-  work.
+  proof. Run-level Restore may attach an immutable `restore-source-v1` receipt
+  after checking committed source, byte-identical native code and normalized
+  agent/coordinator execution identity. This is not certificate migration or
+  permission to change the historical model, prompt, knowledge or caps.
 - Preserve original run journals and annotation revisions; use append-only records.
 
 ## Documentation and change rules

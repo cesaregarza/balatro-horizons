@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-23 — Restore unfinished runs (#58)
+
+- Add a workbench-only run-level Restore preview and explicit confirmation in
+  Decision Explorer. Resume the latest safe pre-decision checkpoint through the
+  existing single checked replay; never launch preliminary verification games.
+- Support compatible older source revisions with immutable child-only proofs,
+  preserving the historical protocol bytes and original model, knowledge and
+  limits. Compare native bytes and whole-module execution ASTs with exact
+  one-way historical migrations, including branch, budget and recovery code;
+  missing history, changed execution contracts and retired protocols refuse.
+- Share all-attempt spending and call limits across restoration children, retain
+  unknown-usage reservations, and show inherited plus current spend up front.
+  Preserve parent journals/checkpoints and mark every restore child unscored.
+- Refuse stale plans, busy workers, unresolved actions/children, completed games,
+  unsupported campaign/intervention lineage and exhausted caps before launch.
+  Refuse actual `GAME_LOSS` outcomes on both roots and restore children. Share
+  ledger row validation and own-terminal accounting with budget continuation.
+- Publish only historical commit IDs in restoration provenance; document the
+  private-record trust boundary and inherited proof scope for ordinary branches.
+- Cover preview/authorization, interruption, source mutation, replay-before-pay,
+  private-safe exports and the browser confirmation flow with offline fixtures.
+  No deployment, Windows access, native run or real provider call in this change.
+
 ## 2026-09-23 — Single-restore recovery (#56)
 
 - Replace ordinary branch and budget-continuation certificate admission with

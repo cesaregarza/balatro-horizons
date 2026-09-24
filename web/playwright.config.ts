@@ -19,7 +19,7 @@ export default defineConfig({
     },
     {
       name: "workbench",
-      testMatch: /workbench\.spec\.ts/,
+      testMatch: /(?:workbench|restore)\.spec\.ts/,
       use: { baseURL: "http://127.0.0.1:8767" },
     },
   ],

@@ -7,6 +7,11 @@ not change that episode or its ordinary branches.
 The immutable `agent-protocol.json` binds checkpoints to that snapshot. A legacy
 checkpoint without it fails with `AGENT_PROTOCOL_SNAPSHOT_MISSING`; it is never
 rewritten. Retired interface snapshots fail with `AGENT_PROTOCOL_INTERFACE_RETIRED`.
+Run-level [Restore](dashboard.md#restore-unfinished-runs) can accept an older
+source through an explicit immutable compatibility receipt. The raw frozen
+protocol keeps its historical source identity; the worker separately binds the
+accepted executor and preserves the original model, knowledge and limits.
+Prior calls and retained reservations count across every restoration attempt.
 
 ## What the model receives
 

@@ -22,7 +22,7 @@ ROW_FIELDS = (
 MANIFEST_FIELDS = (
     "episode_id", "created_at", "agent", "evidence_kind", "evaluation_eligible", "fixture",
     "validation_purpose", "parent_episode_id", "parent_decision", "assistance", "batch_id",
-    "slot_id", "certificate_id", "recovery", "budget_extension",
+    "slot_id", "certificate_id", "recovery", "budget_extension", "restoration",
 )
 SUMMARY_FIELDS = (
     "outcome", "reason", "cost_usd", "attempted_actions", "committed_actions", "provider_calls",
@@ -77,7 +77,7 @@ def metadata(ledger, exported_at):
         "run_summary": pick(summary, SUMMARY_FIELDS) if summary else None,
         "action_accounting": pick(ledger.get("action_accounting") or {}, ACCOUNTING_FIELDS),
         **({"cost_accounting": "Runner provider calls are inherited-inclusive; cost is own-only."}
-           if manifest.get("budget_extension") else {}),
+           if manifest.get("budget_extension") or manifest.get("restoration") else {}),
         "omitted_content": [
             "full board observations and exact action envelopes",
             "provider prompts, outputs, and opaque continuation data",

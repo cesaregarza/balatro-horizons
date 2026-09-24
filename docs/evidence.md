@@ -87,8 +87,9 @@ private state along the replay and at its target, then continues in that same
 game process before any provider call.
 Admission readiness is not a replay pass: the worker must still reach the
 saved boundary successfully before deciding anything new. Recovery requires
-the checkpoint's exact frozen implementation and protocol; native evidence
-reuse does not migrate an older run across a harness-source change.
+the checkpoint's exact frozen implementation and protocol, or an explicit
+run-level source-compatibility receipt as described below. Native evidence
+reuse alone does not migrate an older run across a harness-source change.
 The release collector's scripted branch is explicitly calibration-only and
 still requires checkpoint replay evidence; it can bootstrap release evidence
 without requiring the release certificate it is about to produce. That path
@@ -100,6 +101,13 @@ cannot establish scope: the manifest's explicit runtime/source scope and
 fingerprint must be checked. Absent evidence is named as skipped, never counted
 as passing; a passed record naming a missing artifact fails as corrupt.
 Headless and accelerated modes remain uncertified.
+
+### Older-run source compatibility
+
+Run-level Restore requires an immutable child-only `restore-source-v1` receipt
+for older source. See [the compatibility contract](restore-compatibility.md) for
+the exact identity coverage, one-way migrations, branch scope and trust boundary.
+This is not a native pass or permission to rewrite any historical record.
 
 Explicit replay certification checks the registered Windows connection at admission
 and again under the native lock before each repetition. A recognized session

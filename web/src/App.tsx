@@ -40,6 +40,13 @@ export default function App() {
     setPanels(await listPanels());
     setBatches(await listBatches());
   }
+  async function restored(episodeId: string) {
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    setWatch(true);
+    setNotice(`Restore started: ${episodeId.slice(0, 10)}. Watching worker status.`);
+    setTab("runs");
+    try { setEpisodes(await listEpisodes()); } catch (caught) { setError(String(caught)); }
+  }
   async function openRun(episodeId: string, retrospective = false, decision?: number) {
     await run(async () => {
       if (retrospective) {
@@ -77,7 +84,7 @@ export default function App() {
     <main><header><span>{tab === "review" ? "EXPERT ANALYSIS" : "RUN WORKBENCH"}</span><div className="header-right"><span className="badge">1 worker</span><button onClick={() => run(() => refresh())}>Refresh</button></div></header>
       {error && <div role="alert" className="error">{error}</div>}{notice && <div role="status" className="notice">{notice}</div>}
       {tab === "runs" && <RunLibrary workbench={workbench} config={config} setConfig={setConfig} episodes={episodes} setEpisodes={setEpisodes} busy={busy} run={run} openExplorer={(id: string) => openRun(id, true)} openReview={(id: string) => openRun(id)} onCompare={(id: string) => run(async () => { setComparison(await compareBranch(id)); setTab("comparison"); })} priorSeedExposure={priorSeedExposure} setPriorSeedExposure={setPriorSeedExposure} watch={watch} setWatch={setWatch} status={status} setNotice={setNotice} onHumanStart={() => setTab("human")} />}
-      {tab === "explore" && explorer && <DecisionExplorer key={explorer.token} token={explorer.token} initialDecision={explorer.initialDecision} />}
+      {tab === "explore" && explorer && <DecisionExplorer key={explorer.token} token={explorer.token} initialDecision={explorer.initialDecision} workbench={workbench} onRestored={(episodeId) => void restored(episodeId)} />}
       {tab === "review" && review && <Review key={`${review.token}:${review.view.decision}`} token={review.token} initial={review.view} onExplore={(decision) => openRun(review.view.episode_id, true, decision)} onBranch={(id) => { setNotice("Branch created: " + id.slice(0, 10)); void refresh(); setTab("human"); }} />}
       {tab === "human" && <HumanControl human={human} setHuman={setHuman} run={run} />}
       {tab === "batches" && <BatchesAndReports config={config} setConfig={setConfig} panels={panels} setPanels={setPanels} batches={batches} setBatches={setBatches} report={report} setReport={setReport} offline={true} busy={busy} run={run} />}
