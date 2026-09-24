@@ -1,6 +1,7 @@
 """Native-shaped synthetic replay fixture; never launches Balatro or a real provider."""
 
 from functools import partial
+from shutil import copyfile
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -11,6 +12,7 @@ from balatro_horizons.evidence import recovery
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.replay import restore_seed_prefix
 from balatro_horizons.game.session import NativeFailure
+from balatro_horizons.storage.journal import atomic_json, digest
 
 
 class ReplayGame(FakeGame):
@@ -68,11 +70,20 @@ def provider_with_order(provider, order):
 
 
 @pytest.fixture
-def replay_run(harness, monkeypatch):
+def replay_run(harness, monkeypatch, tmp_path):
     h = harness
     trace = SimpleNamespace(h=h, games=[], order=[], fault=None,
                             lock={"fixture": "native-shaped-synthetic-only"},
                             gate=Mock(return_value={"status": "passed"}))
+    # Native-shaped doubles must not consume a checkout's real calibration rules.
+    trace.root = tmp_path / "replay-root"
+    prompts = trace.root / "configs/prompts"
+    prompts.mkdir(parents=True)
+    for name in ("harness.txt", "ALWAYS-LOADED.md"):
+        copyfile(service_module.ROOT / "configs/prompts" / name, prompts / name)
+    atomic_json(trace.root / "private/rules.json",
+                {"environment_hash": digest(trace.lock), "core": "Synthetic replay fixture."})
+    monkeypatch.setattr(service_module, "ROOT", trace.root)
     monkeypatch.setattr(service_module, "NativeGame", partial(ReplayGame, trace=trace))
     monkeypatch.setattr(service_module, "load_session", lambda: None)
     monkeypatch.setattr(service_module, "DirectProvider",

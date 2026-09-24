@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from recovery_support import replay_run
 
 from balatro_horizons.api import create_app
-from balatro_horizons.config import Config
+from balatro_horizons.config import ROOT, Config
 from balatro_horizons.evidence import certification, recovery
 from balatro_horizons.game.session import NativeFailure
 from balatro_horizons.storage.journal import atomic_json
@@ -24,6 +24,16 @@ def run_child(fixture, *, parent=None, decision=2):
     service.thread.join(10)
     assert not service.thread.is_alive()
     return child, service
+
+
+def test_replay_rules_are_isolated_without_bypassing_the_environment_guard(replay_run):
+    f = replay_run
+    assert f.root != ROOT and f.root.is_relative_to(f.h.store.root.parent)
+    rules_path = f.root / "private/rules.json"
+    atomic_json(rules_path, {"environment_hash": "wrong-environment"})
+    with pytest.raises(ValueError, match="FROZEN_RULES_ENVIRONMENT_MISMATCH"):
+        f.h.service().execute(f.h.config, "luna", "PRIVATE_RECOVERY_FIXTURE")
+    assert not f.h.calls and "provider" not in f.order
 
 
 def test_latest_boundary_replays_once_then_pays_in_same_instance(replay_run, monkeypatch):
