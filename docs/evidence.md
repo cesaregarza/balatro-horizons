@@ -104,29 +104,10 @@ Headless and accelerated modes remain uncertified.
 
 ### Older-run source compatibility
 
-The operator's run-level Restore may admit an older source identity only with an
-immutable `restore-source-v1` receipt on the new child. The planner resolves every
-checkpoint/protocol source identity against committed Git source and compares
-byte-identical native components plus AST identity for all harness, configuration,
-policy and restore-worker coordinator code. Historical files are parsed, never
-imported or executed. Missing Git history and changed executable contracts refuse
-admission; retired interfaces and missing frozen snapshots remain unsupported.
-
-The comparison normalizes only the exact reviewed recovery changes: current
-executor binding instead of historical-source equality, the added continuation
-hash requirement, compatibility-reference persistence, and production release
-gating for resumed workers. Unrelated service entry points are outside this
-identity; methods consumed by Restore, imports, class state and new helpers are
-included. Arbitrary edits in the normalized methods are not ignored.
-
-The receipt binds historical commits, the original protocol hash, native/agent
-identities and the exact accepted current implementation. It is revalidated at
-execution and carried into child checkpoints; historical protocol bytes retain
-their original source hash. The decision loop still rejects code changing during
-execution. The UI requires explicit compatible-update acceptance separately from
-paid authorization. No checkpoint/release certificate, parent record, environment
-gate or paid cap is rewritten. Release certification/reuse and the actual single
-checked replay remain separate requirements; a source proof is not a native pass.
+Run-level Restore requires an immutable child-only `restore-source-v1` receipt
+for older source. See [the compatibility contract](restore-compatibility.md) for
+the exact identity coverage, one-way migrations, branch scope and trust boundary.
+This is not a native pass or permission to rewrite any historical record.
 
 Explicit replay certification checks the registered Windows connection at admission
 and again under the native lock before each repetition. A recognized session

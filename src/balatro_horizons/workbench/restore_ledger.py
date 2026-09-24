@@ -3,9 +3,9 @@
 import json
 import math
 
-from balatro_horizons.harness.terminals import INCOMPLETE_TERMINAL_REASON
+from balatro_horizons.harness.terminals import GAME_TERMINAL_OUTCOMES, INCOMPLETE_TERMINAL_REASON
 from balatro_horizons.storage.journal import digest
-from balatro_horizons.workbench.budget_ledger import child_own_spend
+from balatro_horizons.workbench.budget_ledger import child_own_spend, validate_spending_entries
 
 
 def restore_root(store, eid):
@@ -23,17 +23,6 @@ def restore_root(store, eid):
         if manifest.get("assistance") != "restoration":
             raise ValueError("RESTORE_INTERVENTION_NOT_SUPPORTED")
         eid = parent
-
-
-def _validate_entries(entries, owners):
-    if not isinstance(entries, dict):
-        raise ValueError("RESTORE_LEDGER_INVALID")
-    for row in entries.values():
-        if (not isinstance(row, dict) or row.get("episode_id") not in owners
-                or type(row.get("settled")) is not bool
-                or type(row.get("cost")) not in (int, float)
-                or not math.isfinite(row["cost"]) or row["cost"] < 0):
-            raise ValueError("RESTORE_LEDGER_INVALID")
 
 
 def _check_requests(events, entries):
@@ -84,7 +73,7 @@ def restore_spending(store, parent):
             owners.add(item["episode_id"])
     path = store.episode_path(root, True) / "spending.json"
     entries = json.loads(path.read_text()) if path.exists() else {}
-    _validate_entries(entries, owners)
+    validate_spending_entries(entries, owners=owners, allow_empty=True, error="RESTORE_LEDGER_INVALID")
     heads = {}
     for eid in sorted(owners):
         events = store.events(eid)
@@ -92,7 +81,7 @@ def restore_spending(store, parent):
         if eid != parent and eid != root and (not events or events[-1]["type"] != "terminal"):
             raise ValueError("RESTORE_CONTINUATION_UNFINISHED")
         if eid != root and events and events[-1]["type"] == "terminal":
-            if events[-1]["payload"].get("outcome") in ("WIN", "LOSS"):
+            if events[-1]["payload"].get("outcome") in GAME_TERMINAL_OUTCOMES:
                 raise ValueError("RESTORE_ALREADY_FINISHED")
         owned = {key: row for key, row in entries.items() if row["episode_id"] == eid}
         _check_requests(events, owned)

@@ -18,19 +18,23 @@ def _matching_spend(rows, calls, cost):
     )
 
 
-def _validate_rows(entries):
-    if not isinstance(entries, dict) or not entries:
-        raise ValueError("BUDGET_EXTENSION_INVALID_LEDGER")
+def validate_spending_entries(
+    entries, *, owners=None, allow_empty=False, error="BUDGET_EXTENSION_INVALID_LEDGER",
+):
+    """Validate shared row types, optionally binding spending to a restore family."""
+    if not isinstance(entries, dict) or (not entries and not allow_empty):
+        raise ValueError(error)
     for row in entries.values():
         if (
             not isinstance(row, dict)
             or not isinstance(row.get("episode_id"), str)
+            or (owners is not None and row["episode_id"] not in owners)
             or type(row.get("settled")) is not bool
             or type(row.get("cost")) not in (int, float)
             or not math.isfinite(row["cost"])
             or row["cost"] < 0
         ):
-            raise ValueError("BUDGET_EXTENSION_INVALID_LEDGER")
+            raise ValueError(error)
 
 
 def _reconcile_parent(parent_id, terminal, entries):
@@ -94,7 +98,7 @@ def child_own_spend(child, events, prior_calls):
 
 def reconcile_shared_ledger(store, parent_id, terminal, entries):
     """Match one locked ledger snapshot to every terminal that spent from it."""
-    _validate_rows(entries)
+    validate_spending_entries(entries)
     _reconcile_parent(parent_id, terminal, entries)
     for item in _ordered_children(store, parent_id, entries):
         manifest = item["manifest"]

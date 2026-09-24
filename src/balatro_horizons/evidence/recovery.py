@@ -42,6 +42,8 @@ def _bound_checkpoint(store, eid, decision, compatibility=None):
     boundary = next((e for e in events if e["type"] == "observation"
                      and e["observation_id"] == decision), None)
     checkpoint = read_checkpoint(store, eid, decision)
+    if compatibility is not None and compatibility["game_kind"] != checkpoint["game"]["kind"]:
+        raise ValueError("RESTORE_SOURCE_INCOMPATIBLE")
     if (boundary is None or checkpoint.get("public_prefix_hash") != boundary["hash"]
             or checkpoint.get("observation") != boundary["payload"]):
         raise ValueError("CHECKPOINT_PREFIX_MISMATCH")

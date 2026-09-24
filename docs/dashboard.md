@@ -145,6 +145,10 @@ explicit refusals. A sibling restoration still in progress also blocks admission
 There is no silent rewind or reuse of a discarded future. Dollar-cap increases
 remain the distinct budget-continuation workflow below.
 
+Both wins and game losses finish a run; a completed restore child also closes
+the root's restore family. A branch from a compatible Restore child inherits its
+source proof; branching directly from an old-source root still refuses.
+
 Older runs require the [source-compatibility proof](evidence.md#older-run-source-compatibility),
 not rewritten source hashes. A passing plan is admission evidence, not a claim
 that the upcoming replay has already succeeded.

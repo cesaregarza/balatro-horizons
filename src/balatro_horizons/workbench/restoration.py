@@ -11,6 +11,7 @@ from balatro_horizons.harness.context.freeze import read_protocol, validate_cont
 from balatro_horizons.harness.context.memory import restore_notebook, restore_working_memory
 from balatro_horizons.harness.money import can_afford, validate_paid_configuration
 from balatro_horizons.harness.skills import restore_knowledge
+from balatro_horizons.harness.terminals import GAME_TERMINAL_OUTCOMES
 from balatro_horizons.storage.journal import digest
 from balatro_horizons.workbench.branches import inherited_events
 from balatro_horizons.workbench.restore_ledger import restore_spending
@@ -21,7 +22,7 @@ def _latest_boundary(store, eid):
     if parent.get("fixture"):
         raise ValueError("RECOVERY_FIXTURE_NOT_SUPPORTED")
     terminal = events[-1]["payload"] if events and events[-1]["type"] == "terminal" else {}
-    if terminal.get("outcome") in ("WIN", "LOSS"):
+    if terminal.get("outcome") in GAME_TERMINAL_OUTCOMES:
         raise ValueError("RESTORE_RUN_FINISHED")
     boundary = next((event for event in reversed(events) if event["type"] == "observation"), None)
     if boundary is None:
@@ -80,7 +81,9 @@ def prepare_restore(store, eid, *, paid_enabled):
     knowledge = restore_knowledge(store, checkpoint)
     if digest(knowledge) != protocol["knowledge_hash"]:
         raise ValueError("AGENT_PROTOCOL_KNOWLEDGE_CHANGED")
-    compatibility = prepare_compatibility(_source_hashes(store, eid, checkpoint), protocol)
+    compatibility = prepare_compatibility(
+        _source_hashes(store, eid, checkpoint), protocol, game_kind=checkpoint["game"]["kind"],
+    )
     resume, recovery = recovery_checkpoint(
         store, config, eid, boundary["observation_id"], compatibility=compatibility,
     )
@@ -123,6 +126,9 @@ def create_restoration(store, parent_id, plan):
                 "prior_cost_usd": plan["ledger"]["cost"],
                 "prior_provider_calls": plan["ledger"]["calls"],
                 "plan_hash": public["plan_hash"],
+                "source_revisions": sorted(set(
+                    (plan["compatibility"] or {}).get("source_revisions", {}).values()
+                )),
                 "source_compatibility": public["source_compatibility"]}
     manifest = {
         "evidence_kind": parent["evidence_kind"], "agent": parent["agent"],
