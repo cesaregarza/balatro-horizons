@@ -8,6 +8,7 @@ import test_campaign_budget
 from fastapi.testclient import TestClient
 from recovery_support import replay_run
 
+from balatro_horizons import service_restore
 from balatro_horizons.api import create_app
 from balatro_horizons.config import ROOT, Config
 from balatro_horizons.evidence import certification, recovery
@@ -29,6 +30,7 @@ def run_child(fixture, *, parent=None, decision=2):
 def test_replay_rules_are_isolated_without_bypassing_the_environment_guard(replay_run):
     f = replay_run
     assert f.root != ROOT and f.root.is_relative_to(f.h.store.root.parent)
+    assert service_restore.ROOT == f.root
     rules_path = f.root / "private/rules.json"
     atomic_json(rules_path, {"environment_hash": "wrong-environment"})
     with pytest.raises(ValueError, match="FROZEN_RULES_ENVIRONMENT_MISMATCH"):

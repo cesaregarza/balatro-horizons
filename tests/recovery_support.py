@@ -8,6 +8,7 @@ from unittest.mock import Mock
 import pytest
 
 from balatro_horizons import service as service_module
+from balatro_horizons import service_restore
 from balatro_horizons.evidence import recovery
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.replay import restore_seed_prefix
@@ -84,6 +85,7 @@ def replay_run(harness, monkeypatch, tmp_path):
     atomic_json(trace.root / "private/rules.json",
                 {"environment_hash": digest(trace.lock), "core": "Synthetic replay fixture."})
     monkeypatch.setattr(service_module, "ROOT", trace.root)
+    monkeypatch.setattr(service_restore, "ROOT", trace.root)
     monkeypatch.setattr(service_module, "NativeGame", partial(ReplayGame, trace=trace))
     monkeypatch.setattr(service_module, "load_session", lambda: None)
     monkeypatch.setattr(service_module, "DirectProvider",
