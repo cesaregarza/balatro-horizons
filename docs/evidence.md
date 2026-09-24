@@ -108,6 +108,14 @@ different actual speed. Other speeds and headless/fast modes remain outside
 this scope. Changing the pinned launcher/instrumentation does not migrate older
 checkpoints or certify their restoration into the new environment.
 
+For a committed runtime-only candidate, `bh deploy runtime --root CANDIDATE
+--baseline PRIOR_RELEASE --backup NEW_LINUX_SNAPSHOT` prints a dry-run plan;
+add `--apply` to update only `native/bridge.ps1` and matching
+`native/patches/*.lua` instrumentation files. `--rollback` restores a partial or
+complete update from that snapshot. The caller must stop the idle service and
+hold the native worker lock before either operation, then restart and verify via
+the normal native lifecycle. This command controls no system services.
+
 ### Older-run source compatibility
 
 Run-level Restore requires an immutable child-only `restore-source-v1` receipt

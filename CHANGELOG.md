@@ -9,6 +9,9 @@
   retain fresh source/environment certification and frozen-checkpoint gates.
 - Pin launcher settings, live Lua speed reporting, runtime refusal, and
   certificate metadata with offline regressions. No paid calls are added.
+- Add a dry-run-first runtime instrumentation update with checksum-verified
+  backup and explicit rollback; dependency reinstalls and Steam access are not
+  needed for the speed change.
 
 ## 2026-09-23 — Restore unfinished runs (#58)
 
