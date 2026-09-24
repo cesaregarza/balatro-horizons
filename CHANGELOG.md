@@ -12,6 +12,9 @@
 - Add a dry-run-first runtime instrumentation update with checksum-verified
   backup and explicit rollback; dependency reinstalls and Steam access are not
   needed for the speed change.
+- Fix the native action fixture's skip-reward branch to inspect the observation
+  after skipping the blind. Pin both pack and non-pack paths; settling and
+  gameplay policy are unchanged.
 
 ## 2026-09-23 — Restore unfinished runs (#58)
 
