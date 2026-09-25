@@ -5,6 +5,7 @@ import secrets
 import uuid
 from collections import Counter, defaultdict
 
+from balatro_horizons.cost_limits import require_capped_defaults
 from balatro_horizons.storage.journal import atomic_json, digest
 
 VALID = {"WIN", "GAME_LOSS", "AGENT_PROTOCOL_FAILURE", "AGENT_ABORT", "BUDGET_EXHAUSTED"}
@@ -20,6 +21,7 @@ def seed_panel(path, count=20):
 
 
 def plan_batch(store, config, panel, agents, replicates=2):
+    require_capped_defaults(config.budgets.max_episode_cost_usd, config.budgets.max_batch_cost_usd)
     if not agents or len(set(agents)) != len(agents) or replicates < 1 or replicates > 10:
         raise ValueError("INVALID_BATCH_DIMENSIONS")
     if "human" in agents:

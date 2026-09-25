@@ -14,7 +14,7 @@ cost/model-budget settings, batches, reports, and cheap append-only
 retrospective annotations under the `/api/explore...` and core namespaces.
 These surfaces remain usable when the flag is off; workbench-only routes are
 registered separately, including budget-continuation and restore admission. There are 24
-mounted routes flag-off, 43 flag-on, and 19 workbench-only routes.
+mounted routes flag-off, 44 flag-on, and 20 workbench-only routes.
 
 The workbench owns staged reveal/review, branching and comparison, human
 takeover, budget continuation, and verification. Its `/api/review*`,
@@ -112,89 +112,18 @@ files. Recorded model notes remain claims, separate from observed transitions.
 
 ### Restore unfinished runs
 
-Open an unfinished run in **Decision Explorer**, then **Restore run**. The
-workbench-only control first fetches a read-only plan: latest saved pre-decision
-boundary, spend across all attempts, original episode/batch caps, remaining
-allowance, and whether an explicit compatible-code update is required. It does
-not launch a game or contact a provider. Confirm paid execution and, when
-shown, the compatible-code update before **Restore and continue**. A stale
-plan or changed funding requires refreshing and confirming again.
-
-The worker creates a separate `assistance: restoration` child, never scored as
-an autonomous evaluation. The parent journal, annotations, checkpoint and frozen
-protocol remain unchanged. One checked seed-prefix replay reaches the saved
-boundary in the same process that continues playing; there are zero preliminary
-verification launches. Public/private divergence or unknown action status stops
-before a provider call. New decisions keep the original model, prompt, knowledge,
-memory policy and limits. Later helper work beyond the saved boundary is not
-reconstructed, but every attempted call remains charged, including unknown-usage
-reservations. Restore children share the root's spending ledger and provider-call
-allowance; neither retries nor code updates reset a cap.
-
-GET `/api/operator/episodes/{eid}/restore` returns the plan or a named refusal.
-POST requires its `parent_head` and `plan_hash`, plus strict booleans
-`authorize_paid` and `accept_compatible_update` when applicable. Both routes require
-the operator token and workbench flag. Confirmation switches to live status.
-
-Supported parents are standalone failed, interrupted or unterminated runs and
-their restoration children with a safe latest checkpoint. Completed games, an
-already-completed restoration, campaign members, evaluator fixtures, budget
-extensions/other intervention lineages, unsettled actions, missing evidence,
-incomplete terminals, incompatible source and exhausted original caps return
-explicit refusals. A sibling restoration still in progress also blocks admission.
-There is no silent rewind or reuse of a discarded future. Dollar-cap increases
-remain the distinct budget-continuation workflow below.
-
-Both wins and game losses finish a run; a completed restore child also closes
-the root's restore family. A branch from a compatible Restore child inherits its
-source proof; branching directly from an old-source root still refuses.
-
-Older runs require the [source-compatibility proof](evidence.md#older-run-source-compatibility),
-not rewritten source hashes. A passing plan is admission evidence, not a claim
-that the upcoming replay has already succeeded.
+Open **Decision Explorer → Restore run** for a read-only plan, then explicitly
+authorize the continuation and any compatible-code update. Restore creates an
+unscored child through one checked replay; it never rewrites the parent or resets
+its funding. See [run recovery](run-recovery.md#restore-unfinished-runs) for
+eligibility, API fields, immutable provenance and named refusals.
 
 ### Explicit budget continuation
 
-A standalone root stopped by a dollar cap may create a child marked
-`assistance: budget_extension`, never evaluation-eligible. The parent stays
-budget-exhausted; a later win does not become an autonomous win at the old cap.
-Model settings, prompts, tools, non-money limits, source identity, and the
-pre-decision memory boundary remain frozen. A changed implementation is refused.
-Helpers called after that checkpoint are charged, but their later note changes
-and tool results are not inherited by the child.
-
-The combined cap includes the root and every continuation attempt. Unknown-usage
-reservations remain spent when their owning terminal accounts for them. Admission
-reconciles one locked ledger snapshot against the root and child terminals,
-using admission hashes rather than SQLite index order. Zero-spend children do
-not change the ledger hash. Lost ledger rows are refused; this is not a tamper-
-proof store if both a child's ledger rows and its index entry are deleted.
-Recover the index with `bh recover` before admission after index loss.
-A crash between `spending.settle` and the `provider_response` journal write can
-leave a permanent `BUDGET_EXTENSION_CHILD_SPEND_MISMATCH` after `bh recover`;
-recovery cannot reconstruct the missing response's settled cost attribution.
-
-Use the owning checkout and an idle backend started with `bh review --workbench`:
-
-```bash
-bh continue-budget EPISODE_ID --plan
-# Optional diagnostic, not a start prerequisite: three authorized unpaid launches.
-bh continue-budget EPISODE_ID --verify
-# Explicit provider funding: replay once, then continue in the same game process.
-bh continue-budget EPISODE_ID --start --combined-cap-usd 10
-```
-
-The default plan contacts no game/provider and distinguishes a saved checkpoint
-from readiness for a single checked restore. Reading status records review exposure.
-Verification and starts use the operator-protected worker so the dashboard can
-stop the child. Verification does not grant spending permission; each start
-requires an explicit cap higher than the root's original cap, not necessarily
-higher than a prior child's. Action/call limits and batch slots are not extended.
-Diagnose a timed-out request before retrying; timeout does not prove that the
-worker stopped or that the action was not committed.
-The child's exported metadata includes its recovery policy, cap, source identities,
-admission ledger hash, and `root_batch_cap_usd` (the original campaign ceiling,
-distinct from `previous_cap_usd`, the original episode cap). Provider-call totals
-include inherited calls; the child's terminal cost records its own spend only.
-The passing initial-blind continuation fixture does not override any historical
-direct-save replay failure or certify later checkpoints.
+New model runs offer **Current limits**, **$10 total** and red, confirmed
+**Uncapped**. For a cost-stopped standalone root, **Review cost override** offers
+**$10 more** (all-attempt spend plus $10) or confirmed Uncapped. These are per-run
+choices, never saved defaults or batch settings. Uncapped still has a finite
+reservation envelope (remaining provider calls × maximum per-call reservation),
+and must be confirmed again for Restore or every branch mode. See [funding controls](run-recovery.md#funding-controls)
+for exact accounting, effective bounds, preview eligibility, API and CLI consent.

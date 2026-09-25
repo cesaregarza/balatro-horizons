@@ -112,7 +112,8 @@ def branch_capability(request: Request, token=Depends(require_session)):
         )
         restore_knowledge(request.app.state.store, checkpoint)
         restore_protocol(request.app.state.store, checkpoint)
-        return {"enabled": True, "reason": None}
+        return {"enabled": True, "reason": None, "requires_uncapped_confirmation":
+                "uncapped" in (config.budgets.max_episode_cost_usd, config.budgets.max_batch_cost_usd)}
     except (ValueError, OSError):
         return {
             "enabled": False,
@@ -147,10 +148,22 @@ def verify(request: Request, data: VerifyInput):
         )
 
 
+@router.get("/api/operator/episodes/{eid}/continue-budget", dependencies=[Depends(require_operator)])
+def budget_preview(request: Request, eid: str):
+    from balatro_horizons.workbench.budget_continuation import budget_preview
+
+    state = request.app.state
+    return budget_preview(state.runs, eid, paid_enabled=state.config.budgets.paid_calls_enabled)
+
+
 @router.post("/api/operator/episodes/{eid}/continue-budget", dependencies=[Depends(require_operator)])
 def continue_budget(request: Request, eid: str, data: BudgetContinuationInput):
+    if not request.app.state.config.budgets.paid_calls_enabled:
+        raise ValueError("PAID_EXECUTION_NOT_AUTHORIZED")
     return {"episode_id": request.app.state.runs.continue_budget(
         eid, data.combined_cap_usd, expected_head=data.parent_terminal_hash,
+        additional_cost=data.additional_cost_usd, expected_plan_hash=data.plan_hash,
+        accept_compatible_update=data.accept_compatible_update,
     )}
 
 
@@ -159,6 +172,13 @@ def branch(request: Request, data: BranchInput):
     state = request.app.state
     parent = state.store.manifest(data.episode_id, True)
     config = state.config.model_validate(parent.get("config", state.config.model_dump()))
+    agent = state.store.manifest(data.episode_id)["agent"]
+    if (data.mode != "human_takeover" and agent not in ("heuristic", "random_legal", "human")
+            and not state.config.budgets.paid_calls_enabled):
+        raise ValueError("PAID_EXECUTION_NOT_AUTHORIZED")
+    if ("uncapped" in (config.budgets.max_episode_cost_usd, config.budgets.max_batch_cost_usd)
+            and not data.confirm_uncapped):
+        raise ValueError("UNCAPPED_CONFIRMATION_REQUIRED")
     return {
         "episode_id": state.runs.branch(
             config, data.episode_id, data.decision, data.mode, data.actions

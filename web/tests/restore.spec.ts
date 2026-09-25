@@ -145,3 +145,28 @@ test("rapid duplicate clicks send only one restore request", async ({ page }) =>
   await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
   expect(posts).toHaveLength(1);
 });
+
+test("uncapped restore requires a fresh confirmation and sends its flag only after acceptance", async ({ page }) => {
+  const preview = available();
+  preview.plan!.limits = { max_episode_cost_usd: "uncapped", max_batch_cost_usd: 2 };
+  const { posts } = await app(page, preview);
+  await page.getByRole("button", { name: "Restore run" }).click();
+  await expect(page.getByText("Uncapped", { exact: true })).toBeVisible();
+  await page.getByLabel(/I authorize the paid continuation/).check();
+  page.once("dialog", (dialog) => {
+    expect(dialog.message()).toMatch(/^Are you sure\?/);
+    expect(dialog.message()).toContain("campaign ceiling $2.00 still applies");
+    expect(dialog.message()).not.toContain("no dollar ceiling");
+    void dialog.dismiss();
+  });
+  await page.getByRole("button", { name: "Restore and continue" }).click();
+  expect(posts).toEqual([]);
+
+  page.once("dialog", (dialog) => { void dialog.accept(); });
+  await page.getByRole("button", { name: "Restore and continue" }).click();
+  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
+  expect(posts[0]?.body).toEqual({
+    parent_head: parent, plan_hash: planHash, authorize_paid: true,
+    accept_compatible_update: false, confirm_uncapped: true,
+  });
+});

@@ -46,6 +46,8 @@ def test_package_budget_verify_keeps_probe_separate(harness, monkeypatch, capsys
     ["--start"], ["--combined-cap-usd", "1"],
     ["--start", "--combined-cap-usd", "nan"],
     ["--start", "--combined-cap-usd", "-1"],
+    ["--start", "--combined-cap-usd", "1"],
+    ["--start", "--combined-cap-usd", "1e300", "--authorize-paid"],
 ])
 def test_package_budget_requires_explicit_finite_funding(monkeypatch, capsys, flags):
     request = Mock(side_effect=AssertionError("invalid funding must not reach worker"))
@@ -55,14 +57,17 @@ def test_package_budget_requires_explicit_finite_funding(monkeypatch, capsys, fl
     request.assert_not_called()
 
 
-def test_package_budget_start_posts_cap_and_parent_head(harness, monkeypatch, capsys):
+@pytest.mark.parametrize("accept_update", [False, True])
+def test_package_budget_start_posts_cap_and_parent_head(harness, monkeypatch, capsys, accept_update):
     eid, terminal, _, _ = stopped(harness)
     request = Mock(return_value={"episode_id": "c" * 32})
     monkeypatch.setattr(continue_budget, "operator_request", request)
+    flags = ["--accept-compatible-update"] if accept_update else []
     assert main(["continue-budget", eid, "--data-dir", str(harness.store.root),
-                 "--start", "--combined-cap-usd", "1"]) == 0
+                 "--start", "--combined-cap-usd", "1", "--authorize-paid", *flags]) == 0
     request.assert_called_once_with(f"/operator/episodes/{eid}/continue-budget", "POST", {
         "combined_cap_usd": 1.0, "parent_terminal_hash": terminal["journal_head"],
+        "authorize_paid": True, "accept_compatible_update": accept_update,
     })
     assert json.loads(capsys.readouterr().out) == {"episode_id": "c" * 32}
 
@@ -85,8 +90,8 @@ def test_documented_workbench_route_counts(tmp_path):
             for method in methods if method in {"get", "post", "put", "patch", "delete"}
         })
     off, on = routes
-    assert len(off) == 24 and len(on) == 43
-    assert off < on and len(on - off) == 19
+    assert len(off) == 24 and len(on) == 44
+    assert off < on and len(on - off) == 20
     assert ("/api/operator/episodes/{eid}/continue-budget", "post") in on - off
     assert {("/api/operator/episodes/{eid}/restore", method) for method in ("get", "post")} <= on - off
 

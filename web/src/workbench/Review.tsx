@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { advanceReview, branchCapability, createBranch, listReviewAnnotations, type Action, type View } from "../api/client";
+import { useEffect, useRef, useState } from "react";
+import { advanceReview, branchCapability, createBranch, listReviewAnnotations, type Action, type BranchCapability, type BranchInput, type View } from "../api/client";
 import { Board } from "../Board";
 import { ReasoningSummaries } from "./ReasoningSummaries";
 import { Trajectory } from "./Trajectory";
@@ -10,8 +10,9 @@ export function Review({ token, initial, onBranch, onExplore }: { token: string;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [branching, setBranching] = useState(false);
-  const [capability, setCapability] = useState<{ enabled: boolean; reason: string | null }>({ enabled: false, reason: null });
+  const [capability, setCapability] = useState<BranchCapability>({ enabled: false, reason: null, requires_uncapped_confirmation: false });
   const [annotations, setAnnotations] = useState<any[]>([]);
+  const branchLock = useRef(false);
 
   useEffect(() => {
     branchCapability(token).then(setCapability).catch(() => {});
@@ -21,9 +22,26 @@ export function Review({ token, initial, onBranch, onExplore }: { token: string;
     setBusy(true); setError("");
     try { await task(); } catch (caught) { setError(String(caught)); } finally { setBusy(false); }
   }
-  async function branch(mode: string, actions: Action[] = []) {
-    await run(async () => { const result = await createBranch({ episode_id: view.episode_id, decision: view.decision, mode, actions }); onBranch(result.episode_id); });
+  async function branch(mode: BranchInput["mode"], actions: Action[] = []) {
+    if (!capability.enabled || busy || branchLock.current) return;
+    if (capability.requires_uncapped_confirmation && !window.confirm("Are you sure? This branch inherits an Uncapped dollar limit. Spending can keep growing. Call and action limits still apply.")) return;
+    branchLock.current = true;
+    try {
+      await run(async () => {
+        const result = await createBranch({
+          episode_id: view.episode_id,
+          decision: view.decision,
+          mode,
+          actions,
+          ...(capability.requires_uncapped_confirmation ? { confirm_uncapped: true } : {}),
+        });
+        onBranch(result.episode_id);
+      });
+    } finally {
+      branchLock.current = false;
+    }
   }
+  const branchControlsDisabled = busy || !capability.enabled || branchLock.current;
   const recoveryMethod = view.evidence_kind === "NATIVE"
     ? "The recorded prefix replays once in the same game process."
     : "The recorded snapshot is restored.";
@@ -44,6 +62,10 @@ export function Review({ token, initial, onBranch, onExplore }: { token: string;
     <div className="review-footer"><button className="primary" disabled={busy || (view.stage === "transition" && !view.can_advance)} onClick={() => run(async () => setView(await advanceReview(token)))}>{view.stage === "observation" ? "Reveal agent action" : view.stage === "action" ? "Reveal consequences" : "Next decision"}</button><button disabled={busy || !capability.enabled} onClick={() => setBranching(!branching)}>Explore an alternative</button></div>
     <p className="muted">Branch readiness checks the recorded replay or restore inputs, journal, and protocol. When you branch, {recoveryMethod} Public and private state is checked before continuation proceeds. A mismatch stops before any provider call.</p>
     {!capability.enabled && <p className="muted">{capability.reason}</p>}
-    {branching && <section className="panel"><h3>Branch from this decision</h3><p>The original run stays unchanged. {recoveryMethod} Public and private state is checked before continuation or any provider call. Choose one alternative action below, or resume control.</p><div className="actions"><button onClick={() => branch("agent_continue")}>Resume agent</button><button onClick={() => branch("human_takeover")}>Take over</button><button onClick={() => branch("short_human_sequence")}>Play 3 actions, then resume agent</button></div><Board observation={view.observation} onAction={(action) => branch("single_action_override", [action])} /></section>}
+    {branching && <section className="panel"><h3>Branch from this decision</h3><p>The original run stays unchanged. {recoveryMethod} Public and private state is checked before continuation or any provider call. Choose one alternative action below, or resume control.</p>
+      {capability.requires_uncapped_confirmation && <p role="alert" style={{ color: "#f07882", fontWeight: 700 }}>Uncapped cost limit applies to every branch mode, including human takeover and action overrides. Spending can keep growing; call and action limits still apply.</p>}
+      <div className="actions"><button disabled={branchControlsDisabled} onClick={() => void branch("agent_continue")}>Resume agent</button><button disabled={branchControlsDisabled} onClick={() => void branch("human_takeover")}>Take over</button><button disabled={branchControlsDisabled} onClick={() => void branch("short_human_sequence")}>Play 3 actions, then resume agent</button></div>
+      <fieldset disabled={branchControlsDisabled} aria-label="Branch action overrides" style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}><Board observation={view.observation} onAction={(action) => void branch("single_action_override", [action])} /></fieldset>
+    </section>}
   </div>;
 }

@@ -76,6 +76,37 @@ SOURCE_ADDITIONS = {
     "5728d051aa0f7eb7498be3c1c0d880c77e718e0a7c8274ae2ee50e3a436fb87c": RESTORE_ADDITIONS,
 }
 
+# Funding controls upgrade only the exact deployed 16x release, 8807caf.
+# Keep the earlier 1x catalogue intact; it does not authorize runtime migration.
+FUNDING_SOURCE = "2f56a4abf969435330ba6decf8569a7749cdb463327ee40343b3634e359324aa"
+FUNDING_UPGRADES = {
+    "config.py": (
+        "079b970a0b8634c058f04736626c5e51a062d02084f90fc36ca369dd034d4f6e",
+        "bdc41fd6d5137ce7c0ecfe5c954a98d69ae6bea74fe66d88f827e6f95799f2bd"),
+    "cost_limits.py": (None, "04b7379bfd8adece1f41b1020ace043b5ebd23c4d71cd1691122b3ad911a10b2"),
+    "evidence/provenance.py": (
+        "924baa856c71e7b098a39ed290f28ee069d64e8b306f6a63b57f7dc081dfeadc",
+        "36cb2ee8347bd6cfa0655b3246d543089fe58b0e88c77a82e880d8bf74997025"),
+    "harness/context/freeze.py": (
+        "35a119f42a3ba274532b15d39b71cb5cd6f05d4cd5fbd84220b70bde8071cbb3",
+        "05b657ce9626e7b9f8a752c955023b4d15e5be761c75f45d35c488883c818e02"),
+    "harness/money.py": (
+        "32432ea9c53b87a47e98144bfcc5d581ef8eedd21e43400294b049f001a05416",
+        "2861cb6ce6aa13b320ed54ad13e715227f15b45a71e3c47c939c6b39fd2967c0"),
+    "service.py": (
+        "a8b25b681d849fcbb20145e97d3bf6d46e8b208055c9bbf3658bc416f65672e6",
+        "8706bbf0bfb55c645354cb3e32ec98d5cf787c4e29ce654c11b310bea9d1cbc3"),
+    "service_restore.py": (
+        "2eae24558ea764c6dc7d71538514c149a67875ff09fb7195b1e981f949aa0038",
+        "47cbf889b942ab201f2c670fe8a815357bd709b240be3ad4508ebe7cb5c29583"),
+    "workbench/budget_continuation.py": (
+        "22f30ca6762a1479739e1ba0a9c9ebcc877bfea6854fcc616d88b734102f0956",
+        "5a86ae2dc42b78a358d707f555fe8d010ab1ecf811fb1faca97da4c26c76d02d"),
+    "workbench/restoration.py": (
+        "4c8ed24f20172df90c8f2f0c15d700dddf660e6c80f33c1601d954da7bb2555c",
+        "03f55cca6d58e688f522f7742533777ac1fef28dd523587aaad7b306a843aa60"),
+}
+
 
 def upgrade_historical_manifest(manifest, source_hash):
     result = dict(manifest)
@@ -86,4 +117,9 @@ def upgrade_historical_manifest(manifest, source_hash):
             result[name] = accepted
     for path, accepted in SOURCE_ADDITIONS.get(source_hash, {}).items():
         result.setdefault(prefix + path, accepted)
+    if source_hash == FUNDING_SOURCE:
+        for path, (previous, accepted) in FUNDING_UPGRADES.items():
+            name = prefix + path
+            if result.get(name) == previous:
+                result[name] = accepted
     return result

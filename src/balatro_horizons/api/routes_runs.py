@@ -27,6 +27,12 @@ def start_run(request: Request, data: RunInput):
     chosen = state.config.model_copy(deep=True)
     if data.preset == "smoke":
         chosen.environment.stake = "WHITE"
+    if data.cost_override is not None:
+        chosen.budgets.max_episode_cost_usd = data.cost_override
+        chosen.budgets.max_batch_cost_usd = data.cost_override
+    if "uncapped" in (chosen.budgets.max_episode_cost_usd, chosen.budgets.max_batch_cost_usd):
+        if not data.confirm_uncapped:
+            raise ValueError("UNCAPPED_CONFIRMATION_REQUIRED")
     return {
         "episode_id": state.runs.start(
             chosen,

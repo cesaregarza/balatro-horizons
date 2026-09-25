@@ -6,6 +6,7 @@ import threading
 from contextlib import contextmanager
 
 from balatro_horizons.config import ROOT
+from balatro_horizons.cost_limits import require_capped_defaults
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeGame
 from balatro_horizons.game.windows_context import load_session
@@ -218,8 +219,12 @@ class RunService:
             )
             return eid
 
-    def continue_budget(self, parent, combined_cap, *, expected_head):
-        from balatro_horizons.workbench.budget_continuation import prepare_budget_continuation
+    def continue_budget(self, parent, combined_cap, *, expected_head, additional_cost=None,
+                        expected_plan_hash=None, accept_compatible_update=False):
+        from balatro_horizons.workbench.budget_continuation import (
+            budget_offer,
+            prepare_budget_continuation,
+        )
 
         with self.admission():
             # This lock is shared across API/service processes. It spans the
@@ -227,12 +232,27 @@ class RunService:
             # same predecessor hash before either child becomes visible.
             admission = self.store.episode_path(parent, True) / "budget-admission.lock"
             with locked(admission):
+                if additional_cost is not None or expected_plan_hash is not None:
+                    offer = budget_offer(self.store, parent)
+                    if (offer["plan_hash"] != expected_plan_hash
+                            or offer["parent_terminal_hash"] != expected_head):
+                        raise ValueError("BUDGET_PLAN_CHANGED")
+                    if additional_cost is not None:
+                        if type(additional_cost) is not int or additional_cost != 10:
+                            raise ValueError("INVALID_BUDGET_INCREMENT")
+                        combined_cap = offer["new_cap_usd"]
+                        if combined_cap != offer["accounted_usd"] + 10:
+                            raise ValueError("BUDGET_INCREMENT_MISMATCH")
                 if self.store.manifest(parent)["evidence_kind"] != "SYNTHETIC_TEST":
                     load_session()
                 plan = prepare_budget_continuation(
                     self.store, parent, combined_cap, expected_head=expected_head
                 )
+                if additional_cost is not None and combined_cap != plan["resume"]["cost"] + 10:
+                    raise ValueError("BUDGET_INCREMENT_MISMATCH")
                 config, manifest = plan["config"], plan["manifest"]
+                if plan["compatibility"] and not accept_compatible_update:
+                    raise ValueError("RESTORE_COMPATIBILITY_NOT_ACCEPTED")
                 amount = self.validate_policy(config, manifest["agent"])
                 if amount is None:
                     raise ValueError("BUDGET_EXTENSION_REQUIRES_PAID_MODEL")
@@ -242,6 +262,11 @@ class RunService:
                     raise ValueError("PROVIDER_CALL_LIMIT")
                 offline = manifest["evidence_kind"] == "SYNTHETIC_TEST"
                 eid = self.store.create(manifest, plan["private"])
+                if plan["compatibility"]:
+                    self.store.private_json(eid, "source-compatibility.json", plan["compatibility"])
+                    plan["resume"]["source_compatibility"] = {
+                        "episode_id": eid, "hash": digest(plan["compatibility"]),
+                    }
                 self.stop.clear()
                 self.error = None
                 self.review.expose(eid, "operator_budget_extension", model_identity_seen=True)
@@ -263,6 +288,7 @@ class RunService:
                 load_session()
 
     def _freeze_batch(self, config, bid, *, offline):
+        require_capped_defaults(config.budgets.max_episode_cost_usd, config.budgets.max_batch_cost_usd)
         plan = json.loads((self.store.root / "batches" / bid / "plan.json").read_text())
         private = json.loads((self.store.root / "batches" / bid / "private.json").read_text())
         if plan["config_hash"] != digest(config.model_dump()):

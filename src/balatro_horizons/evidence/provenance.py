@@ -7,6 +7,7 @@ from balatro_horizons.storage.journal import digest
 
 IMPLEMENTATION_FILES = (
     "config.py",
+    "cost_limits.py",
     "contracts.py",
     "service.py",
     "service_execution.py",

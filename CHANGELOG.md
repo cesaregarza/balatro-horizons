@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-24 — Explicit per-run cost overrides
+
+- Add Current limits, $10 total and red Uncapped choices for new model runs.
+  Uncapped requires an explicit “Are you sure?” confirmation. These choices
+  never change saved defaults or enable paid execution.
+- Add a read-only funding preview for cost-stopped standalone roots. $10 more
+  means validated all-attempt spend plus $10, including retained reservations;
+  Uncapped removes only the dollar ceiling. Stale previews refuse admission.
+- Preserve the original run and create an unscored budget-continuation child
+  with shared accounting and inherited call/action limits. Reconfirm Uncapped
+  when restoring an unfinished uncapped run. Missing caps still refuse paid work.
+- Add an exact-source compatibility upgrade from the deployed 16× release
+  `8807caf`, with explicit acceptance and a private child proof. Native bytes,
+  single checked replay and historical protocol records remain unchanged.
+- Cover funding, confirmation, stale attempts, frozen-source mutations and
+  browser guards with offline tests. No deployment, Windows access or paid calls.
+- Reconfirm inherited Uncapped limits on every branch mode and enforce current
+  paid enablement for model branches. Refuse uncapped saved/YAML/batch defaults.
+- Require explicit paid consent for every funding POST and CLI start. Bound
+  numeric caps to $1,000,000, preserving historical integer-to-float serialization.
+- Check $10 eligibility separately, refuse empty child journals by name, and
+  pin exact retained-reservation accounting plus the full migration delta.
+
 ## 2026-09-24 — Visible 16× game speed
 
 - Raise the dedicated launcher's game-speed multiplier from 1× to 16× without

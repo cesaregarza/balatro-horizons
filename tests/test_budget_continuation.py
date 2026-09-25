@@ -323,13 +323,17 @@ def test_operator_token_and_finite_explicit_cap_required(store, config):
     config.workbench_enabled = True
     with TestClient(create_app(store.root, config)) as client:
         route = "/api/operator/episodes/" + "f" * 32 + "/continue-budget"
-        body = {"combined_cap_usd": 10, "parent_terminal_hash": "a" * 64}
+        body = {"combined_cap_usd": 10, "parent_terminal_hash": "a" * 64, "authorize_paid": True}
         assert client.post(route, json=body).status_code == 403
         token = client.get("/api/bootstrap").json()["operator_token"]
         headers = {"X-BH-Operator": token}
         for invalid in (True, "10", 0, -1):
             assert client.post(route, json={**body, "combined_cap_usd": invalid},
                                headers=headers).status_code == 422
+        refused = client.post(route, json=body, headers=headers)
+        assert refused.status_code == 400
+        assert refused.json()["error"] == "PAID_EXECUTION_NOT_AUTHORIZED"
+        client.app.state.config.budgets.paid_calls_enabled = True
         assert client.post(route, json=body, headers=headers).status_code == 404
 
 

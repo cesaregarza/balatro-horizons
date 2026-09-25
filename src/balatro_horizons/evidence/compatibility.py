@@ -105,6 +105,9 @@ def read_compatibility(store, checkpoint):
 
 def require_protocol_compatibility(store, checkpoint, bundle):
     record = read_compatibility(store, checkpoint)
-    if (record is None or record.get("protocol_hash") != digest(bundle)
+    accepted = {record.get("protocol_hash")} if record else set()
+    if record and bundle.get("budget_extension"):
+        accepted.add(record.get("budget_protocol_hash"))
+    if (record is None or digest(bundle) not in accepted
             or bundle["implementation_hash"] not in record["source_revisions"]):
         raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")

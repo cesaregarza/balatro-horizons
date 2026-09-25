@@ -108,14 +108,49 @@ export type RestorePlan = {
   requires_paid_authorization: boolean;
   source_compatibility: "same_source" | "compatible_update";
   costs: { accounted_usd: number; remaining_episode_usd: number | null; remaining_batch_usd: number | null };
-  limits: { max_episode_cost_usd: number | null; max_batch_cost_usd: number | null };
+  limits: { max_episode_cost_usd: number | "uncapped" | null; max_batch_cost_usd: number | "uncapped" | null };
   launches: { verification: 0; continuation: 1 };
 };
 export type RestorePreview = { episode_id: string; available: boolean; reason: string | null; plan: RestorePlan | null };
+export type BudgetContinuationPlan = {
+  parent_terminal_hash: string;
+  plan_hash: string;
+  decision: number;
+  accounted_usd: number;
+  additional_usd: 10;
+  additional_available: boolean;
+  additional_reason: string | null;
+  new_cap_usd: number;
+  source_compatibility: "same_source" | "compatible_update";
+};
+export type BudgetContinuationPreview = {
+  episode_id: string;
+  available: boolean;
+  reason: string | null;
+  plan: BudgetContinuationPlan | null;
+};
+export type BudgetContinuationInput =
+  | {
+      parent_terminal_hash: string;
+      plan_hash: string;
+      additional_cost_usd: 10;
+      authorize_paid: true;
+      accept_compatible_update: boolean;
+    }
+  | {
+      parent_terminal_hash: string;
+      plan_hash: string;
+      combined_cap_usd: "uncapped";
+      authorize_paid: true;
+      confirm_uncapped: true;
+      accept_compatible_update: boolean;
+    };
 export type DecisionLedger = {
   source_journal_head: string | null;
   manifest: {
     episode_id: string;
+    parent_episode_id?: string | null;
+    batch_id?: string | null;
     agent: string;
     evidence_kind: string;
     evaluation_eligible: boolean;
@@ -186,6 +221,8 @@ export type RunInput = {
   offline: boolean;
   preset: string;
   seed: string | null;
+  cost_override?: 10 | "uncapped" | null;
+  confirm_uncapped?: boolean;
 };
 export type ReviewOpenInput = {
   episode_id: string;
@@ -232,7 +269,9 @@ async function request<T>(path: string, method = "GET", body?: unknown, reviewTo
 export const bootstrap = () => request<Bootstrap>("/bootstrap");
 export const listEpisodes = () => request<Episode[]>("/episodes");
 export const restorePreview = (episodeId: string) => request<RestorePreview>("/operator/episodes/" + episodeId + "/restore");
-export const restoreRun = (episodeId: string, input: { parent_head: string; plan_hash: string; authorize_paid: boolean; accept_compatible_update: boolean }) => request<{ episode_id: string }>("/operator/episodes/" + episodeId + "/restore", "POST", input);
+export const restoreRun = (episodeId: string, input: { parent_head: string; plan_hash: string; authorize_paid: boolean; accept_compatible_update: boolean; confirm_uncapped?: boolean }) => request<{ episode_id: string }>("/operator/episodes/" + episodeId + "/restore", "POST", input);
+export const budgetContinuationPreview = (episodeId: string) => request<BudgetContinuationPreview>("/operator/episodes/" + episodeId + "/continue-budget");
+export const continueBudget = (episodeId: string, input: BudgetContinuationInput) => request<{ episode_id: string }>("/operator/episodes/" + episodeId + "/continue-budget", "POST", input);
 export const startRun = (input: RunInput) => request<{ episode_id: string }>("/runs", "POST", input);
 export const stopRun = () => request<{ stop_requested: boolean }>("/stop", "POST", {});
 export const operatorStatus = () => request<any>("/operator/status");
@@ -250,8 +289,16 @@ export const listAnnotations = (token: string, decision?: number) => request<any
 export const saveAnnotation = (token: string, input: AnnotationInput) => request<any>(explorerPath("/annotations"), "POST", input, token);
 export const listReviewAnnotations = (token: string, decision?: number) => request<any[]>(`/review/annotations${decision === undefined ? "" : `?decision=${decision}`}`, "GET", undefined, token);
 export const saveReviewAnnotation = (token: string, input: AnnotationInput) => request<any>("/review/annotations", "POST", input, token);
-export const branchCapability = (token: string) => request<{ enabled: boolean; reason: string | null }>("/review/branch-capability", "GET", undefined, token);
-export const createBranch = (input: unknown) => request<{ episode_id: string }>("/branches", "POST", input);
+export type BranchCapability = { enabled: boolean; reason: string | null; requires_uncapped_confirmation: boolean };
+export type BranchInput = {
+  episode_id: string;
+  decision: number;
+  mode: "agent_continue" | "human_takeover" | "short_human_sequence" | "single_action_override";
+  actions: Action[];
+  confirm_uncapped?: boolean;
+};
+export const branchCapability = (token: string) => request<BranchCapability>("/review/branch-capability", "GET", undefined, token);
+export const createBranch = (input: BranchInput) => request<{ episode_id: string }>("/branches", "POST", input);
 export const compareBranch = (episodeId: string) => request<any>(`/operator/branches/${episodeId}/comparison`);
 export const humanStatus = () => request<any>("/operator/human");
 export const humanAction = (input: unknown) => request<{ queued: boolean }>("/operator/human", "POST", input);

@@ -51,7 +51,10 @@ def load_runtime_config(store, config, workbench_enabled):
     cfg = config or load_config()
     settings_path = store.root / "operator-settings.json"
     if settings_path.exists():
+        from balatro_horizons.cost_limits import require_capped_defaults
+
         cfg = Config.model_validate(json.loads(settings_path.read_text()))
+        require_capped_defaults(cfg.budgets.max_episode_cost_usd, cfg.budgets.max_batch_cost_usd)
     if workbench_enabled is not None:
         cfg = cfg.model_copy(update={"workbench_enabled": workbench_enabled})
     return cfg, settings_path
