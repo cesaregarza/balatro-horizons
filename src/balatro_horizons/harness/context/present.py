@@ -3,10 +3,7 @@
 import json
 from copy import deepcopy
 
-from balatro_horizons.config import (
-    AUTOMATIC_PUBLIC_EVENT_COUNT,
-    EVENT_SUMMARY_CHARACTERS,
-)
+from balatro_horizons.config import AUTOMATIC_PUBLIC_EVENT_COUNT
 from balatro_horizons.config import HELPER_PAGE_BYTES as PAGE_BYTES
 from balatro_horizons.harness.tool_interface import INSPECT_SECTIONS, tool
 
@@ -77,10 +74,6 @@ def focused_observation(observation):
     if view["phase"] != "SELECTING_HAND":
         state.pop("hand_levels")
         view["presentation"]["deferred_sections"].append("hand_levels")
-    for event in view["recent_public_events"]:
-        if len(event["summary"]) > EVENT_SUMMARY_CHARACTERS:
-            event["summary"] = event["summary"][:EVENT_SUMMARY_CHARACTERS]
-            event["truncated"] = True
     return view, omitted
 
 

@@ -3,7 +3,18 @@
 import json
 from copy import deepcopy
 
+from balatro_horizons.config import EVENT_SUMMARY_CHARACTERS
+
 LAST_ACTION_REF = "/observation/last_action"
+
+
+def truncate_summaries(view):
+    """Bound only default delivery, after complete summaries have integer IDs."""
+    for event in view["observation"].get("recent_public_events", []):
+        if len(event["summary"]) > EVENT_SUMMARY_CHARACTERS:
+            event["summary"] = event["summary"][:EVENT_SUMMARY_CHARACTERS]
+            event["truncated"] = True
+    return view
 
 
 def same_value(left, right):

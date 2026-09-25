@@ -4,7 +4,7 @@
 
 - Replace opaque public object handles and episode UUIDs in model input/tool
   arguments with stable integer references resolved by the backend. Preserve
-  canonical journals, checkpoints, privacy boundaries and stale-action checks.
+  canonical observation/action journals, privacy boundaries and stale-action checks.
 - Make `tools_v8` the single active harness interface. V7 runs retain their
   frozen protocol and require their retained executor; no version switch or migration.
 - Remove model-facing audit hashes, event UUIDs and notebook checksums; report
@@ -18,6 +18,10 @@
 - Project inspection/history receipts before UTF-8 pagination and reconstruct
   reference tables from the selected public prefix on restoration. Keep notes,
   effects, counters, gameplay facts and provider continuation artifacts intact.
+- Project complete recent-event summaries before truncation. Share projected
+  helper receipts across human and provider policies, including checkpoint memory;
+  existing journal/checkpoint bytes are never rewritten. Pin feedback projection
+  for both providers and resolve integer arguments with constant-time lookup.
 - Freeze the new representation without rewriting older protocols. Pin existing
   source migrations to their reviewed release and refuse cross-format Restore;
   older runs require their retained executor. Native interface bytes are unchanged.

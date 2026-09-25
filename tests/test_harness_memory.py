@@ -575,7 +575,9 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
     }
     assert grand.contexts[0]["run_notebook"]["revision"] == snapshot["run_notebook"]["revision"]
     assert "FUTURE_CHILD" not in json.dumps(dict(grand.contexts[0]))
-    assert grand.exchanges[1][-1]["result"]["references"]["action"]["episode_id"] == root
+    reference = grand.exchanges[1][-1]["result"]["references"]["action"]["episode_id"]
+    assert type(reference) is int
+    assert grand.contexts[0].model_references.arguments({"episode_id": reference}) == {"episode_id": root}
     corrupt = deepcopy(snapshot["working_memory"])
     corrupt["frames"][0]["helpers"][0]["result"] = {"result": "999"}
     with pytest.raises(ValueError, match="WORKING_MEMORY_SNAPSHOT_MISMATCH"):

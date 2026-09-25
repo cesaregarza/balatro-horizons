@@ -167,8 +167,7 @@ class DecisionRuntimeMixin(ProviderRuntimeMixin):
                     self.history_prefix + self.store.events(self.eid),
                     self.rules,
                     observation=observation,
-                    references=(self.model_references
-                                if isinstance(self.active_policy, ProviderPolicy) else None),
+                    references=self.model_references,
                 )
             except (ValueError, ArithmeticError, SyntaxError):
                 result = {"error": "INVALID_HELPER_REQUEST"}

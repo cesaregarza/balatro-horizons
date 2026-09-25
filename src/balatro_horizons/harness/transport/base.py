@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 from balatro_horizons.config import PROVIDER_TIMEOUT_SECONDS
-from balatro_horizons.harness.context.model_view import compact_context
+from balatro_horizons.harness.context.model_view import compact_context, truncate_summaries
 from balatro_horizons.harness.contract import Context, Exchanges, RawOperation
 from balatro_horizons.harness.input_limits import InputCounter, check_request_bytes
 from balatro_horizons.harness.tool_interface import decode_tool
@@ -79,7 +79,8 @@ def canonical_messages(ctx):
     )
     if "previous_action_outcome" in ctx:
         content["previous_action_outcome"] = ctx.previous_action_outcome
-    return [{"role": "user", "content": encode(ctx.model_references.project(compact_context(content)))}]
+    view = ctx.model_references.project(compact_context(content))
+    return [{"role": "user", "content": encode(truncate_summaries(view))}]
 
 
 def tool_messages(ctx, exchanges, spec):
@@ -126,6 +127,7 @@ class Transport:
         self.last_request = None
         self.last_response = None
         self.available_tools = set()
+        self.tool_fields = {}
         self.last_tool_call = None
         self.last_provider_turn = None
         self.model_references = None
@@ -136,6 +138,7 @@ class Transport:
 
     def request(self, ctx, exchanges):
         self.available_tools = set(ctx.allowed_tools)
+        self.tool_fields = {tool["name"]: set(tool["parameters"]["properties"]) for tool in ctx.tools}
         self.model_references = ctx.model_references
         self.last_tool_call = None
         body = self.spec.request_body(self, ctx, exchanges)
@@ -293,7 +296,7 @@ class Transport:
         self.last_tool_call = {"name": name, "arguments": arguments}
         try:
             if self.model_references is not None:
-                arguments = self.model_references.arguments(arguments)
+                arguments = self.model_references.arguments(arguments, fields=self.tool_fields.get(name))
             return decode_tool(name, arguments)
         except ValueError as error:
             raise ProtocolFailure(str(error)) from None

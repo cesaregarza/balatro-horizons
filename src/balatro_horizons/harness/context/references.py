@@ -46,17 +46,20 @@ class ModelReferences:
     def __init__(self):
         self.objects = {}
         self.episodes = {}
+        self._object_ids = []
+        self._episode_ids = []
 
     @staticmethod
-    def _index(table, identifier):
+    def _index(table, identifiers, identifier):
         if not isinstance(identifier, str):
             return identifier
         if identifier not in table:
             table[identifier] = len(table) + 1
+            identifiers.append(identifier)
         return table[identifier]
 
     def consume(self, event):
-        self._index(self.episodes, event["episode_id"])
+        self._index(self.episodes, self._episode_ids, event["episode_id"])
         if event["type"] == "observation":
             self.observe(event["payload"])
 
@@ -67,13 +70,13 @@ class ModelReferences:
         if key in VERBATIM_FIELDS:
             return deepcopy(value)
         if key in OBJECT_IDS:
-            return self._index(self.objects, value)
+            return self._index(self.objects, self._object_ids, value)
         if key == "episode_id":
-            return self._index(self.episodes, value)
+            return self._index(self.episodes, self._episode_ids, value)
         if key in OBJECT_LISTS and isinstance(value, list):
-            return [self._index(self.objects, item) for item in value]
+            return [self._index(self.objects, self._object_ids, item) for item in value]
         if key == "path" and isinstance(value, list):
-            return [self._index(self.objects, item) if isinstance(item, str)
+            return [self._index(self.objects, self._object_ids, item) if isinstance(item, str)
                     and HANDLE.fullmatch(item) else item for item in value]
         if key == "summary" and isinstance(value, str):
             return self._summary(value)
@@ -103,29 +106,30 @@ class ModelReferences:
         try:
             parsed = json.loads(value)
         except ValueError:
-            # Harness-authored recent summaries can already be truncated JSON.
-            return HANDLE.sub(lambda m: str(self._index(self.objects, m[0])), value)
+            return value  # Plain text is not a structured reference field.
         return json.dumps(self.project(parsed), ensure_ascii=False, separators=(",", ":"))
 
     @staticmethod
-    def _resolve(table, index):
+    def _resolve(identifiers, index):
         if type(index) is not int or index < 1:
             raise ValueError("INVALID_MODEL_REFERENCE")
-        if index > len(table):
+        if index > len(identifiers):
             raise ValueError("UNKNOWN_MODEL_REFERENCE")
-        return next(identifier for identifier, number in table.items() if number == index)
+        return identifiers[index - 1]
 
-    def arguments(self, arguments):
+    def arguments(self, arguments, *, fields=None):
         if not isinstance(arguments, dict):
             return arguments
         result = deepcopy(arguments)
         for key, value in arguments.items():
+            if fields is not None and key not in fields:
+                continue  # Leave undeclared fields to ordinary schema validation.
             if key in OBJECT_IDS:
-                result[key] = self._resolve(self.objects, value)
+                result[key] = self._resolve(self._object_ids, value)
             elif key in OBJECT_LISTS:
                 if not isinstance(value, list):
                     raise ValueError("INVALID_MODEL_REFERENCE")
-                result[key] = [self._resolve(self.objects, item) for item in value]
+                result[key] = [self._resolve(self._object_ids, item) for item in value]
             elif key == "episode_id" and value is not None:
-                result[key] = self._resolve(self.episodes, value)
+                result[key] = self._resolve(self._episode_ids, value)
         return result

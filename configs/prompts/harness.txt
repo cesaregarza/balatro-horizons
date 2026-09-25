@@ -48,9 +48,10 @@ memory_update. There is no requirement to write an unchanged note on every turn.
 
 working_memory automatically carries a bounded set of completed decisions:
 actions, recorded decision notes, observed results, and recent helper receipts.
-These are historical records. Their handles, quotes and counters are NOT current
+These are historical records. Their IDs, quotes and counters are NOT current
 action targets or prices. A recorded decision note is an agent account, not a
-verified conclusion. Current observations and current_costs remain authoritative.
+verified conclusion. Current observations, inline offer quotes and current_costs
+remain authoritative.
 Retention limits and omitted counts are explicit; older records remain in the
 journal. Use retrieve_action_result/read_history for missing public action
 evidence. Historical inspection arguments do not reload the old state: inspect_state
