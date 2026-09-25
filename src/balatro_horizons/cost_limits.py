@@ -2,13 +2,28 @@
 
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
+
+MAX_FINITE_CAP_USD = 1_000_000
+
+
+def finite_dollars(value):
+    # Bound before converting: enormous integers must refuse, never overflow.
+    if type(value) not in (int, float) or not 0 < value <= MAX_FINITE_CAP_USD:
+        raise ValueError("INVALID_DOLLAR_CAP")
+    return float(value)
+
 
 DollarCap = (
-    Annotated[float, Field(gt=0, allow_inf_nan=False, strict=True)]
-    | Annotated[int, Field(gt=0, strict=True)]
+    Annotated[float, Field(gt=0, le=MAX_FINITE_CAP_USD, allow_inf_nan=False, strict=True),
+              BeforeValidator(finite_dollars)]
     | Literal["uncapped"]
 )
+
+
+def require_capped_defaults(episode, campaign):
+    if "uncapped" in (episode, campaign):
+        raise ValueError("UNCAPPED_REQUIRES_RUN_OVERRIDE")
 
 
 def headroom(cap, spent):

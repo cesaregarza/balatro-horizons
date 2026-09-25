@@ -5,7 +5,7 @@ import re
 from copy import deepcopy
 
 from balatro_horizons.config import Config
-from balatro_horizons.cost_limits import binding_cap, increases_cap
+from balatro_horizons.cost_limits import MAX_FINITE_CAP_USD, binding_cap, increases_cap
 from balatro_horizons.evidence.certification import read_checkpoint
 from balatro_horizons.evidence.compatibility import prepare_compatibility
 from balatro_horizons.evidence.provenance import implementation_fingerprint
@@ -141,6 +141,18 @@ def prepare_budget_continuation(store, parent_id, combined_cap, *, expected_head
     }
 
 
+def _child_heads(store, parent_id):
+    heads = []
+    for item in store.list_episodes():
+        if item["manifest"].get("parent_episode_id") != parent_id:
+            continue
+        events = store.events(item["episode_id"])
+        if not events:
+            raise ValueError("BUDGET_EXTENSION_CHILD_UNRESOLVED")
+        heads.append((item["episode_id"], events[-1]["hash"]))
+    return sorted(heads)
+
+
 def budget_offer(store, parent_id):
     """Bind additional funding to validated all-attempt spending and child heads."""
     events = store.events(parent_id)
@@ -152,9 +164,7 @@ def budget_offer(store, parent_id):
     with locked(path.with_suffix(".lock")):
         entries = json.loads(path.read_text())
         spent, calls = reconcile_shared_ledger(store, parent_id, terminal, entries)
-        children = sorted((item["episode_id"], store.events(item["episode_id"])[-1]["hash"])
-                          for item in store.list_episodes()
-                          if item["manifest"].get("parent_episode_id") == parent_id)
+        children = _child_heads(store, parent_id)
         result = {"parent_terminal_hash": head, "accounted_usd": spent,
                   "additional_usd": 10, "new_cap_usd": spent + 10,
                   "decision": boundary["observation_id"]}
@@ -163,19 +173,39 @@ def budget_offer(store, parent_id):
     return result
 
 
+def _preview_plan(service, parent_id, offer, cap):
+    if cap != "uncapped" and cap > MAX_FINITE_CAP_USD:
+        raise ValueError("BUDGET_INCREMENT_EXCEEDS_CAP_LIMIT")
+    plan = prepare_budget_continuation(
+        service.store, parent_id, cap, expected_head=offer["parent_terminal_hash"],
+    )
+    amount = service.validate_policy(plan["config"], plan["manifest"]["agent"])
+    if amount is None:
+        raise ValueError("BUDGET_EXTENSION_REQUIRES_PAID_MODEL")
+    if not plan["spending"].affordability(amount)[0]:
+        raise ValueError("BUDGET_EXTENSION_BELOW_RESERVATION")
+    if plan["resume"]["calls"] >= plan["config"].budgets.max_provider_calls:
+        raise ValueError("PROVIDER_CALL_LIMIT")
+    return plan
+
+
 def budget_preview(service, parent_id, *, paid_enabled):
     try:
         with service.admission():
             if not paid_enabled:
                 raise ValueError("PAID_EXECUTION_NOT_AUTHORIZED")
             offer = budget_offer(service.store, parent_id)
-            plan = prepare_budget_continuation(
-                service.store, parent_id, "uncapped", expected_head=offer["parent_terminal_hash"],
-            )
-            if service.validate_policy(plan["config"], plan["manifest"]["agent"]) is None:
-                raise ValueError("BUDGET_EXTENSION_REQUIRES_PAID_MODEL")
-            if plan["resume"]["calls"] >= plan["config"].budgets.max_provider_calls:
-                raise ValueError("PROVIDER_CALL_LIMIT")
+            offer.update(additional_available=True, additional_reason=None)
+            try:
+                plan = _preview_plan(service, parent_id, offer, offer["new_cap_usd"])
+            except ValueError as error:
+                if str(error) not in {
+                    "BUDGET_EXTENSION_MUST_INCREASE_CAP", "EPISODE_CAP_BELOW_RESERVATION",
+                    "BUDGET_EXTENSION_BELOW_RESERVATION", "BUDGET_INCREMENT_EXCEEDS_CAP_LIMIT",
+                }:
+                    raise
+                offer.update(additional_available=False, additional_reason=str(error))
+                plan = _preview_plan(service, parent_id, offer, "uncapped")
             offer["source_compatibility"] = "compatible_update" if plan["compatibility"] else "same_source"
             return {"episode_id": parent_id, "available": True, "reason": None, "plan": offer}
     except (OSError, ValueError, KeyError) as error:

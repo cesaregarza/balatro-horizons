@@ -35,6 +35,7 @@ export function BudgetContinuation({ episodeId, onRestored }: { episodeId: strin
   async function submit() {
     const plan = preview?.plan;
     if (!preview?.available || !plan || selection === null || !authorizePaid ||
+        (selection === 10 && !plan.additional_available) ||
         (plan.source_compatibility === "compatible_update" && !acceptUpdate) ||
         error || loading || submitting || submitLock.current) return;
     submitLock.current = true;
@@ -63,6 +64,7 @@ export function BudgetContinuation({ episodeId, onRestored }: { episodeId: strin
   const plan = preview?.plan;
   const canSubmit = Boolean(
     preview?.available && plan && selection !== null && authorizePaid &&
+    (selection !== 10 || plan.additional_available) &&
     (plan.source_compatibility !== "compatible_update" || acceptUpdate) &&
     !error && !loading && !submitting,
   );
@@ -83,10 +85,12 @@ export function BudgetContinuation({ episodeId, onRestored }: { episodeId: strin
         <p>A $10 continuation allowance makes the new total ceiling {dollars.format(plan.new_cap_usd)}.</p>
         <p>This launches 0 preliminary tests and 1 checked restore in the same game instance. The continuation is a separate, unscored child; the original run and research record are unchanged.</p>
         {plan.source_compatibility === "compatible_update" && <p><strong>Compatible code update:</strong> this continuation uses compatible updated code. Historical protocol identity is preserved.</p>}
+        {plan.additional_available === false && <p role="status">Additional $10 unavailable: {plan.additional_reason || "The $10 continuation allowance is not available for this run."}</p>}
         <CostOverrideControls
           value={selection}
           onChange={setSelection}
           disabled={loading || submitting}
+          tenDollarDisabled={plan.additional_available === false}
           showCurrent={false}
           tenDollarLabel="$10 more"
           legend="Additional spend for this continuation"

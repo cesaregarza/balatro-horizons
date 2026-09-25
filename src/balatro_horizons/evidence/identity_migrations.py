@@ -82,8 +82,8 @@ FUNDING_SOURCE = "2f56a4abf969435330ba6decf8569a7749cdb463327ee40343b3634e359324
 FUNDING_UPGRADES = {
     "config.py": (
         "079b970a0b8634c058f04736626c5e51a062d02084f90fc36ca369dd034d4f6e",
-        "fed7844683a135af0af36ff496bab196dcfb71afa61a51888620ef2c97a8e89d"),
-    "cost_limits.py": (None, "50780ffc667f1fe19f8ff9598f4903ef654648958e86d962aaea4587791f8cbc"),
+        "bdc41fd6d5137ce7c0ecfe5c954a98d69ae6bea74fe66d88f827e6f95799f2bd"),
+    "cost_limits.py": (None, "04b7379bfd8adece1f41b1020ace043b5ebd23c4d71cd1691122b3ad911a10b2"),
     "evidence/provenance.py": (
         "924baa856c71e7b098a39ed290f28ee069d64e8b306f6a63b57f7dc081dfeadc",
         "36cb2ee8347bd6cfa0655b3246d543089fe58b0e88c77a82e880d8bf74997025"),
@@ -92,16 +92,16 @@ FUNDING_UPGRADES = {
         "05b657ce9626e7b9f8a752c955023b4d15e5be761c75f45d35c488883c818e02"),
     "harness/money.py": (
         "32432ea9c53b87a47e98144bfcc5d581ef8eedd21e43400294b049f001a05416",
-        "ae2e00d469616a7d360dd7292af23aac8e0cb85cd77b271f0a335409e916c4f8"),
+        "2861cb6ce6aa13b320ed54ad13e715227f15b45a71e3c47c939c6b39fd2967c0"),
     "service.py": (
         "a8b25b681d849fcbb20145e97d3bf6d46e8b208055c9bbf3658bc416f65672e6",
-        "99bfcfe48c5269a76a8205150577854586d4f81116f5964920753241b5554e24"),
+        "8706bbf0bfb55c645354cb3e32ec98d5cf787c4e29ce654c11b310bea9d1cbc3"),
     "service_restore.py": (
         "2eae24558ea764c6dc7d71538514c149a67875ff09fb7195b1e981f949aa0038",
         "47cbf889b942ab201f2c670fe8a815357bd709b240be3ad4508ebe7cb5c29583"),
     "workbench/budget_continuation.py": (
         "22f30ca6762a1479739e1ba0a9c9ebcc877bfea6854fcc616d88b734102f0956",
-        "318eec553a88ec3144d4c1fc55cd6f54cee895b6050b74adc176f4437066d4bc"),
+        "5a86ae2dc42b78a358d707f555fe8d010ab1ecf811fb1faca97da4c26c76d02d"),
     "workbench/restoration.py": (
         "4c8ed24f20172df90c8f2f0c15d700dddf660e6c80f33c1601d954da7bb2555c",
         "03f55cca6d58e688f522f7742533777ac1fef28dd523587aaad7b306a843aa60"),

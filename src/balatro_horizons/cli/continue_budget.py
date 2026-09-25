@@ -39,6 +39,10 @@ def configure_parser(parser):
     mode.add_argument("--verify", action="store_true", help="Optional three-launch diagnostic, not required to start; requires Windows authorization")
     mode.add_argument("--start", action="store_true", help="Start the paid continuation; requires explicit spending authorization")
     parser.add_argument("--combined-cap-usd", type=float)
+    parser.add_argument("--authorize-paid", action="store_true",
+                        help="Explicitly authorize spending for this numeric-cap continuation")
+    parser.add_argument("--accept-compatible-update", action="store_true",
+                        help="Explicitly accept a separately validated source-compatible update")
     parser.set_defaults(operation_handler=run)
 
 
@@ -60,6 +64,8 @@ def run(args):
         if args.start != (args.combined_cap_usd is not None):
             raise ValueError("START_REQUIRES_COMBINED_CAP")
         if args.start:
+            if not args.authorize_paid:
+                raise ValueError("PAID_EXECUTION_NOT_AUTHORIZED")
             validate_caps(args.combined_cap_usd, args.combined_cap_usd)
         store = Store(args.data_dir)
         plan = continuation_plan(store, args.episode_id)
@@ -69,6 +75,8 @@ def run(args):
             result = operator_request(f"/operator/episodes/{args.episode_id}/continue-budget", "POST", {
                 "combined_cap_usd": args.combined_cap_usd,
                 "parent_terminal_hash": plan["parent_terminal_hash"],
+                "authorize_paid": args.authorize_paid,
+                "accept_compatible_update": args.accept_compatible_update,
             })
         else:
             result = plan

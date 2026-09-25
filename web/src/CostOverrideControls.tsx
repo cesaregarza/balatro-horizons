@@ -6,6 +6,7 @@ type Props = {
   value: CostOverride;
   onChange: (value: CostOverride) => void;
   disabled?: boolean;
+  tenDollarDisabled?: boolean;
   defaultLabel?: string;
   tenDollarLabel?: string;
   showCurrent?: boolean;
@@ -17,6 +18,7 @@ export function CostOverrideControls({
   value,
   onChange,
   disabled = false,
+  tenDollarDisabled = false,
   defaultLabel = "Current limits",
   tenDollarLabel = "$10 total",
   showCurrent = true,
@@ -39,7 +41,7 @@ export function CostOverrideControls({
             {defaultLabel}
           </button>
         )}
-        <button type="button" aria-pressed={value === 10} onClick={() => onChange(10)}>
+        <button type="button" disabled={disabled || tenDollarDisabled} aria-pressed={value === 10} onClick={() => onChange(10)}>
           {tenDollarLabel}
         </button>
         <button

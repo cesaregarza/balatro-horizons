@@ -1,14 +1,13 @@
 """Durable reservations, funding stops, and their shared refusal vocabulary."""
 
 import json
-import math
 import os
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from balatro_horizons.cost_limits import DollarCap, headroom
+from balatro_horizons.cost_limits import MAX_FINITE_CAP_USD, DollarCap, headroom
 from balatro_horizons.storage.journal import atomic_json, identifier, locked, now
 
 # Keep refusal classification in one place.  ``campaign`` identifies reasons
@@ -45,8 +44,7 @@ def validate_caps(episode_cap, campaign_cap):
     if any(
         isinstance(cap, bool)
         or not isinstance(cap, (int, float))
-        or not math.isfinite(cap)
-        or cap <= 0
+        or not 0 < cap <= MAX_FINITE_CAP_USD
         for cap in (episode_cap, campaign_cap)
         if cap != "uncapped"
     ):

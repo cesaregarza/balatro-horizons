@@ -4,7 +4,7 @@ const episodeId = "a".repeat(32);
 const parentHash = "b".repeat(64);
 const planHash = "c".repeat(64);
 
-function preview(source: "same_source" | "compatible_update" = "same_source") {
+function preview(source: "same_source" | "compatible_update" = "same_source", additionalAvailable = true, additionalReason: string | null = null) {
   return {
     episode_id: episodeId,
     available: true,
@@ -15,6 +15,8 @@ function preview(source: "same_source" | "compatible_update" = "same_source") {
       decision: 8,
       accounted_usd: 7,
       additional_usd: 10 as const,
+      additional_available: additionalAvailable,
+      additional_reason: additionalReason,
       new_cap_usd: 17,
       source_compatibility: source,
     },
@@ -29,6 +31,8 @@ async function openBudgetStop(page: Page, options: {
   batchId?: string | null;
   parentEpisodeId?: string | null;
   reason?: string;
+  additionalAvailable?: boolean;
+  additionalReason?: string | null;
 } = {}) {
   const posts: unknown[] = [];
   let previews = 0;
@@ -81,7 +85,7 @@ async function openBudgetStop(page: Page, options: {
         return route.fulfill({ json: { episode_id: "d".repeat(32) } });
       }
       previews += 1;
-      return route.fulfill({ json: preview(options.source) });
+      return route.fulfill({ json: preview(options.source, options.additionalAvailable, options.additionalReason) });
     }
     return route.fulfill({ status: 200, json: {} });
   });
@@ -163,6 +167,29 @@ test("compatible source requires separate acceptance", async ({ page }) => {
     authorize_paid: true,
     accept_compatible_update: true,
   });
+});
+
+test("unavailable $10 allowance stays disabled while confirmed Uncapped can proceed", async ({ page }) => {
+  const { posts } = await openBudgetStop(page, {
+    additionalAvailable: false,
+    additionalReason: "No additional room under the finite episode limit.",
+  });
+  await page.getByRole("button", { name: "Review cost override" }).click();
+  await expect(page.getByText("Additional $10 unavailable: No additional room under the finite episode limit.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "$10 more" })).toBeDisabled();
+  page.once("dialog", (dialog) => { void dialog.accept(); });
+  await page.getByRole("button", { name: "Uncapped" }).click();
+  await page.getByLabel(/I authorize the paid continuation/).check();
+  await page.getByRole("button", { name: "Continue uncapped" }).click();
+  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
+  expect(posts).toEqual([{
+    parent_terminal_hash: parentHash,
+    plan_hash: planHash,
+    combined_cap_usd: "uncapped",
+    authorize_paid: true,
+    confirm_uncapped: true,
+    accept_compatible_update: false,
+  }]);
 });
 
 test("stale plan requires refresh and clears selection and authorizations", async ({ page }) => {

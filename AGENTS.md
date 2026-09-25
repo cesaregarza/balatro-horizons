@@ -2,7 +2,13 @@
 
 - Keep all game seeds, raw engine state, native saves, credentials, and private manifests outside the public trace and exports.
 - Offline fake episodes are test evidence only. Never report them as native Balatro results.
-- Do not make paid provider calls without explicit operator authorization and episode and batch cost caps.
+- Do not make paid provider calls without explicit operator authorization and
+  episode and batch cost caps. The only uncapped exception is a separately
+  confirmed per-run Uncapped override, reconfirmed for Restore or branching;
+  it cannot become a saved default or batch setting. Uncapped removes the dollar
+  ceiling, not the provider-call allowance or per-call reservation: the remaining
+  reservation envelope is remaining calls multiplied by the configured maximum
+  per-call reservation. This policy does not authorize an agent to launch paid work.
 - Ordinary production recovery replays the recorded prefix once in the same
   game process and verifies matching public and private state along the replay
   and at its target before continuing or making any provider call. Admission

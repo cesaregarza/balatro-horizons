@@ -6,6 +6,7 @@ import threading
 from contextlib import contextmanager
 
 from balatro_horizons.config import ROOT
+from balatro_horizons.cost_limits import require_capped_defaults
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeGame
 from balatro_horizons.game.windows_context import load_session
@@ -240,11 +241,15 @@ class RunService:
                         if type(additional_cost) is not int or additional_cost != 10:
                             raise ValueError("INVALID_BUDGET_INCREMENT")
                         combined_cap = offer["new_cap_usd"]
+                        if combined_cap != offer["accounted_usd"] + 10:
+                            raise ValueError("BUDGET_INCREMENT_MISMATCH")
                 if self.store.manifest(parent)["evidence_kind"] != "SYNTHETIC_TEST":
                     load_session()
                 plan = prepare_budget_continuation(
                     self.store, parent, combined_cap, expected_head=expected_head
                 )
+                if additional_cost is not None and combined_cap != plan["resume"]["cost"] + 10:
+                    raise ValueError("BUDGET_INCREMENT_MISMATCH")
                 config, manifest = plan["config"], plan["manifest"]
                 if plan["compatibility"] and not accept_compatible_update:
                     raise ValueError("RESTORE_COMPATIBILITY_NOT_ACCEPTED")
@@ -283,6 +288,7 @@ class RunService:
                 load_session()
 
     def _freeze_batch(self, config, bid, *, offline):
+        require_capped_defaults(config.budgets.max_episode_cost_usd, config.budgets.max_batch_cost_usd)
         plan = json.loads((self.store.root / "batches" / bid / "plan.json").read_text())
         private = json.loads((self.store.root / "batches" / bid / "private.json").read_text())
         if plan["config_hash"] != digest(config.model_dump()):

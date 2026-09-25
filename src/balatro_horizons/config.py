@@ -13,7 +13,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from balatro_horizons.cost_limits import DollarCap
+from balatro_horizons.cost_limits import DollarCap, require_capped_defaults
 from balatro_horizons.game.environment import Environment
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -187,6 +187,8 @@ class Config(Options):
 
 
 def load_config(path=None):
-    return Config.model_validate(
+    config = Config.model_validate(
         yaml.safe_load(Path(path or ROOT / "configs/pilot.yaml").read_text())
     )
+    require_capped_defaults(config.budgets.max_episode_cost_usd, config.budgets.max_batch_cost_usd)
+    return config

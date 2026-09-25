@@ -118,6 +118,8 @@ export type BudgetContinuationPlan = {
   decision: number;
   accounted_usd: number;
   additional_usd: 10;
+  additional_available: boolean;
+  additional_reason: string | null;
   new_cap_usd: number;
   source_compatibility: "same_source" | "compatible_update";
 };
@@ -287,8 +289,16 @@ export const listAnnotations = (token: string, decision?: number) => request<any
 export const saveAnnotation = (token: string, input: AnnotationInput) => request<any>(explorerPath("/annotations"), "POST", input, token);
 export const listReviewAnnotations = (token: string, decision?: number) => request<any[]>(`/review/annotations${decision === undefined ? "" : `?decision=${decision}`}`, "GET", undefined, token);
 export const saveReviewAnnotation = (token: string, input: AnnotationInput) => request<any>("/review/annotations", "POST", input, token);
-export const branchCapability = (token: string) => request<{ enabled: boolean; reason: string | null }>("/review/branch-capability", "GET", undefined, token);
-export const createBranch = (input: unknown) => request<{ episode_id: string }>("/branches", "POST", input);
+export type BranchCapability = { enabled: boolean; reason: string | null; requires_uncapped_confirmation: boolean };
+export type BranchInput = {
+  episode_id: string;
+  decision: number;
+  mode: "agent_continue" | "human_takeover" | "short_human_sequence" | "single_action_override";
+  actions: Action[];
+  confirm_uncapped?: boolean;
+};
+export const branchCapability = (token: string) => request<BranchCapability>("/review/branch-capability", "GET", undefined, token);
+export const createBranch = (input: BranchInput) => request<{ episode_id: string }>("/branches", "POST", input);
 export const compareBranch = (episodeId: string) => request<any>(`/operator/branches/${episodeId}/comparison`);
 export const humanStatus = () => request<any>("/operator/human");
 export const humanAction = (input: unknown) => request<{ queued: boolean }>("/operator/human", "POST", input);

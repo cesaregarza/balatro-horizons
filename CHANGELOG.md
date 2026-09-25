@@ -16,6 +16,12 @@
   single checked replay and historical protocol records remain unchanged.
 - Cover funding, confirmation, stale attempts, frozen-source mutations and
   browser guards with offline tests. No deployment, Windows access or paid calls.
+- Reconfirm inherited Uncapped limits on every branch mode and enforce current
+  paid enablement for model branches. Refuse uncapped saved/YAML/batch defaults.
+- Require explicit paid consent for every funding POST and CLI start. Bound
+  numeric caps to $1,000,000, preserving historical integer-to-float serialization.
+- Check $10 eligibility separately, refuse empty child journals by name, and
+  pin exact retained-reservation accounting plus the full migration delta.
 
 ## 2026-09-24 — Visible 16× game speed
 

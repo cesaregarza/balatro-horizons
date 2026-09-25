@@ -21,7 +21,7 @@ from balatro_horizons.harness.money import (
 harness = test_campaign_budget.harness
 
 
-@pytest.mark.parametrize("value", [False, True, 0, -1, float("inf"), float("nan"), "10", "", "Uncapped"])
+@pytest.mark.parametrize("value", [False, True, 0, -1, float("inf"), float("nan"), "10", "", "Uncapped", 10**400, 1e300, 1_000_001])
 def test_only_finite_positive_caps_or_explicit_uncapped_are_valid(value):
     with pytest.raises(ValidationError):
         Limits(max_episode_cost_usd=value)

@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from balatro_horizons.cost_limits import DollarCap
+from balatro_horizons.cost_limits import DollarCap, require_capped_defaults
 
 
 class Input(BaseModel):
@@ -48,6 +48,7 @@ class BranchInput(Input):
         "agent_continue", "single_action_override", "short_human_sequence", "human_takeover"
     ]
     actions: list[dict] = Field(default_factory=list, max_length=20)
+    confirm_uncapped: bool = Field(default=False, strict=True)
 
 
 class PanelInput(Input):
@@ -84,8 +85,10 @@ class BudgetContinuationInput(Input):
     def explicit_funding(self):
         if (self.combined_cap_usd is None) == (self.additional_cost_usd is None):
             raise ValueError("ONE_BUDGET_OVERRIDE_REQUIRED")
+        if not self.authorize_paid:
+            raise ValueError("BUDGET_PLAN_AUTHORIZATION_REQUIRED")
         if self.additional_cost_usd is not None or self.combined_cap_usd == "uncapped":
-            if not self.plan_hash or not self.authorize_paid:
+            if not self.plan_hash:
                 raise ValueError("BUDGET_PLAN_AUTHORIZATION_REQUIRED")
         if self.combined_cap_usd == "uncapped" and not self.confirm_uncapped:
             raise ValueError("UNCAPPED_CONFIRMATION_REQUIRED")
@@ -104,3 +107,9 @@ class SettingsInput(Input):
     skills: Literal["balatro-guide-v1", "none"] = "balatro-guide-v1"
     budgets: dict
     models: dict
+
+    @model_validator(mode="after")
+    def capped_defaults(self):
+        require_capped_defaults(self.budgets.get("max_episode_cost_usd"),
+                                self.budgets.get("max_batch_cost_usd"))
+        return self

@@ -51,6 +51,16 @@ def test_deployed_source_passes_only_explicit_one_way_upgrade(monkeypatch, game_
     compatibility.validate_compatibility(receipt)
 
 
+def test_funding_catalogue_exactly_equals_the_raw_manifest_delta():
+    _, historical = revision_sources(ROOT, DEPLOYED)
+    previous = execution_manifest(historical)
+    current = execution_manifest(source_files(ROOT))
+    changed = {name.removeprefix(PREFIX): (previous.get(name), current.get(name))
+               for name in previous.keys() | current.keys()
+               if previous.get(name) != current.get(name)}
+    assert changed == FUNDING_UPGRADES
+
+
 @pytest.mark.parametrize("path", list(FUNDING_UPGRADES))
 def test_current_execution_mutation_does_not_inherit_funding_approval(monkeypatch, path):
     changed = source_files(ROOT)
