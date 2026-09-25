@@ -7,6 +7,8 @@
   canonical journals, checkpoints, privacy boundaries and stale-action checks.
 - Remove model-facing audit hashes, event UUIDs and notebook checksums; report
   omitted history as a count. Deduplicate shared notebook-edit tool instructions.
+- Resolve human inspector tool labels and quoted prices from the recorded model
+  request, preserving readable integer IDs alongside canonical journal handles.
 - Project inspection/history receipts before UTF-8 pagination and reconstruct
   reference tables from the selected public prefix on restoration. Keep notes,
   effects, counters, gameplay facts and provider continuation artifacts intact.
