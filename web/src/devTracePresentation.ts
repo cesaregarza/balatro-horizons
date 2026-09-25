@@ -156,6 +156,14 @@ export function quotedPrice(tool: TraceTool, context: Data): string | null {
     return `Quoted upfront cost: ${gameMoney(quote.cash_cost)}`;
   }
   if (tool.name === "buy" || tool.name === "choose_pack") {
+    const stateOffers = record(record(context.observation).state).offers;
+    const deliveredOffer = (Array.isArray(stateOffers) ? stateOffers : []).find(
+      (x: unknown) => record(x).id === args.offer_id,
+    );
+    if (deliveredOffer && Object.prototype.hasOwnProperty.call(record(deliveredOffer), "quote")) {
+      const quote = record(record(deliveredOffer).quote);
+      return `Quoted upfront cost: ${gameMoney(quote.cash_cost)}`;
+    }
     const offer = (Array.isArray(costs.offers) ? costs.offers : []).find(
       (x: Data) => x.offer_id === args.offer_id,
     );

@@ -29,8 +29,9 @@ def indexed_tools(definitions):
             props[name]["items"] = {"type": "integer", "minimum": 1}
         if "episode_id" in props:
             props["episode_id"] = {"type": ["integer", "null"], "minimum": 1}
-        if "note_update" in props:
-            props["note_update"].pop("description", None)
+        for name in ("note_update", "target_ids"):
+            if name in props:
+                props[name].pop("description", None)
     return result
 
 

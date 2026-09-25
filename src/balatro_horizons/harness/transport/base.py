@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from balatro_horizons.config import PROVIDER_TIMEOUT_SECONDS
+from balatro_horizons.harness.context.model_view import compact_context
 from balatro_horizons.harness.contract import Context, Exchanges, RawOperation
 from balatro_horizons.harness.input_limits import InputCounter, check_request_bytes
 from balatro_horizons.harness.tool_interface import decode_tool
@@ -78,7 +79,7 @@ def canonical_messages(ctx):
     )
     if "previous_action_outcome" in ctx:
         content["previous_action_outcome"] = ctx.previous_action_outcome
-    return [{"role": "user", "content": encode(ctx.model_references.project(content))}]
+    return [{"role": "user", "content": encode(ctx.model_references.project(compact_context(content)))}]
 
 
 def tool_messages(ctx, exchanges, spec):
@@ -111,7 +112,7 @@ def context_payload(ctx, exchanges, provider):
 
 
 class Transport:
-    interface = "tools_v7"
+    interface = "tools_v8"
     name = "model"
     actor = "agent"
 

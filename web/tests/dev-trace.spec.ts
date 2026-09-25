@@ -178,7 +178,7 @@ test("dev mode lazily reveals full calls on helper-only decisions, including mob
   await expect(panel.getByText("Level 2").first()).toBeVisible();
   await expect(panel.locator("pre")).toHaveCount(0);
   await panel
-    .getByText("What the model was given · costs, notebook and recent memory", {
+    .getByText("What the model was given · costs, offers, notebook and recent memory", {
       exact: true,
     })
     .click();

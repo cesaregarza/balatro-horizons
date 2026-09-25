@@ -33,7 +33,10 @@ def test_live_quotes_change_without_changing_tools_or_cached_instructions(provid
     second = request(obs, provider)
     assert prices(first, provider)["rerolls"]["reroll_shop"]["cash_cost"] == "0"
     assert prices(second, provider)["rerolls"]["reroll_shop"]["cash_cost"] == "5"
-    assert prices(second, provider)["offers"][0]["cash_cost"] == "7"
+    messages = second["input" if provider == "openai" else "messages"]
+    view = json.loads(next(m for m in messages if m.get("role") == "user")["content"])
+    assert view["observation"]["state"]["offers"][0]["quote"]["cash_cost"] == "7"
+    assert "offers" not in prices(second, provider)
     assert first["tools"] == second["tools"]
     if provider == "openai":
         assert first["input"][0] == second["input"][0]

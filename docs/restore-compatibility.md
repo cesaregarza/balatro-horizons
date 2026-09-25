@@ -81,8 +81,11 @@ this addition. Tests compare actual immutable Git source and mutate every
 accepted target module independently. The target is the immutable funding release
 `14a32d0f95c62950203da4bda2d55be0318fb821`, not arbitrary later harness code.
 
-The compact-integer model format is deliberately outside that migration. New
-protocols use it; pre-compaction runs retain their original prompts, schemas and
+The `tools_v8` compact-integer model format is deliberately outside that migration.
+New protocols use co-located offer quotes and a same-request reference for an exact
+duplicate latest receipt. V7 is retired for new execution: its frozen interface
+fails with `AGENT_PROTOCOL_INTERFACE_RETIRED` under the v8 executor. Pre-compaction
+and v7 runs retain their original prompts, schemas and
 IDs and require their retained executor. Identical native bytes permit native
 evidence reuse, not silent adoption of a different agent request format.
 

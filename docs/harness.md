@@ -1,6 +1,6 @@
 # Harness
 
-The current harness is one interface and one frozen protocol. A run snapshots
+The current harness is the single `tools_v8` interface and one frozen protocol. A run snapshots
 the prompt, rules guide, skills catalog, provider capability, memory policy,
 model/pricing settings, and limits before its first decision. Later edits do
 not change that episode or its ordinary branches.
@@ -35,11 +35,32 @@ Omitted history is reported as a count, while retrieval uses existing offsets
 or episode/decision references. Inspection and history pages are projected before
 UTF-8 pagination, so their cursors address the actual delivered text. Notebook
 text, rules, effects, counters and provider-native continuation blocks stay intact.
-Shared notebook-edit instructions appear once in the prompt instead of being
-repeated in every gameplay tool. Canonical journals and checkpoints are unchanged;
+Shared notebook-edit and target-selection instructions appear once in the prompt
+instead of being repeated in every gameplay tool. Canonical observation/action
+journals and checkpoints are unchanged; new provider-facing helper results record
+their projected delivery rather than rewriting any historical journal bytes;
 the integer table is reconstructed from the selected public ancestry on Restore.
 
-This is a new frozen protocol identity, not a migration of existing runs. A
+Current offer facts and quotes live together under `observation.state.offers`.
+Each offer's `quote` retains upfront `cash_cost`, affordability, purchase-mode
+checks, target bounds and recorded obligations. Equal duplicate labels/effects
+and the separate price are omitted; unequal values are never reconciled silently.
+`current_costs` keeps balances, credit, inventory, reroll and sale quotes. Null
+remains unknown, zero remains zero, and rental obligations are not upfront costs.
+The canonical cost summary is unchanged. Full inspection/history pages retain
+original public price fields, rather than copying today's quote into old evidence.
+
+An exact duplicate of `observation.last_action` in a retained working-memory frame
+uses `observed_result_ref: "/observation/last_action"`. This is one absolute,
+single-hop reference to a complete value in the same request, not a general
+reference language. Comparison happens before audit fields are removed and
+distinguishes types, missing values, nulls and array ordering. Standalone helper
+pages always include their complete result; pruning cannot leave a dangling
+reference. Notebook text, previous-action provenance and observed/quoted charge
+distinctions remain separate and unchanged. The inspector displays the actual
+delivered offers and the latest receipt alongside the recorded reference.
+
+This is a new frozen protocol identity, not a migration of existing runs. A v7 or
 pre-compaction run needs its retained executor: the current source-compatibility
 gate refuses changing that run's request format. Native evidence may still be
 reused independently when the native interface/runtime bytes are identical.

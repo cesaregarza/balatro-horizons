@@ -376,14 +376,17 @@ def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, con
         ctx["previous_action_outcome"])
     assert view["previous_action_outcome"]["action_type"] == "play_hand"
     assert view["previous_action_outcome"]["recorded_note_update"]["text"] == "I expect this hand to win"
+    guidance = last["input"][0]["content"][0]["text"] if provider == "openai" else last["system"]
+    assert "target_ids selects cards without rearranging them" in guidance
+    assert "physical order in the hand array, not the order of target_ids" in guidance
+    assert "turns the left selected card into the right selected card" in guidance
+    assert "use reorder when permitted, then act from the new observation" in guidance
     for definition in last["tools"]:
         if definition["name"] in ACTION_MODELS:
             schema = definition.get("parameters", definition.get("input_schema"))
             assert "note_update" in schema["required"] and "memory_update" not in schema["properties"]
             if definition["name"] in ("buy", "use_consumable", "choose_pack"):
-                guidance = schema["properties"]["target_ids"]["description"]
-                assert "list order does not move them" in guidance
-                assert "Death converts the left selected card into the right selected card" in guidance
+                assert "description" not in schema["properties"]["target_ids"]
     args = {"observation_id": 0, "note_update": {"key": "k", "text": "v"}}
     assert decode_tool("cash_out", args)["note_update"] == args["note_update"]
     with pytest.raises(ValueError, match="LEGACY_MEMORY_UPDATE_NOT_ALLOWED"):

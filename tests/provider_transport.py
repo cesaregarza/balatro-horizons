@@ -30,7 +30,13 @@ def model_choice(context):
         return identifier
 
     # The canonical validator used by Baseline intentionally still requires strings.
-    choice = Baseline("heuristic").decide(convert(context, opaque), [])
+    presented = convert(context, opaque)
+    for offer in presented["observation"]["state"]["offers"]:
+        if "quote" in offer:
+            # The fake model reads the delivered quote, not a canonical side channel.
+            quote = offer.pop("quote")
+            offer.setdefault("price", quote["cash_cost"])
+    choice = Baseline("heuristic").decide(presented, [])
     return convert(choice, lambda value: references.get(value, value))
 
 

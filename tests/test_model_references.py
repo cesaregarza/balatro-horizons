@@ -121,7 +121,7 @@ def test_concealment_does_not_reconnect_old_model_references():
     assert len(set(indices)) == 3
 
 
-def test_integer_tool_schemas_do_not_repeat_notebook_instructions():
+def test_integer_tool_schemas_do_not_repeat_shared_instructions():
     catalog = {item["name"]: item for item in tool_catalog([])}
     for name, key in (("buy", "offer_id"), ("sell", "owned_id"), ("select_blind", "blind_id")):
         props = catalog[name]["parameters"]["properties"]
@@ -131,3 +131,7 @@ def test_integer_tool_schemas_do_not_repeat_notebook_instructions():
     assert props["card_ids"]["items"]["type"] == "integer"
     assert catalog["retrieve_action_result"]["parameters"]["properties"]["episode_id"] == {
         "type": ["integer", "null"], "minimum": 1}
+    for definition in catalog.values():
+        targets = definition["parameters"]["properties"].get("target_ids")
+        if targets is not None:
+            assert "description" not in targets

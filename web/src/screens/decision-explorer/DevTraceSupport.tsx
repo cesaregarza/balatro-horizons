@@ -22,9 +22,48 @@ export function RequestedTool({ tool, ordinal, context, names }: { tool: TraceTo
   return <section className="dev-tool" aria-label={`Requested tool ${ordinal + 1}`}><strong>Requested: {toolTitle(tool, names)}</strong>{quote && <p className="dev-quote">{quote}{context.current_costs?.cash_balance != null && ` · Cash balance: ${gameMoney(context.current_costs.cash_balance)}`}</p>}<p className="dev-meta">{tool.name || "Unnamed tool"} · Tool call ID: {tool.call_id ?? "not recorded"}</p>{tool.arguments_parse_error ? <p className="dev-error">Arguments are not valid JSON; this request cannot be interpreted. Original text is in technical details.</p> : <>{Object.keys(fields).length > 0 && <ReadableValue value={fields} names={names} />}{args.decision_note != null && <div className="dev-model-note"><strong>Model’s note</strong><ReadableValue value={args.decision_note} /></div>}{(args.note_update != null || args.memory_update != null) && <div className="dev-model-note"><strong>Requested memory update</strong><ReadableValue value={args.note_update ?? args.memory_update} /></div>}</>}{tool.delivered_results.map((result, index) => <div className="dev-result" key={index}><strong>Sent back to model · matched tool call</strong>{result.content_parse_error && <p>Result is plain text or could not be parsed as JSON.</p>}<ReadableValue value={result.content} names={names} /></div>)}</section>;
 }
 
+function DeliveredOffer({ offer, names }: { offer: Data; names: ObjectNames }) {
+  const offerFacts = { ...offer };
+  if (offer.face_down) delete offerFacts.label;
+  const shownName = offer.face_down
+    ? "Face-down card"
+    : names.get(offer.id) || offer.label || `Offer ${String(offer.id ?? "unknown")}`;
+  return (
+    <div className="dev-result">
+      <strong>{shownName}</strong>
+      <p className="dev-quote">Quoted cash cost: {gameMoney(record(offer.quote).cash_cost)}</p>
+      <ReadableValue value={offerFacts} names={names} />
+    </div>
+  );
+}
+
 export function DeliveredContext({ context, present, names }: { context: Data; present: boolean; names: ObjectNames }) {
   present ||= Boolean(context.observation);
-  return <details className="dev-context"><summary>What the model was given · costs, notebook and recent memory</summary>{present ? <><h5>Current costs</h5><ReadableValue value={context.current_costs} names={names} /><h5>Run notebook</h5><ReadableValue value={context.run_notebook?.entries ?? context.run_notebook} /><h5>Recent working memory</h5><ReadableValue value={context.working_memory} /></> : <p>No context event recorded for this request.</p>}</details>;
+  const observation = record(context.observation);
+  const offers = record(observation.state).offers;
+  const quotedOffers = (Array.isArray(offers) ? offers : []).map(record).filter((offer: Data) => Object.prototype.hasOwnProperty.call(offer, "quote"));
+  return (
+    <details className="dev-context">
+      <summary>What the model was given · costs, offers, notebook and recent memory</summary>
+      {present ? (
+        <>
+          <h5>Current costs</h5>
+          <ReadableValue value={context.current_costs} names={names} />
+          <h5>Offers with delivered quotes</h5>
+          {quotedOffers.length ? quotedOffers.map((offer: Data, index: number) => (
+            <DeliveredOffer key={`${String(offer.id)}-${index}`} offer={offer} names={names} />
+          )) : <p className="dev-meta">No inline quoted offers were recorded in the delivered observation.</p>}
+          <h5>Run notebook</h5>
+          <ReadableValue value={context.run_notebook?.entries ?? context.run_notebook} />
+          <h5>Recent working memory</h5>
+          <ReadableValue value={context.working_memory} />
+          <p className="dev-meta">Memory references are shown as delivered. The latest action receipt below is the recorded observation target, not a claim that another value was expanded in the request.</p>
+          <h5>Latest action receipt · observation.last_action</h5>
+          <ReadableValue value={observation.last_action} names={names} />
+        </>
+      ) : <p>No context event recorded for this request.</p>}
+    </details>
+  );
 }
 
 export function TechnicalDetails({ call, contextEvent, usage }: { call: TraceCall; contextEvent?: TraceEvent; usage: Data }) {

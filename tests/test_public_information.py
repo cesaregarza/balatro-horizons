@@ -116,7 +116,8 @@ def test_visible_playing_offer_identity_reaches_final_request(
     (offer,) = view["state"]["offers"]
     assert (offer["rank"], offer["suit"], offer["label"]) == ("K", "Hearts", "K of Hearts")
     assert offer["effects"] == ["+30 chips", "edition: FOIL"]
-    assert offer["price"] == price and offer["acquire_allowed"] and not offer["buy_and_use_allowed"]
+    assert offer["quote"]["cash_cost"] == price
+    assert "price" not in offer and offer["acquire_allowed"] and not offer["buy_and_use_allowed"]
     envelope = ActionEnvelope.model_validate(
         {"observation_id": 0, "action": decision_context(obs, [])[0].model_references.arguments(
             {"type": action_type, "offer_id": offer["id"]})}

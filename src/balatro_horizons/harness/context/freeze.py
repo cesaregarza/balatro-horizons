@@ -20,7 +20,7 @@ from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.harness.instructions import load_prompt
 from balatro_horizons.storage.journal import digest
 
-FROZEN_INTERFACE = "tools_v7"
+FROZEN_INTERFACE = "tools_v8"
 
 
 def episode_limits(config):
@@ -48,7 +48,7 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         "tool": None,
         "tool_catalog": tools,
         "tool_policy": "stable_catalog_local_phase_rejection",
-        "model_presentation": "public_first_appearance_integer_references",
+        "model_presentation": "integer_references_inline_quotes_shared_last_receipt",
         "model": model.model_dump() if model is not None else None,
         "agent": policy.name if isinstance(policy, NamedPolicy) else "model",
         "benchmark": deepcopy(config.benchmark),
