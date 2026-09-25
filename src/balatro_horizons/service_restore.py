@@ -55,6 +55,8 @@ def start_restore(service, parent, request, *, paid_enabled):
             raise ValueError("RESTORE_PLAN_CHANGED")
         if public["requires_paid_authorization"] and not request.authorize_paid:
             raise ValueError("PAID_EXECUTION_NOT_AUTHORIZED")
+        if ("uncapped" in public["limits"].values() and not request.confirm_uncapped):
+            raise ValueError("UNCAPPED_CONFIRMATION_REQUIRED")
         if public["source_compatibility"] == "compatible_update" and not request.accept_compatible_update:
             raise ValueError("RESTORE_COMPATIBILITY_NOT_ACCEPTED")
         service.validate_policy(config, plan["parent"]["agent"])

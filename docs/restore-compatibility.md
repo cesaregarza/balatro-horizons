@@ -69,6 +69,28 @@ These are explicit recovery-policy upgrades, not assertions that old and new
 admission behavior is identical. Other unchanged historical source can pass
 without a catalogue entry when all included identities already match.
 
+### Explicit funding-control upgrade
+
+The exact deployed 16× source `8807caf56828351c8a0ca12b5a59b2c944a4b7aa`
+has a separate, full-source-gated funding migration. It pins old and new ASTs
+for configuration, cap enforcement, frozen budget extensions, service admission,
+Restore preview/confirmation, budget continuation and source fingerprinting.
+Only that full historical fingerprint may add the new `cost_limits.py` module.
+No current module is normalized and unknown historical identities cannot use
+this addition. Tests compare actual immutable Git source and mutate every
+accepted current module independently.
+
+This is an explicit funding/admission-policy upgrade, not a claim that unlimited
+spending existed in the old release. Ordinary Restore preserves the original
+caps. A separately confirmed budget continuation changes only the dollar
+allowance in its child; the historical source hash and original protocol bytes
+remain intact. Private child receipts bind the exact current implementation.
+Budget receipts bind both the original protocol used for the initial replay and
+the exact funded protocol saved in later child checkpoints. A different cap,
+model or prompt cannot reuse that receipt, even with a rehashed checkpoint.
+The older 1× catalogue stays pinned to its original target; the native runtime
+comparison still prevents migrating those runs into the current 16× release.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game
@@ -91,4 +113,5 @@ trust boundary. Historical configuration is never validated by executing old cod
 
 Compatible-update acceptance and paid execution authorization remain separate.
 No parent record, checkpoint/release certificate, environment gate, model,
-prompt, knowledge or paid cap is rewritten.
+prompt, knowledge or original paid cap is rewritten. Only an explicit budget
+intervention may set a different dollar limit for its child.

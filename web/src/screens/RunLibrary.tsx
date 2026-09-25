@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { bootstrap, listEpisodes, saveSettings, startRun, stopRun, type Episode } from "../api/client";
 import { ModelControls } from "../ModelControls";
+import { CostOverrideControls, type CostOverride } from "../CostOverrideControls";
 import { RunSpend } from "../RunSpend";
 import { usePolling } from "../usePolling";
 import { useRunAction } from "./useRunAction";
@@ -39,6 +40,8 @@ export function RunLibrary({
   const [preset, setPreset] = useState("pilot");
   const [seed, setSeed] = useState("");
   const [effort, setEffort] = useState("medium");
+  const [costOverride, setCostOverride] = useState<CostOverride>(null);
+  const startPending = useRef(false);
   const catalog = modelCatalog(config.models ?? {});
   const capabilities = config.model_capabilities ?? EMPTY_CAPABILITIES;
   const selectedModel = catalog[agent];
@@ -52,6 +55,7 @@ export function RunLibrary({
 
   async function selectAgent(value: string) {
     setAgent(value);
+    setCostOverride(null);
     if (catalog[value]) setEffort(effortDefault(catalog[value], capabilities));
   }
 
@@ -91,18 +95,28 @@ export function RunLibrary({
             <ModelControls model={selectedModel} effort={effort} onEffort={setEffort} capabilities={capabilities} disabled={busy} />
             <button disabled={busy || !selectedModelSupported} onClick={() => action(async () => { await saveModelDefaults(); setNotice("Model defaults saved. No run started."); })}>Save model defaults</button>
             <p className="muted">Starting a run also saves these defaults. Each run keeps its exact settings.</p>
+            <CostOverrideControls value={costOverride} onChange={setCostOverride} disabled={busy} />
           </>}
           <label>Private seed <span className="muted">optional</span><input value={seed} onChange={(e) => setSeed(e.target.value)} placeholder="Generate an unseen seed" autoComplete="off" /></label>
           <label className="check"><input type="checkbox" checked={offline} onChange={(e) => setOffline(e.target.checked)} /> Synthetic pipeline test</label>
           <p className="muted">{offline ? "Synthetic episodes test the application and are labeled throughout." : "Native autonomous runs require passing environment and action-coverage gates."}</p>
           <div className="actions">
-            <button className="primary" disabled={busy || !selectedModelSupported || (!offline && connection?.ready !== true)} onClick={() => action(async () => {
+            <button className="primary" disabled={busy || startPending.current || !selectedModelSupported || (!offline && connection?.ready !== true)} onClick={() => {
+              if (startPending.current || busy || !selectedModelSupported || (!offline && connection?.ready !== true)) return;
+              startPending.current = true;
+              void action(async () => {
               const chosenAgent = selectedModel ? await saveModelDefaults() : agent;
-              const result = await startRun({ agent: chosenAgent, offline, preset, seed: seed || null });
+              const result = await startRun({
+                agent: chosenAgent, offline, preset, seed: seed || null,
+                ...(costOverride === null ? {} : { cost_override: costOverride }),
+                ...(costOverride === "uncapped" ? { confirm_uncapped: true } : {}),
+              });
+              setCostOverride(null);
               setNotice("Run created: " + result.episode_id.slice(0, 10));
               await refreshEpisodes();
               if (agent === "human") onHumanStart();
-            })}>Start {offline ? "test episode" : "native run"} <span>↗</span></button>
+              }).finally(() => { startPending.current = false; });
+            }}>Start {offline ? "test episode" : "native run"} <span>↗</span></button>
             <button onClick={() => action(async () => { await stopRun(); setNotice("Stop requested. Any in-flight action will be recorded."); })}>Stop worker</button>
           </div>
           {!offline && <RuntimeConnection connection={connection} onRefresh={refreshConnection} />}

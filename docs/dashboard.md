@@ -14,7 +14,7 @@ cost/model-budget settings, batches, reports, and cheap append-only
 retrospective annotations under the `/api/explore...` and core namespaces.
 These surfaces remain usable when the flag is off; workbench-only routes are
 registered separately, including budget-continuation and restore admission. There are 24
-mounted routes flag-off, 43 flag-on, and 19 workbench-only routes.
+mounted routes flag-off, 44 flag-on, and 20 workbench-only routes.
 
 The workbench owns staged reveal/review, branching and comparison, human
 takeover, budget continuation, and verification. Its `/api/review*`,
@@ -134,7 +134,9 @@ allowance; neither retries nor code updates reset a cap.
 GET `/api/operator/episodes/{eid}/restore` returns the plan or a named refusal.
 POST requires its `parent_head` and `plan_hash`, plus strict booleans
 `authorize_paid` and `accept_compatible_update` when applicable. Both routes require
-the operator token and workbench flag. Confirmation switches to live status.
+the operator token and workbench flag. Uncapped limits are shown in red and
+require another “Are you sure?” confirmation (`confirm_uncapped: true`); any
+remaining finite limit still applies. Confirmation switches to live status.
 
 Supported parents are standalone failed, interrupted or unterminated runs and
 their restoration children with a safe latest checkpoint. Completed games, an
@@ -155,11 +157,41 @@ that the upcoming replay has already succeeded.
 
 ### Explicit budget continuation
 
+For a **new model run**, choose **Current limits**, **$10 total** or **Uncapped**
+in the run form. $10 is the total episode and standalone campaign ceiling, not
+an increment. The red Uncapped control asks “Are you sure?” and requires explicit
+confirmation; cancel leaves the previous choice intact. The choice applies only
+to that run, resets after a successful start or model change, and never changes
+saved budgets. Paid execution must still be enabled. API clients use
+`cost_override: 10` or `cost_override: "uncapped"` plus `confirm_uncapped: true`
+for the latter. Omit the override to retain configured limits.
+
+For a **cost-stopped standalone root**, open **Review cost override** in Decision
+Explorer. The read-only preview shows accounted spend across all attempts and
+the proposed ceiling. **$10 more** means **accounted spend + $10**, not a $10
+total ceiling or $10 added to the previous cap. For example, $7 accounted makes
+the new ceiling $17. Retained unknown-usage reservations count as spent. The
+red **Uncapped** choice requires “Are you sure?” confirmation. Authorize the
+paid continuation and accept a compatible update separately when requested.
+Neither choice resets provider-call, action, token or other non-money limits.
+Missing/null caps still mean unconfigured, never uncapped.
+
+GET `/api/operator/episodes/{eid}/continue-budget` returns this read-only plan.
+POST binds `parent_terminal_hash` and `plan_hash`, requires `authorize_paid: true`,
+and sends either `additional_cost_usd: 10` or `combined_cap_usd: "uncapped"`
+with `confirm_uncapped: true`. Both routes require the operator token and
+workbench flag, and the paid-enable setting is checked independently. A changed
+ledger, child head or implementation invalidates the plan before creating a
+child. Refresh and review it again; timeouts do not prove the worker stopped.
+
 A standalone root stopped by a dollar cap may create a child marked
 `assistance: budget_extension`, never evaluation-eligible. The parent stays
 budget-exhausted; a later win does not become an autonomous win at the old cap.
 Model settings, prompts, tools, non-money limits, source identity, and the
-pre-decision memory boundary remain frozen. A changed implementation is refused.
+pre-decision memory boundary remain frozen. A changed implementation needs the
+same exact-source compatibility proof as Restore and explicit acceptance;
+unrecognized changes still refuse. The supported funding upgrade starts at the
+deployed 16× `8807caf` release; it does not migrate the old 1× native runtime.
 Helpers called after that checkpoint are charged, but their later note changes
 and tool results are not inherited by the child.
 
@@ -188,8 +220,12 @@ The default plan contacts no game/provider and distinguishes a saved checkpoint
 from readiness for a single checked restore. Reading status records review exposure.
 Verification and starts use the operator-protected worker so the dashboard can
 stop the child. Verification does not grant spending permission; each start
-requires an explicit cap higher than the root's original cap, not necessarily
-higher than a prior child's. Action/call limits and batch slots are not extended.
+requires an explicit cap higher than the root's original binding cap (the smaller
+finite episode/campaign ceiling), not necessarily higher than a prior child's.
+The CLI's numeric `--combined-cap-usd 10` remains a total ceiling, unlike the UI's
+$10-more choice. Action/call limits and batch slots are not extended. Funding is
+requested on the original standalone root, not on a batch member or intervention
+child; its checked replay starts from that root's saved boundary.
 Diagnose a timed-out request before retrying; timeout does not prove that the
 worker stopped or that the action was not committed.
 The child's exported metadata includes its recovery policy, cap, source identities,

@@ -5,6 +5,7 @@ import json
 from copy import deepcopy
 
 from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, RETAINED_HELPER_RESULTS, ROOT
+from balatro_horizons.cost_limits import binding_cap, increases_cap
 from balatro_horizons.evidence.provenance import implementation_fingerprint
 from balatro_horizons.harness.context.memory import working_memory_policy
 from balatro_horizons.harness.context.present import PAGE_BYTES
@@ -109,7 +110,9 @@ def restore_protocol(store, checkpoint):
                 or extension.get("parent_protocol") != reference
                 or extension.get("recorded_implementation_hash") != bundle["implementation_hash"]
                 or extension.get("implementation_hash") != current_implementation
-                or cap <= bundle["episode_limits"]["max_episode_cost_usd"]):
+                or not increases_cap(binding_cap(
+                    bundle["episode_limits"]["max_episode_cost_usd"],
+                    extension.get("root_batch_cap_usd")), cap)):
             raise ValueError("BUDGET_EXTENSION_PROTOCOL_MISMATCH")
         # Only the explicit money limit changes; prompt, tools, and source do not.
         bundle["episode_limits"]["max_episode_cost_usd"] = cap

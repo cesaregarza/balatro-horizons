@@ -330,6 +330,10 @@ def test_operator_token_and_finite_explicit_cap_required(store, config):
         for invalid in (True, "10", 0, -1):
             assert client.post(route, json={**body, "combined_cap_usd": invalid},
                                headers=headers).status_code == 422
+        refused = client.post(route, json=body, headers=headers)
+        assert refused.status_code == 400
+        assert refused.json()["error"] == "PAID_EXECUTION_NOT_AUTHORIZED"
+        client.app.state.config.budgets.paid_calls_enabled = True
         assert client.post(route, json=body, headers=headers).status_code == 404
 
 

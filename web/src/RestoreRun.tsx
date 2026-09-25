@@ -2,7 +2,10 @@ import { useRef, useState } from "react";
 import { restorePreview, restoreRun, type RestorePreview } from "./api/client";
 
 const dollars = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
-function amount(value: number | null) { return value == null ? "No cap" : dollars.format(value); }
+function amount(value: number | "uncapped" | null) {
+  if (value === "uncapped") return <strong style={{ color: "#f07882" }}>Uncapped</strong>;
+  return value == null ? "No cap" : dollars.format(value);
+}
 
 export function RestoreRun({ episodeId, onRestored }: { episodeId: string; onRestored: (newEpisodeId: string) => void }) {
   const [preview, setPreview] = useState<RestorePreview | null>(null);
@@ -23,6 +26,21 @@ export function RestoreRun({ episodeId, onRestored }: { episodeId: string; onRes
   }
   async function confirm() {
     if (!preview?.available || !preview.plan || submitLock.current) return;
+    const { max_episode_cost_usd: episodeLimit, max_batch_cost_usd: batchLimit } = preview.plan.limits;
+    const uncappedLimits = [
+      episodeLimit === "uncapped" ? "episode" : null,
+      batchLimit === "uncapped" ? "campaign" : null,
+    ].filter((limit): limit is string => limit !== null);
+    const finiteLimits = [
+      typeof episodeLimit === "number" ? `episode ceiling ${amount(episodeLimit)}` : null,
+      typeof batchLimit === "number" ? `campaign ceiling ${amount(batchLimit)}` : null,
+    ].filter((limit): limit is string => limit !== null);
+    const confirmUncapped = uncappedLimits.length > 0;
+    const uncappedDescription = uncappedLimits.length > 1 ? "ceilings are uncapped" : "ceiling is uncapped";
+    const warning = finiteLimits.length > 0
+      ? `Are you sure? The ${uncappedLimits.join(" and ")} ${uncappedDescription}, but the ${finiteLimits.join(" and ")} still applies. Call and action limits still apply.`
+      : "Are you sure? This continuation has no dollar ceiling. Spending can keep growing. Call and action limits still apply.";
+    if (confirmUncapped && !window.confirm(warning)) return;
     submitLock.current = true;
     setSubmitting(true); setError("");
     try {
@@ -31,6 +49,7 @@ export function RestoreRun({ episodeId, onRestored }: { episodeId: string; onRes
         plan_hash: preview.plan.plan_hash,
         authorize_paid: preview.plan.requires_paid_authorization && authorizePaid,
         accept_compatible_update: preview.plan.source_compatibility === "compatible_update" && acceptUpdate,
+        ...(confirmUncapped ? { confirm_uncapped: true } : {}),
       });
       onRestored(result.episode_id);
     } catch (caught) {

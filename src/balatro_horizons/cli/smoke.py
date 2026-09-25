@@ -146,8 +146,10 @@ def _load_smoke_config(args):
     limits = config.budgets
     if (
         not limits.max_episode_cost_usd
+        or limits.max_episode_cost_usd == "uncapped"
         or limits.max_episode_cost_usd > args.authorized_episode_cap
         or not limits.max_batch_cost_usd
+        or limits.max_batch_cost_usd == "uncapped"
         or limits.max_batch_cost_usd > args.authorized_total_cap
     ):
         raise ValueError("SMOKE_EXCEEDS_AUTHORIZED_CAPS")

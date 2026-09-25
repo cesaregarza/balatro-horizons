@@ -3,6 +3,7 @@
 from copy import deepcopy
 
 from balatro_horizons.config import Config
+from balatro_horizons.cost_limits import headroom
 from balatro_horizons.evidence.certification import read_checkpoint
 from balatro_horizons.evidence.compatibility import prepare_compatibility
 from balatro_horizons.evidence.provenance import implementation_fingerprint
@@ -108,8 +109,8 @@ def _public_plan(head, boundary, config, ledger, paid, compatibility, recovery):
         "requires_paid_authorization": paid,
         "source_compatibility": "compatible_update" if compatibility else "same_source",
         "costs": {"accounted_usd": ledger["cost"],
-                  "remaining_episode_usd": max(0, episode - ledger["cost"]) if episode else None,
-                  "remaining_batch_usd": max(0, batch - ledger["cost"]) if batch else None},
+                  "remaining_episode_usd": _remaining(episode, ledger["cost"]),
+                  "remaining_batch_usd": _remaining(batch, ledger["cost"])},
         "limits": {"max_episode_cost_usd": episode, "max_batch_cost_usd": batch},
         "launches": {"verification": 0, "continuation": 1},
     }
@@ -117,6 +118,11 @@ def _public_plan(head, boundary, config, ledger, paid, compatibility, recovery):
                                   "checkpoint": recovery["checkpoint_hash"],
                                   "ledger": ledger["hash"], "heads": ledger["heads"]})
     return result
+
+
+def _remaining(cap, spent):
+    remaining = headroom(cap, spent)
+    return None if remaining is None else max(0, remaining)
 
 
 def create_restoration(store, parent_id, plan):

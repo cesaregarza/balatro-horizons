@@ -18,6 +18,7 @@ from balatro_horizons.evidence.provenance import (
     native_implementation_fingerprint,
     source_files,
 )
+from balatro_horizons.evidence.reuse import revision_sources
 from balatro_horizons.storage.journal import digest
 
 PREFIX = "src/balatro_horizons/"
@@ -38,8 +39,11 @@ def test_every_fingerprinted_file_has_an_explicit_comparison_or_exclusion():
     assert execution | native | excluded == fingerprinted
 
 
-def test_catalogue_targets_are_exact_current_module_asts():
-    current = execution_manifest(source_files(ROOT))
+def test_original_catalogue_targets_are_exact_restore_release_module_asts():
+    # The original catalogue continues to bind its 1x target. The funding
+    # upgrade has a separate exact-source gate and current-target test.
+    _, target = revision_sources(ROOT, "bb26f797b69ba42a32f6e0787e8d94b26ae9fadd")
+    current = execution_manifest(target)
     for path, (previous, accepted) in MODULE_UPGRADES.items():
         assert previous and accepted not in previous
         assert current[PREFIX + path] == accepted, path

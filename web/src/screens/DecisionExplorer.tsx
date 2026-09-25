@@ -8,6 +8,7 @@ import { DecisionExplorerDetail } from "./DecisionExplorerDetail";
 import { DecisionExplorerList } from "./DecisionExplorerList";
 import { Annotate } from "./Annotate";
 import { RestoreRun } from "../RestoreRun";
+import { BudgetContinuation } from "../BudgetContinuation";
 import "../decisions.css";
 
 export function DecisionExplorer({ token, initialDecision, workbench = false, onRestored }: { token: string; initialDecision?: number; workbench?: boolean; onRestored?: (episodeId: string) => void }) {
@@ -58,6 +59,11 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
   const active = visible.find((row) => row.decision === selected) || visible[0];
   const activeIndex = active ? visible.indexOf(active) : -1;
   const antes = [...new Set(rows.map((row) => row.ante))];
+  const budgetStoppedRoot = Boolean(
+    workbench && ledger &&
+    ["EPISODE_COST_CAP", "CAMPAIGN_COST_CAP", "EPISODE_AND_CAMPAIGN_COST_CAP"].includes(ledger.summary?.reason ?? "") &&
+    !ledger.manifest.parent_episode_id && !ledger.manifest.batch_id,
+  );
 
   useEffect(() => { setView(null); setBoardSide("before"); }, [token, active?.decision]);
   useEffect(() => {
@@ -99,7 +105,9 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
   return <div className={`decision-explorer ${mobileDetail ? "detail-open" : ""}`}>
     <div className="review-top"><div><p className="eyebrow">THE WHOLE RUN, AT A GLANCE</p><h1>Decision explorer</h1></div><button disabled={loading} onClick={() => setRefresh((n) => n + 1)}>Refresh decisions</button></div>
     <RunSpend spend={ledger?.spend} fallbackCost={ledger?.summary?.cost_usd} loading={!ledger && loading} status={error ? "Last recorded total · connection interrupted" : ledger?.summary?.outcome ? "Final recorded total" : !liveUpdates ? "Last recorded total · live updates paused" : "Live cost · refreshed every 2 seconds"} />
-    {workbench && ledger && <RestoreRun episodeId={ledger.manifest.episode_id} onRestored={(episodeId) => onRestored?.(episodeId)} />}
+    {workbench && ledger && (budgetStoppedRoot
+      ? <BudgetContinuation episodeId={ledger.manifest.episode_id} onRestored={(episodeId) => onRestored?.(episodeId)} />
+      : <RestoreRun episodeId={ledger.manifest.episode_id} onRestored={(episodeId) => onRestored?.(episodeId)} />)}
     <p className="explorer-intro">Browse recorded choices and outcomes, including new decisions during a run. Opening this view records retrospective exposure.</p>
     <div className="actions" aria-label="Decision exports"><label className="dev-toggle"><input type="checkbox" checked={devMode} onChange={(event) => setDevMode(event.target.checked)} />Dev mode</label><button disabled={!ledger || !rows.length} onClick={() => exportDecisions("jsonl")}>Export JSONL</button><button disabled={!ledger} onClick={() => exportDecisions("json")}>Export JSON</button></div>
     <ModifierLegend />

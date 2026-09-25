@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from balatro_horizons.cost_limits import DollarCap, headroom
 from balatro_horizons.storage.journal import atomic_json, identifier, locked, now
 
 # Keep refusal classification in one place.  ``campaign`` identifies reasons
@@ -37,7 +38,7 @@ def reservation_usd(model, limits):
 
 def can_afford(total, amount, cap):
     # Headroom subtraction is diagnostic only: it rounds differently at the boundary.
-    return total + amount <= cap
+    return cap == "uncapped" or (cap is not None and total + amount <= cap)
 
 
 def validate_caps(episode_cap, campaign_cap):
@@ -47,6 +48,7 @@ def validate_caps(episode_cap, campaign_cap):
         or not math.isfinite(cap)
         or cap <= 0
         for cap in (episode_cap, campaign_cap)
+        if cap != "uncapped"
     ):
         raise ValueError("PAID_EXECUTION_NOT_AUTHORIZED")
 
@@ -79,7 +81,7 @@ class Spending:
         return {
             "campaign_cap_usd": self.cap,
             "campaign_committed_usd": total,
-            "campaign_headroom_usd": self.cap - total,
+            "campaign_headroom_usd": headroom(self.cap, total),
             "required_usd": amount,
             "unsettled_usd": sum(e["cost"] for e in entries.values() if not e["settled"]),
         }
@@ -157,12 +159,12 @@ class Spending:
 class PublicCostContext(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
 
-    campaign_cap_usd: float = Field(gt=0)
+    campaign_cap_usd: DollarCap
     campaign_committed_usd: float = Field(ge=0)
-    campaign_headroom_usd: float
+    campaign_headroom_usd: float | None
     required_usd: float = Field(ge=0)
     unsettled_usd: float = Field(ge=0)
-    episode_cap_usd: float | None = Field(default=None, gt=0)
+    episode_cap_usd: DollarCap | None = None
     episode_committed_usd: float | None = Field(default=None, ge=0)
 
 

@@ -85,8 +85,8 @@ def test_documented_workbench_route_counts(tmp_path):
             for method in methods if method in {"get", "post", "put", "patch", "delete"}
         })
     off, on = routes
-    assert len(off) == 24 and len(on) == 43
-    assert off < on and len(on - off) == 19
+    assert len(off) == 24 and len(on) == 44
+    assert off < on and len(on - off) == 20
     assert ("/api/operator/episodes/{eid}/continue-budget", "post") in on - off
     assert {("/api/operator/episodes/{eid}/restore", method) for method in ("get", "post")} <= on - off
 

@@ -147,10 +147,22 @@ def verify(request: Request, data: VerifyInput):
         )
 
 
+@router.get("/api/operator/episodes/{eid}/continue-budget", dependencies=[Depends(require_operator)])
+def budget_preview(request: Request, eid: str):
+    from balatro_horizons.workbench.budget_continuation import budget_preview
+
+    state = request.app.state
+    return budget_preview(state.runs, eid, paid_enabled=state.config.budgets.paid_calls_enabled)
+
+
 @router.post("/api/operator/episodes/{eid}/continue-budget", dependencies=[Depends(require_operator)])
 def continue_budget(request: Request, eid: str, data: BudgetContinuationInput):
+    if not request.app.state.config.budgets.paid_calls_enabled:
+        raise ValueError("PAID_EXECUTION_NOT_AUTHORIZED")
     return {"episode_id": request.app.state.runs.continue_budget(
         eid, data.combined_cap_usd, expected_head=data.parent_terminal_hash,
+        additional_cost=data.additional_cost_usd, expected_plan_hash=data.plan_hash,
+        accept_compatible_update=data.accept_compatible_update,
     )}
 
 
