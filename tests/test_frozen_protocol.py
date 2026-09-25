@@ -177,16 +177,34 @@ def test_changed_skill_preset_is_refused_before_continuation(store, config, epis
         validate_continuation(protocol, changed, "heuristic", human=human)
 
 
-def test_retired_frozen_interface_is_rejected_explicitly(store, config, episode):
+@pytest.mark.parametrize("interface", ["tools_v7", "retired-interface"])
+def test_retired_frozen_interface_is_rejected_explicitly(store, config, episode, interface):
     checkpoint = read_checkpoint(store, episode, 0)
     reference = checkpoint["agent_protocol"]
     path = store.episode_path(reference["episode_id"], True) / "agent-protocol.json"
     bundle = json.loads(path.read_text())
-    bundle["interface"] = "retired-interface"
+    bundle["interface"] = interface
     path.write_text(json.dumps(bundle))
     checkpoint["agent_protocol"] = {**reference, "hash": digest(bundle)}
     with pytest.raises(ValueError, match="AGENT_PROTOCOL_INTERFACE_RETIRED"):
         restore_protocol(store, checkpoint)
+
+
+def test_v8_is_the_single_active_frozen_interface(config):
+    from balatro_horizons.harness.baselines import ScriptedPolicy
+    from balatro_horizons.harness.transport.base import Transport
+    from balatro_horizons.workbench.policies import (
+        HumanPolicy,
+        HumanSequencePolicy,
+        InterventionPolicy,
+    )
+
+    bundle = freeze_protocol(config, Baseline("heuristic"), {})
+    assert bundle["interface"] == "tools_v8"
+    assert all(policy.interface == bundle["interface"] for policy in (
+        Baseline, ScriptedPolicy, Transport, HumanPolicy, HumanSequencePolicy, InterventionPolicy,
+    ))
+    assert bundle["model_presentation"] == "integer_references_inline_quotes_shared_last_receipt"
 
 
 def test_config_mutation_does_not_change_running_allowance(store, config):

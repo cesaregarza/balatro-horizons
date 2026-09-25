@@ -6,11 +6,11 @@ from balatro_horizons.harness.context.present import focused_helper
 from balatro_horizons.harness.skills import read_guide
 
 
-def helper(operation, events, rules, observation=None):
+def helper(operation, events, rules, observation=None, *, references=None):
     if operation.kind == "action_result":
-        return retrieve_action_result(operation, events, observation)
+        return retrieve_action_result(operation, events, observation, references=references)
     if observation is not None:
-        result = focused_helper(operation, events, rules, observation)
+        result = focused_helper(operation, events, rules, observation, references=references)
         if result is not None:
             return result
     elif operation.kind in ("inspect_page", "history", "history_detail"):

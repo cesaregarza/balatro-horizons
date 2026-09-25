@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-09-25 — Harness v8: compact model presentation
+
+- Replace opaque public object handles and episode UUIDs in model input/tool
+  arguments with stable integer references resolved by the backend. Preserve
+  canonical observation/action journals, privacy boundaries and stale-action checks.
+- Make `tools_v8` the single active harness interface. V7 runs retain their
+  frozen protocol and require their retained executor; no version switch or migration.
+- Remove model-facing audit hashes, event UUIDs and notebook checksums; report
+  omitted history as a count. Deduplicate notebook-edit and target-selection prose.
+- Co-locate current offer facts with upfront quotes, legality and obligations.
+  Replace only an exactly duplicated latest memory receipt with one same-request
+  reference; standalone history/helper pages remain complete. Preserve typed
+  values, nulls, source qualifiers, historical labels and physical card order.
+- Resolve human inspector tool labels and quoted prices from the recorded model
+  request, preserving readable integer IDs alongside canonical journal handles.
+- Project inspection/history receipts before UTF-8 pagination and reconstruct
+  reference tables from the selected public prefix on restoration. Keep notes,
+  effects, counters, gameplay facts and provider continuation artifacts intact.
+- Project complete recent-event summaries before truncation. Share projected
+  helper receipts across human and provider policies, including checkpoint memory;
+  existing journal/checkpoint bytes are never rewritten. Pin feedback projection
+  for both providers and resolve integer arguments with constant-time lookup.
+- Freeze the new representation without rewriting older protocols. Pin existing
+  source migrations to their reviewed release and refuse cross-format Restore;
+  older runs require their retained executor. Native interface bytes are unchanged.
+
 ## 2026-09-24 — Explicit per-run cost overrides
 
 - Add Current limits, $10 total and red Uncapped choices for new model runs.
@@ -945,10 +971,15 @@ settlement evidence, doctor, and browser review. It made no paid provider reques
 and did not establish gameplay or cost improvement. The former sync option and
 deployment instructions for selecting this retired interface were removed.
 
-### tools_v7 — current
+### tools_v7 — retired
 
-The authoritative current prompt is [`configs/prompts/harness.txt`](configs/prompts/harness.txt),
-last changed on main by `5ca5f6e` (PR #34, 2026-09-20). Its placeholders are
-resolved from the frozen episode configuration; a rendered historical snapshot
-must not be presented as the current template. Retired versions above retain
-their exact historical text.
+V7 used `configs/prompts/harness.txt`; its 2026-09-20 source is preserved at
+`5ca5f6e` (PR #34). Existing runs keep their frozen template and protocol.
+
+### tools_v8 — current
+
+The authoritative current prompt is [`configs/prompts/harness.txt`](configs/prompts/harness.txt).
+It uses integer references, co-located current offer quotes and an exact duplicate
+receipt reference. Placeholders are resolved from the frozen episode configuration;
+a rendered historical snapshot must not be presented as the current template.
+Retired prompt text above is preserved unchanged.

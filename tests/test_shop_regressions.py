@@ -83,12 +83,9 @@ def test_recorded_shop_sequences_reach_final_provider_request(sequence, provider
         else:
             assert "rerolls" not in costs
         if step.get("offer"):
-            quote = costs["offers"][0]
-            assert (
-                quote["cash_cost"]
-                == view["state"]["offers"][0]["price"]
-                == str(step["offer"]["price"])
-            )
+            quote = view["state"]["offers"][0]["quote"]
+            assert quote["cash_cost"] == str(step["offer"]["price"])
+            assert "price" not in view["state"]["offers"][0] and "offers" not in costs
             if step["offer"].get("modifiers", {}).get("rental"):
                 assert quote["cash_cost"] == "0" and quote["affordable"]
                 assert quote["purchase_modes"]["acquire"] == {"status": "legal"}
@@ -134,8 +131,9 @@ def test_affordability_capacity_and_targeted_modes_are_distinct(provider):
     raw["shop"]["cards"][0].update(acquire_allowed=False, min_targets=1, max_targets=2)
     obs = project(normalize(raw))
     obs.state.hand = [PublicCard(id="target", label="5 of Clubs")]
-    costs = delivered_costs(request(obs, provider), provider)
-    offer = costs["offers"][0]
+    body = request(obs, provider)
+    costs = delivered_costs(body, provider)
+    offer = delivered_observation(body, provider)["state"]["offers"][0]["quote"]
     assert offer["affordable"] is True
     assert offer["purchase_modes"]["acquire"] == {
         "status": "unavailable",
@@ -169,10 +167,12 @@ def test_unknown_prices_survive_projection_and_serialization_without_becoming_fr
     assert Observation.model_validate(obs.model_dump(mode="json")).state.offers[0].price is None
     body = request(obs, provider)
     costs = delivered_costs(body, provider)
-    assert costs["offers"][0]["cash_cost"] is None and costs["offers"][0]["affordable"] is None
-    assert costs["offers"][0]["purchase_modes"]["acquire"]["status"] == "unknown"
+    offer = delivered_observation(body, provider)["state"]["offers"][0]
+    quote = offer["quote"]
+    assert quote["cash_cost"] is None and quote["affordable"] is None
+    assert quote["purchase_modes"]["acquire"]["status"] == "unknown"
     assert costs["rerolls"]["reroll_shop"]["cash_cost"] is None
-    assert delivered_observation(body, provider)["state"]["offers"][0]["price"] is None
+    assert "price" not in offer and "offers" not in costs
     envelope = ActionEnvelope.model_validate(
         {
             "observation_id": obs.observation_id,
@@ -190,9 +190,10 @@ def test_unknown_prices_survive_projection_and_serialization_without_becoming_fr
 def test_cash_and_credit_headroom_agree_with_validator(money, credit, headroom, affordable):
     obs = project(normalize(native_state()))
     obs.state.resources.money, obs.state.resources.credit_limit = money, credit
-    costs = delivered_costs(request(obs, "openai"), "openai")
+    body = request(obs, "openai")
+    costs = delivered_costs(body, "openai")
     assert costs["cash_balance"] == money and costs["positive_price_spending_headroom"] == headroom
-    assert costs["offers"][0]["affordable"] is affordable
+    assert delivered_observation(body, "openai")["state"]["offers"][0]["quote"]["affordable"] is affordable
 
 
 @pytest.mark.parametrize("money", ["-10", None])
@@ -202,9 +203,11 @@ def test_zero_upfront_quote_does_not_require_positive_cash_headroom(money):
     obs.state.resources.credit_limit = "0"
     obs.state.resources.shop_reroll_cost = "0"
     obs.state.offers[0].price = "0"
-    costs = delivered_costs(request(obs, "openai"), "openai")
-    assert costs["offers"][0]["affordable"] is True
-    assert costs["offers"][0]["purchase_modes"]["acquire"] == {"status": "legal"}
+    body = request(obs, "openai")
+    costs = delivered_costs(body, "openai")
+    quote = delivered_observation(body, "openai")["state"]["offers"][0]["quote"]
+    assert quote["affordable"] is True
+    assert quote["purchase_modes"]["acquire"] == {"status": "legal"}
     assert costs["rerolls"]["reroll_shop"]["affordable"] is True
     assert costs["rerolls"]["reroll_shop"]["mode_check"] == {"status": "legal"}
 

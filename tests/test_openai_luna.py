@@ -5,13 +5,12 @@ import json
 
 import httpx
 import pytest
-from provider_transport import with_input_count
+from provider_transport import model_choice, with_input_count
 from pydantic import ValidationError
 from test_boundary import project
 
 from balatro_horizons.config import ROOT, Limits, ModelConfig, load_config
 from balatro_horizons.game.fake import FakeGame
-from balatro_horizons.harness.baselines import Baseline
 from balatro_horizons.harness.context.build import context
 from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.money import Spending
@@ -145,7 +144,6 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
     config = luna()
     config.budgets.paid_calls_enabled = True
     received = []
-    baseline = Baseline("heuristic")
 
     def receive(request):
         body = json.loads(request.content)
@@ -155,7 +153,7 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
         if len(received) == 1:
             op = {"kind": "arithmetic", "expression": "2+2"}
         else:
-            op = baseline.decide(ctx, [])
+            op = model_choice(ctx)
             if op["kind"] == "action":
                 op["envelope"]["decision_note"] = "MOCK_NOTE"
                 op["note_update"] = {"key": "memory", "text": "MOCK_MEMORY"}

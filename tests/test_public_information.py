@@ -116,9 +116,11 @@ def test_visible_playing_offer_identity_reaches_final_request(
     (offer,) = view["state"]["offers"]
     assert (offer["rank"], offer["suit"], offer["label"]) == ("K", "Hearts", "K of Hearts")
     assert offer["effects"] == ["+30 chips", "edition: FOIL"]
-    assert offer["price"] == price and offer["acquire_allowed"] and not offer["buy_and_use_allowed"]
+    assert offer["quote"]["cash_cost"] == price
+    assert "price" not in offer and offer["acquire_allowed"] and not offer["buy_and_use_allowed"]
     envelope = ActionEnvelope.model_validate(
-        {"observation_id": 0, "action": {"type": action_type, "offer_id": offer["id"]}}
+        {"observation_id": 0, "action": decision_context(obs, [])[0].model_references.arguments(
+            {"type": action_type, "offer_id": offer["id"]})}
     )
     validate_action(envelope, obs)
     assert raw == original  # Formatting does not edit the engine state/mechanics.
@@ -204,7 +206,8 @@ def test_blind_effects_rewards_status_and_owned_effects_are_distinct(provider):
     assert view["state"]["pending_tags"][0]["label"] == "Double Tag"
     assert view["state"]["persistent_effects"] == []
     action = ActionEnvelope.model_validate(
-        {"observation_id": 0, "action": {"type": "select_blind", "blind_id": big["id"]}}
+        {"observation_id": 0, "action": decision_context(before, [])[0].model_references.arguments(
+            {"type": "select_blind", "blind_id": big["id"]})}
     )
     raw = native_state("SELECTING_HAND")
     raw["blinds"]["big"]["status"] = "CURRENT"
@@ -293,7 +296,8 @@ def test_last_action_preserves_departed_labels_without_promoting_agent_claims(st
     assert "Royal Flush" not in delta.model_dump_json() and "999999" not in delta.model_dump_json()
     for provider in ("openai", "anthropic"):
         delivered = delivered_observation(request(after_play, provider), provider)
-        assert delivered["last_action"] == delta.model_dump(mode="json")
+        references = decision_context(after_play, [])[0].model_references
+        assert delivered["last_action"] == references.project(delta.model_dump(mode="json"))
         page = helper(
             Operation.validate_python(
                 {"kind": "inspect_page", "section": "last_action", "offset": 0}

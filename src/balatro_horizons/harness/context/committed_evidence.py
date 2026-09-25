@@ -8,7 +8,7 @@ def reference(event):
     return {key: event[key] for key in ("episode_id", "event_id", "observation_id")}
 
 
-def retrieve_action_result(operation, events, observation):
+def retrieve_action_result(operation, events, observation, *, references=None):
     history = public_history(events, observation)
     commits = [(i, event) for i, event in enumerate(history) if event["type"] == "action_commit"]
     if operation.decision_id is not None:
@@ -52,5 +52,7 @@ def retrieve_action_result(operation, events, observation):
             "hand_score": None,
             "scoring_breakdown": None,
         }
+    if references is not None:
+        value, refs = references.project(value), references.project(refs)
     return text_page(value, operation.byte_offset, references=refs, section=operation.section,
                      format="json", reference="action_result")

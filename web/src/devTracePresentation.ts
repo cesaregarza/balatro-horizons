@@ -2,6 +2,7 @@ import { cardLabel } from "./cardPresentation";
 import { humanize } from "./decisionPresentation";
 
 export type Data = Record<string, any>;
+export type ObjectNames = Map<string | number, string>;
 export type TraceEvent = {
   event_id: string;
   sequence: number;
@@ -57,9 +58,26 @@ export function gameMoney(value: unknown) {
       : "Unknown"
     : "Unknown";
 }
-export function objectNames(observation: unknown): Map<string, string> {
+function objectId(value: unknown): value is string | number {
+  return typeof value === "string" ||
+    (typeof value === "number" && Number.isSafeInteger(value) && value > 0);
+}
+export function recordedModelContext(body: unknown): Data | null {
+  const request = record(body);
+  const messages = request.input ?? request.messages;
+  if (!Array.isArray(messages)) return null;
+  const content = messages.find((item) => record(item).role === "user")?.content;
+  if (typeof content !== "string") return null;
+  try {
+    const context = record(JSON.parse(content));
+    return Object.keys(record(context.observation)).length ? context : null;
+  } catch {
+    return null;
+  }
+}
+export function objectNames(observation: unknown): ObjectNames {
   const state = record(record(observation).state);
-  const names = new Map<string, string>();
+  const names: ObjectNames = new Map();
   for (const area of [
     "hand",
     "jokers",
@@ -69,13 +87,13 @@ export function objectNames(observation: unknown): Map<string, string> {
   ]) {
     for (const item of Array.isArray(state[area]) ? state[area] : []) {
       const obj = record(item);
-      if (typeof obj.id !== "string") continue;
+      if (!objectId(obj.id)) continue;
       names.set(
         obj.id,
         obj.face_down
           ? "Face-down card"
           : cardLabel(
-              typeof obj.label === "string" ? obj.label : obj.id,
+              typeof obj.label === "string" ? obj.label : String(obj.id),
               Array.isArray(obj.effects)
                 ? obj.effects.filter((x: unknown) => typeof x === "string")
                 : [],
@@ -85,12 +103,12 @@ export function objectNames(observation: unknown): Map<string, string> {
   }
   return names;
 }
-export function toolTitle(tool: TraceTool, names: Map<string, string>) {
+export function toolTitle(tool: TraceTool, names: ObjectNames) {
   const args = record(tool.arguments);
   const name = tool.name || "unnamed_tool";
   if (tool.arguments_parse_error) return title(name);
   const label = (id: unknown) =>
-    typeof id === "string" ? names.get(id) || id : "item not recorded";
+    objectId(id) ? names.get(id) || String(id) : "item not recorded";
   const cards = (ids: unknown) =>
     Array.isArray(ids) ? ids.map(label).join(", ") : "cards not recorded";
   switch (name) {
@@ -138,6 +156,14 @@ export function quotedPrice(tool: TraceTool, context: Data): string | null {
     return `Quoted upfront cost: ${gameMoney(quote.cash_cost)}`;
   }
   if (tool.name === "buy" || tool.name === "choose_pack") {
+    const stateOffers = record(record(context.observation).state).offers;
+    const deliveredOffer = (Array.isArray(stateOffers) ? stateOffers : []).find(
+      (x: unknown) => record(x).id === args.offer_id,
+    );
+    if (deliveredOffer && Object.prototype.hasOwnProperty.call(record(deliveredOffer), "quote")) {
+      const quote = record(record(deliveredOffer).quote);
+      return `Quoted upfront cost: ${gameMoney(quote.cash_cost)}`;
+    }
     const offer = (Array.isArray(costs.offers) ? costs.offers : []).find(
       (x: Data) => x.offer_id === args.offer_id,
     );

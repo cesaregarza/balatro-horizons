@@ -281,7 +281,7 @@ def test_provider_continuation_resets_after_committed_game_action(store, monkeyp
             name = "select_blind"
             arguments = {
                 "observation_id": runner.observation.observation_id,
-                "blind_id": blind.id,
+                "blind_id": runner.model_references.objects[blind.id],
                 "decision_note": None,
                 "note_update": None,
             }

@@ -23,6 +23,7 @@ from balatro_horizons.harness.context.memory import (
     restore_notebook,
     restore_working_memory,
 )
+from balatro_horizons.harness.context.references import ModelReferences
 from balatro_horizons.harness.context.render import KERNEL
 from balatro_horizons.harness.contract import (
     EnvironmentLockedGame,
@@ -70,6 +71,7 @@ class Runner(RuntimeDiagnosticsMixin, DecisionRuntimeMixin):
         self.memory = ""
         self.notebook = RunNotebook(self.limits.memory_max_characters)
         self.working_memory = WorkingMemory()
+        self.model_references = ModelReferences()
         self.recent = []
         self.issuer = HandleIssuer()
         self.eid = None
@@ -91,6 +93,7 @@ class Runner(RuntimeDiagnosticsMixin, DecisionRuntimeMixin):
     def log(self, kind, payload, **kwargs):
         event = self.store.append(self.eid, kind, payload, **kwargs)
         self.working_memory.consume(event)
+        self.model_references.consume(event)
         return event
 
     def bind_ledger(self):
@@ -145,6 +148,8 @@ class Runner(RuntimeDiagnosticsMixin, DecisionRuntimeMixin):
         self.protocol_reference = {"episode_id": self.eid, "hash": digest(self.protocol)}
         self.knowledge_reference = {"episode_id": self.eid, "hash": digest(self.rules)}
         self.history_prefix = history_prefix or []
+        for event in self.history_prefix:
+            self.model_references.consume(event)
 
     def rehydrate_resume_state(self, resume):
         """Restore durable notebook, game, and counters before the first decision."""

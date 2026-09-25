@@ -371,17 +371,22 @@ def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, con
     view = json.loads(next(m for m in messages if m.get("role") == "user")["content"])
     assert len(view["working_memory"]["frames"]) == 2
     assert view["run_notebook"]["entries"] == {"plan": "I expect this hand to win"}
-    assert view["previous_action_outcome"] == policy.contexts[-1]["previous_action_outcome"]
+    ctx = policy.contexts[-1]
+    assert view["previous_action_outcome"] == ctx.model_references.project(
+        ctx["previous_action_outcome"])
     assert view["previous_action_outcome"]["action_type"] == "play_hand"
     assert view["previous_action_outcome"]["recorded_note_update"]["text"] == "I expect this hand to win"
+    guidance = last["input"][0]["content"][0]["text"] if provider == "openai" else last["system"]
+    assert "target_ids selects cards without rearranging them" in guidance
+    assert "physical order in the hand array, not the order of target_ids" in guidance
+    assert "turns the left selected card into the right selected card" in guidance
+    assert "use reorder when permitted, then act from the new observation" in guidance
     for definition in last["tools"]:
         if definition["name"] in ACTION_MODELS:
             schema = definition.get("parameters", definition.get("input_schema"))
             assert "note_update" in schema["required"] and "memory_update" not in schema["properties"]
             if definition["name"] in ("buy", "use_consumable", "choose_pack"):
-                guidance = schema["properties"]["target_ids"]["description"]
-                assert "list order does not move them" in guidance
-                assert "Death converts the left selected card into the right selected card" in guidance
+                assert "description" not in schema["properties"]["target_ids"]
     args = {"observation_id": 0, "note_update": {"key": "k", "text": "v"}}
     assert decode_tool("cash_out", args)["note_update"] == args["note_update"]
     with pytest.raises(ValueError, match="LEGACY_MEMORY_UPDATE_NOT_ALLOWED"):
@@ -570,7 +575,9 @@ def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, 
     }
     assert grand.contexts[0]["run_notebook"]["revision"] == snapshot["run_notebook"]["revision"]
     assert "FUTURE_CHILD" not in json.dumps(dict(grand.contexts[0]))
-    assert grand.exchanges[1][-1]["result"]["references"]["action"]["episode_id"] == root
+    reference = grand.exchanges[1][-1]["result"]["references"]["action"]["episode_id"]
+    assert type(reference) is int
+    assert grand.contexts[0].model_references.arguments({"episode_id": reference}) == {"episode_id": root}
     corrupt = deepcopy(snapshot["working_memory"])
     corrupt["frames"][0]["helpers"][0]["result"] = {"result": "999"}
     with pytest.raises(ValueError, match="WORKING_MEMORY_SNAPSHOT_MISMATCH"):

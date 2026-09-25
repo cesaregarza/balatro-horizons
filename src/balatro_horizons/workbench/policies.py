@@ -6,7 +6,7 @@ from balatro_horizons.harness.loop import OperatorAbort
 
 
 class HumanPolicy:
-    interface = "tools_v7"
+    interface = "tools_v8"
     name = "human"
     actor = "human"
     model = None
@@ -37,7 +37,7 @@ class HumanPolicy:
 
 
 class InterventionPolicy:
-    interface = "tools_v7"
+    interface = "tools_v8"
 
     def __init__(self, operations, continuation):
         self.operations = list(operations)
@@ -80,7 +80,7 @@ class InterventionPolicy:
 
 
 class HumanSequencePolicy:
-    interface = "tools_v7"
+    interface = "tools_v8"
 
     def __init__(self, human, continuation, steps):
         self.human, self.continuation, self.remaining = human, continuation, steps

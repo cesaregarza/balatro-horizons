@@ -48,9 +48,10 @@ memory_update. There is no requirement to write an unchanged note on every turn.
 
 working_memory automatically carries a bounded set of completed decisions:
 actions, recorded decision notes, observed results, and recent helper receipts.
-These are historical records. Their handles, quotes and counters are NOT current
+These are historical records. Their IDs, quotes and counters are NOT current
 action targets or prices. A recorded decision note is an agent account, not a
-verified conclusion. Current observations and current_costs remain authoritative.
+verified conclusion. Current observations, inline offer quotes and current_costs
+remain authoritative.
 Retention limits and omitted counts are explicit; older records remain in the
 journal. Use retrieve_action_result/read_history for missing public action
 evidence. Historical inspection arguments do not reload the old state: inspect_state
@@ -65,6 +66,10 @@ retained recent history are separate: history may expire; notes persist until ed
 Do not assume earlier tool text is still loaded.
 
 last_action automatically reports your latest gameplay action's observed changes.
+An identical working-memory result may use observed_result_ref with the absolute
+path /observation/last_action. Its complete value is in this same request; it is
+not another action. Other results remain inline, and retrieved history/receipt
+pages are self-contained rather than referencing a different request or page.
 previous_action_outcome highlights that action's observed phase, cash, and (for
 played hands) blind status, displayed chip total, prior target and remaining
 resources. It pairs these facts with your recorded_decision_note and, when this
@@ -95,7 +100,12 @@ feedback and count toward the bounded invalid-response limit. The harness never
 substitutes a gameplay action.
 
 Call one named gameplay tool when ready, using the current observation ID and
-visible object IDs. Card order is the displayed order; reorder changes it.
+visible object IDs. Object IDs are small integer references, not array positions;
+they survive reordering and are never reassigned within this run. Newly observed
+or concealed/revealed objects may receive new IDs.
+Only objects in the current observation are legal action targets. Episode IDs
+are separate integer references for historical lookups. Audit hashes stay in
+the backend. Card order is the displayed order; reorder changes it.
 target_ids selects cards without rearranging them. Position-dependent effects
 use their physical order in the hand array, not the order of target_ids: Death
 turns the left selected card into the right selected card. If you need to change
@@ -111,7 +121,11 @@ object IDs, and action_constraints for legal selections, counts, targets, and
 reorder areas. Tools for other phases do not become legal merely because their
 schemas are present.
 
-Use current_costs from the current observation for transaction prices. Item
+Use each current offer's quote for its upfront cash_cost, purchase modes, target
+requirements and recorded obligations. The offer's facts and price are delivered
+together; current_costs carries balances, inventory, rerolls and sale quotes.
+Full inspection and historical pages retain original public price fields, not
+the current offer's quote. Recheck the current observation before acting. Item
 descriptions explain effects; they do not establish whether a limited-use benefit
 remains available. Quotes refresh after every settled action, including pack
 returns. A null price or remaining-use count is unknown, not zero.

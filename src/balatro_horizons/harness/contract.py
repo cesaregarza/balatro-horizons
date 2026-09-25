@@ -15,6 +15,7 @@ from balatro_horizons.config import (
 )
 from balatro_horizons.contracts import ActionEnvelope, StrictModel
 from balatro_horizons.game.contract import GameSession
+from balatro_horizons.harness.context.references import ModelReferences
 from balatro_horizons.harness.tool_interface import INSPECT_SECTIONS
 
 
@@ -118,10 +119,11 @@ class Context(Mapping[str, Any]):
     skill_catalog_delivery: str | None = None
     # A current outcome is delivered even when it is null; older frozen bundles omit it.
     deliver_previous_action_outcome: bool = field(default=False, repr=False, compare=False)
+    model_references: ModelReferences = field(default_factory=ModelReferences, repr=False, compare=False)
 
     def __iter__(self) -> Iterator[str]:
         for item in fields(self):
-            if item.name == "deliver_previous_action_outcome":
+            if item.name in ("deliver_previous_action_outcome", "model_references"):
                 continue
             if item.name == "previous_action_outcome":
                 if not self.deliver_previous_action_outcome:

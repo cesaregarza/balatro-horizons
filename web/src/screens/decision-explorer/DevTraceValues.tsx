@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { title } from "../../devTracePresentation";
+import { title, type ObjectNames } from "../../devTracePresentation";
 
 export function JsonPanel({ label, value }: { label: string; value: unknown }) {
   const [open, setOpen] = useState(false);
   return <details className="dev-json" onToggle={(event) => setOpen(event.currentTarget.open)}><summary>{label}</summary>{open && <pre>{JSON.stringify(value, null, 2) ?? "Not recorded"}</pre>}</details>;
 }
 
-export function ReadableValue({ value, names = new Map(), depth = 0 }: { value: unknown; names?: Map<string, string>; depth?: number }) {
+export function ReadableValue({ value, names = new Map(), depth = 0 }: { value: unknown; names?: ObjectNames; depth?: number }) {
   const [expanded, setExpanded] = useState(false);
   const [count, setCount] = useState(8);
   if (value == null) return <span className="muted">Not recorded</span>;
