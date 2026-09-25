@@ -21,6 +21,29 @@ on-demand chapter pages, but paging cannot mutate the frozen knowledge base.
 Rules, history, inspection, and arithmetic are read-only helpers. Regeneration
 is a new bounded request, not a hidden retry or an alternative action.
 
+Object IDs in model requests and tool arguments are positive integer references,
+not array positions. They are assigned on first public appearance, never reused,
+and stay attached to the same public object when it moves. Concealment does not
+reconnect hidden identities. The backend resolves integers to canonical opaque
+handles before the unchanged phase, observation, count and legality checks.
+Unknown IDs, strings, booleans and stale targets are refused, not guessed.
+Episode IDs use a separate integer namespace for historical lookups; decision
+numbers and pagination offsets retain their existing meaning.
+
+The model does not receive audit/event hashes, notebook checksums or event UUIDs.
+Omitted history is reported as a count, while retrieval uses existing offsets
+or episode/decision references. Inspection and history pages are projected before
+UTF-8 pagination, so their cursors address the actual delivered text. Notebook
+text, rules, effects, counters and provider-native continuation blocks stay intact.
+Shared notebook-edit instructions appear once in the prompt instead of being
+repeated in every gameplay tool. Canonical journals and checkpoints are unchanged;
+the integer table is reconstructed from the selected public ancestry on Restore.
+
+This is a new frozen protocol identity, not a migration of existing runs. A
+pre-compaction run needs its retained executor: the current source-compatibility
+gate refuses changing that run's request format. Native evidence may still be
+reused independently when the native interface/runtime bytes are identical.
+
 The defaults below come from `config.py`; bytes and provider tokens are separate
 units. Overrides are recorded and cannot silently widen a frozen episode.
 

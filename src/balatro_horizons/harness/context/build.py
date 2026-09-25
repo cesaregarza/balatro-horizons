@@ -27,6 +27,7 @@ from balatro_horizons.harness.tool_interface import ACTION_MODELS
 def build_context(
     observation, exchanges=(), *, byte_limit=DEFAULT_REQUEST_BYTE_LIMIT,
     skills=(), frozen=None, notebook=None, helper_remaining=None, working_memory=None,
+    references=None,
 ):
     """Build the public fields in source order, then fit the delivery window."""
     original, focused, omitted = _base_fields(observation)
@@ -41,6 +42,9 @@ def build_context(
     context = _assembled_context(original, prompt, kernel, tools, costs, focused,
                                  omitted, notes, history, outcome, deliver_outcome,
                                  allowed, helper_status)
+    if references is not None:
+        context.model_references = references
+    context.model_references.observe(original)
     return _bounded_delivery(context, exchanges, skills, byte_limit)
 
 

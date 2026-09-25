@@ -1,11 +1,11 @@
 {
   "prompt_utf8": {
-    "bytes": 9628,
-    "sha256": "35f939290dbaf8336b7972c1210b18591ccbda8bee4130317de196ba9e1f6807"
+    "bytes": 9990,
+    "sha256": "fed485e7f0242910181229c0c4a24509a5243bcfbc6d8c83d481ea8bbf086d3c"
   },
   "tool_catalog_json": {
-    "bytes": 19989,
-    "sha256": "fe3583f9e955f553e9f802dde34a0c9a79a06f224e05dc4836f9cd68e35b0b6c"
+    "bytes": 14069,
+    "sha256": "3e60c8b339568c169bcc3c68316dd47a49ad172c8e324c78d88fa1fff72a2660"
   },
   "context_keys": [
     [

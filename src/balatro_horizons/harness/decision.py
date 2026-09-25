@@ -38,6 +38,8 @@ _PROTOCOL_MESSAGES = {
         "Use set_run_note or delete_run_note; gameplay actions do not replace your notebook."
     ),
     "UNAVAILABLE_TOOL_ARGUMENT": "This harness version does not support that tool argument.",
+    "INVALID_MODEL_REFERENCE": "Use the integer ID shown in the current public view.",
+    "UNKNOWN_MODEL_REFERENCE": "That integer ID is unknown. Use a visible current object ID.",
     "RUN_NOTEBOOK_LIMIT": (
         "The attached note exceeds notebook capacity. Shorten it or keep note_update null; "
         "neither the edit nor the action executed."
@@ -110,6 +112,7 @@ class DecisionRuntimeMixin(ProviderRuntimeMixin):
                 0, self.limits.max_helper_calls_per_decision - helper_count
             ),
             working_memory=self.working_memory.view(),
+            references=self.model_references,
         )
         ctx.observation["remaining_budget"]["provider_calls"] = (
             self.limits.max_provider_calls - self.calls
@@ -164,6 +167,8 @@ class DecisionRuntimeMixin(ProviderRuntimeMixin):
                     self.history_prefix + self.store.events(self.eid),
                     self.rules,
                     observation=observation,
+                    references=(self.model_references
+                                if isinstance(self.active_policy, ProviderPolicy) else None),
                 )
             except (ValueError, ArithmeticError, SyntaxError):
                 result = {"error": "INVALID_HELPER_REQUEST"}

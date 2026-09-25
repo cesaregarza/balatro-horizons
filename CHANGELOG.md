@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-25 — Compact model references
+
+- Replace opaque public object handles and episode UUIDs in model input/tool
+  arguments with stable integer references resolved by the backend. Preserve
+  canonical journals, checkpoints, privacy boundaries and stale-action checks.
+- Remove model-facing audit hashes, event UUIDs and notebook checksums; report
+  omitted history as a count. Deduplicate shared notebook-edit tool instructions.
+- Project inspection/history receipts before UTF-8 pagination and reconstruct
+  reference tables from the selected public prefix on restoration. Keep notes,
+  effects, counters, gameplay facts and provider continuation artifacts intact.
+- Freeze the new representation without rewriting older protocols. Pin existing
+  source migrations to their reviewed release and refuse cross-format Restore;
+  older runs require their retained executor. Native interface bytes are unchanged.
+
 ## 2026-09-24 — Explicit per-run cost overrides
 
 - Add Current limits, $10 total and red Uncapped choices for new model runs.

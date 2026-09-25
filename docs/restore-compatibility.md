@@ -78,7 +78,13 @@ Restore preview/confirmation, budget continuation and source fingerprinting.
 Only that full historical fingerprint may add the new `cost_limits.py` module.
 No current module is normalized and unknown historical identities cannot use
 this addition. Tests compare actual immutable Git source and mutate every
-accepted current module independently.
+accepted target module independently. The target is the immutable funding release
+`14a32d0f95c62950203da4bda2d55be0318fb821`, not arbitrary later harness code.
+
+The compact-integer model format is deliberately outside that migration. New
+protocols use it; pre-compaction runs retain their original prompts, schemas and
+IDs and require their retained executor. Identical native bytes permit native
+evidence reuse, not silent adoption of a different agent request format.
 
 This is an explicit funding/admission-policy upgrade, not a claim that unlimited
 spending existed in the old release. Ordinary Restore preserves the original

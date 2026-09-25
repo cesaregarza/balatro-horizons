@@ -95,7 +95,12 @@ feedback and count toward the bounded invalid-response limit. The harness never
 substitutes a gameplay action.
 
 Call one named gameplay tool when ready, using the current observation ID and
-visible object IDs. Card order is the displayed order; reorder changes it.
+visible object IDs. Object IDs are small integer references, not array positions;
+they survive reordering and are never reassigned within this run. Newly observed
+or concealed/revealed objects may receive new IDs.
+Only objects in the current observation are legal action targets. Episode IDs
+are separate integer references for historical lookups. Audit hashes stay in
+the backend. Card order is the displayed order; reorder changes it.
 target_ids selects cards without rearranging them. Position-dependent effects
 use their physical order in the hand array, not the order of target_ids: Death
 turns the left selected card into the right selected card. If you need to change

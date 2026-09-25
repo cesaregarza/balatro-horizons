@@ -78,18 +78,19 @@ def canonical_messages(ctx):
     )
     if "previous_action_outcome" in ctx:
         content["previous_action_outcome"] = ctx.previous_action_outcome
-    return [{"role": "user", "content": encode(content)}]
+    return [{"role": "user", "content": encode(ctx.model_references.project(content))}]
 
 
 def tool_messages(ctx, exchanges, spec):
     messages = canonical_messages(ctx)
     for index, exchange in enumerate(exchanges):
+        result = ctx.model_references.project(exchange["result"])
         items = _native_items(exchange, spec)
         if items is not None:
-            rendered = spec.native_messages(items, exchange["result"], spec)
+            rendered = spec.native_messages(items, result, spec)
         else:
             rendered = spec.synthetic_messages(
-                exchange.get("tool_call"), exchange["result"], index, spec
+                exchange.get("tool_call"), result, index, spec
             )
         messages.extend(rendered)
     return messages
@@ -126,6 +127,7 @@ class Transport:
         self.available_tools = set()
         self.last_tool_call = None
         self.last_provider_turn = None
+        self.model_references = None
         self.input_counter = InputCounter()
         # Diagnostic comparison state is deliberately instance-local. RunService creates
         # a fresh provider for each run, so response IDs cannot cross episode lifecycles.
@@ -133,6 +135,7 @@ class Transport:
 
     def request(self, ctx, exchanges):
         self.available_tools = set(ctx.allowed_tools)
+        self.model_references = ctx.model_references
         self.last_tool_call = None
         body = self.spec.request_body(self, ctx, exchanges)
         check_request_bytes(body, self.limits)
@@ -288,6 +291,8 @@ class Transport:
     def _decode(self, name, arguments):
         self.last_tool_call = {"name": name, "arguments": arguments}
         try:
+            if self.model_references is not None:
+                arguments = self.model_references.arguments(arguments)
             return decode_tool(name, arguments)
         except ValueError as error:
             raise ProtocolFailure(str(error)) from None

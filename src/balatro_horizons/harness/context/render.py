@@ -5,6 +5,7 @@ import re
 from balatro_horizons.config import NOTEBOOK_KEY_MAX, NOTEBOOK_KEY_MIN, RETAINED_HELPER_RESULTS
 from balatro_horizons.harness.context.memory import notebook_tools
 from balatro_horizons.harness.context.present import focused_tools
+from balatro_horizons.harness.context.references import indexed_tools
 from balatro_horizons.harness.skills import discovery
 from balatro_horizons.harness.tool_interface import stable_tools
 
@@ -26,9 +27,9 @@ def rules_kernel(skills):
 
 
 def tool_catalog(skills):
-    return notebook_tools(
+    return indexed_tools(notebook_tools(
         focused_tools(stable_tools(skills=skills, target_guidance=True)), action_notes=True
-    )
+    ))
 
 
 def render_prompt(raw: bytes) -> bytes:

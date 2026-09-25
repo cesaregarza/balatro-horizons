@@ -144,7 +144,7 @@ def test_static_cache_schemas_keep_current_observation_and_blind_validation():
         policy.request(ctx, delivered)
         args = {
             "observation_id": observation.observation_id + 1,
-            "blind_id": observation.state.revealed_blinds[0].id,
+            "blind_id": ctx.model_references.objects[observation.state.revealed_blinds[0].id],
             "decision_note": None,
             "note_update": None,
         }
@@ -161,7 +161,8 @@ def test_static_cache_schemas_keep_current_observation_and_blind_validation():
         with pytest.raises(InvalidAction, match="STALE_OBSERVATION"):
             validate_action(parsed().envelope, observation)
         args["observation_id"] = observation.observation_id
-        args["blind_id"] = "stale-card-handle"
+        # An issued but non-current reference must still reach gameplay validation.
+        args["blind_id"] = ctx.model_references.project({"id": "stale-card-handle"})["id"]
         with pytest.raises(InvalidAction, match="UNKNOWN_BLIND"):
             validate_action(parsed().envelope, observation)
         assert game.observe_private() == before

@@ -122,7 +122,7 @@ def test_model_reads_skill_and_reference_then_completes_synthetic_run(
             if len(requests) == 3:
                 assert runner.committed == 0 and "Scoring mechanics reference" in json.dumps(body)
             envelope = baseline.decide(context(runner.observation), [])["envelope"]
-            action = dict(envelope["action"])
+            action = runner.model_references.project(envelope["action"])
             name = action.pop("type")
             args = {
                 **action,

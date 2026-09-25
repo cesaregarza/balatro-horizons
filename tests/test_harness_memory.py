@@ -371,7 +371,9 @@ def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, con
     view = json.loads(next(m for m in messages if m.get("role") == "user")["content"])
     assert len(view["working_memory"]["frames"]) == 2
     assert view["run_notebook"]["entries"] == {"plan": "I expect this hand to win"}
-    assert view["previous_action_outcome"] == policy.contexts[-1]["previous_action_outcome"]
+    ctx = policy.contexts[-1]
+    assert view["previous_action_outcome"] == ctx.model_references.project(
+        ctx["previous_action_outcome"])
     assert view["previous_action_outcome"]["action_type"] == "play_hand"
     assert view["previous_action_outcome"]["recorded_note_update"]["text"] == "I expect this hand to win"
     for definition in last["tools"]:

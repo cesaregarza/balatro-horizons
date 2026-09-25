@@ -266,12 +266,12 @@ def current_action(runner):
     else:
         action = {"type": "leave_shop"}
     name = action.pop("type")
-    return name, {
+    return name, runner.model_references.project({
         **action,
         "observation_id": observation.observation_id,
         "decision_note": None,
         "note_update": {"key": "plan", "text": "MOCK_NOTE"},
-    }
+    })
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
@@ -300,14 +300,14 @@ def test_tools_inspect_calculate_correct_error_and_finish(store, monkeypatch, pr
                 "select_blind",
                 {
                     "observation_id": 0,
-                    "blind_id": "wrong",
+                    "blind_id": 999999,
                     "decision_note": None,
                     "note_update": None,
                 },
             )
         else:
             if number == 4:
-                assert "UNKNOWN_BLIND" in json.dumps(messages[-1])
+                assert "UNKNOWN_MODEL_REFERENCE" in json.dumps(messages[-1])
                 assert runner.committed == 0
             name, args = current_action(runner)
         usage = {
@@ -430,7 +430,8 @@ def test_oversized_named_note_write_exhausts_helpers_then_allows_model_game_acti
                 "select_blind",
                 {
                     "observation_id": runner.observation.observation_id,
-                    "blind_id": runner.observation.state.revealed_blinds[0].id,
+                    "blind_id": runner.model_references.objects[
+                        runner.observation.state.revealed_blinds[0].id],
                     "decision_note": None,
                     "note_update": None,
                 },

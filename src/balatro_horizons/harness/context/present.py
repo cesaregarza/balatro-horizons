@@ -179,16 +179,19 @@ def history_digest(event, offset):
     return result
 
 
-def _history_page(operation, history):
+def _history_page(operation, history, references):
     page = []
     for i in range(operation.offset, min(len(history), operation.offset + operation.limit)):
         row = history_digest(history[i], i)
+        if references is not None:
+            row = references.project(row)
         if len(encode(page + [row]).encode()) > PAGE_BYTES:
             if not page:
-                page.append({
+                fallback = {
                     "offset": i, "event_id": history[i]["event_id"],
                     "type": history[i]["type"], "detail_available": True,
-                })
+                }
+                page.append(references.project(fallback) if references is not None else fallback)
             break
         page.append(row)
     end = operation.offset + len(page)
@@ -214,13 +217,15 @@ def _rule_page(operation, rules):
     return page
 
 
-def focused_helper(operation, events, rules, observation):
+def focused_helper(operation, events, rules, observation, *, references=None):
     if operation.kind == "inspect_page":
         public = observation.model_dump(mode="json")
         section = operation.section
         value = (public[section]
                  if section in ("recent_public_events", "action_constraints", "last_action")
                  else public["state"][section])
+        if references is not None:
+            value = references.project(value)
         return text_page(value, operation.offset, section=section,
                          observation_id=observation.observation_id, format="json")
     if operation.kind in ("history", "history_detail"):
@@ -228,9 +233,12 @@ def focused_helper(operation, events, rules, observation):
         if operation.kind == "history_detail":
             if operation.offset >= len(history):
                 return {"error": "UNKNOWN_PUBLIC_EVENT", "game_advanced": False}
-            return text_page(history[operation.offset], operation.byte_offset,
+            value = history[operation.offset]
+            if references is not None:
+                value = references.project(value)
+            return text_page(value, operation.byte_offset,
                              history_offset=operation.offset, format="json")
-        return _history_page(operation, history)
+        return _history_page(operation, history, references)
     if operation.kind == "rules":
         return _rule_page(operation, rules)
     return None

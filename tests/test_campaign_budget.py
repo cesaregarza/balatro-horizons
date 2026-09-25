@@ -12,7 +12,7 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
-from provider_transport import with_input_count
+from provider_transport import model_choice, with_input_count
 from test_openai_luna import luna, response
 
 from balatro_horizons import service as service_module
@@ -59,7 +59,7 @@ def harness(store, monkeypatch):
             raise httpx.ReadTimeout("synthetic transport failure")
         message = next(item for item in body["input"] if item.get("role") == "user")
         context = json.loads(message["content"])
-        operation = operations[0] if operations else Baseline("heuristic").decide(context, [])
+        operation = operations[0] if operations else model_choice(context)
         return httpx.Response(200, json=response(operation))
     def policy(model, limits):
         client = httpx.Client(transport=httpx.MockTransport(with_input_count(receive)))

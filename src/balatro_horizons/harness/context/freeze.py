@@ -48,6 +48,7 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         "tool": None,
         "tool_catalog": tools,
         "tool_policy": "stable_catalog_local_phase_rejection",
+        "model_presentation": "public_first_appearance_integer_references",
         "model": model.model_dump() if model is not None else None,
         "agent": policy.name if isinstance(policy, NamedPolicy) else "model",
         "benchmark": deepcopy(config.benchmark),
