@@ -4,12 +4,17 @@
 
 - Raise the shared per-call output ceiling from 8,192 to 32,768 tokens, including
   reasoning, for new configurations. Both provider adapters use the same limit.
-- Raise provider HTTP read inactivity timeouts from 90 to 300 seconds. Leave
-  connect/write/pool timeouts at 90 seconds, native game timeouts unchanged, and
-  injected clients' timeout settings intact.
+- Size non-streaming provider HTTP read timeouts from the configured output
+  allowance at 36 tokens/second, rounded up with a 90-second minimum: 911 seconds
+  at the new default. Leave connect/write/pool timeouts at 90 seconds, native
+  game timeouts unchanged, and injected clients' timeout settings intact.
+- Stop on `PROVIDER_READ_TIMEOUT` without automatic retries, retaining one
+  unknown-usage reservation. Other transport failures retain bounded retries.
+  Document longer pending-Stop latency; streaming and in-flight cancellation
+  remain separate follow-ups.
 - Preserve explicit saved/YAML limits and historical frozen allowances. This is
   a ceiling, not a generation target; dollar caps, actual-usage settlement, model
-  effort and the existing retry policy remain unchanged. Reservations include the
+  effort and retry-attempt limits remain unchanged. Reservations include the
   larger worst-case output allowance. Saved operator limits need a separate update.
 - Pin provider requests, reservation/settlement behavior and frozen-limit refusal
   with offline tests. No native code, paid calls or historical journals change.

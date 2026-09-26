@@ -7,7 +7,7 @@ import pytest
 from test_boundary import project
 from test_providers_evaluation import model
 
-from balatro_horizons.config import Config, Limits
+from balatro_horizons.config import PROVIDER_MIN_OUTPUT_TOKENS_PER_SECOND, Config, Limits
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.baselines import Baseline
 from balatro_horizons.harness.context.build import context
@@ -34,13 +34,20 @@ def test_output_default_and_override_change_only_request_ceiling(provider, field
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
-def test_provider_requests_allow_longer_reads_only(provider):
-    policy = DirectProvider(model(provider), Limits())
+@pytest.mark.parametrize(
+    "output_limit,read_seconds", [(None, 911), (64, 90), (8192, 228), (65_536, 1821)]
+)
+def test_provider_read_timeout_covers_configured_output_ceiling(provider, output_limit, read_seconds):
+    limits = Limits() if output_limit is None else Limits(max_output_tokens_per_call=output_limit)
+    policy = DirectProvider(model(provider), limits)
     try:
         request = policy.client.build_request("POST", "https://example.invalid", json={})
         assert request.extensions["timeout"] == {
-            "connect": 90, "read": 300, "write": 90, "pool": 90,
+            "connect": 90, "read": read_seconds, "write": 90, "pool": 90,
         }
+        assert request.extensions["timeout"]["read"] >= (
+            limits.max_output_tokens_per_call / PROVIDER_MIN_OUTPUT_TOKENS_PER_SECOND
+        )
     finally:
         policy.client.close()
 

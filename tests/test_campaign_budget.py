@@ -58,7 +58,8 @@ def harness(store, monkeypatch):
         )
         calls.append(body)
         if failures:
-            raise httpx.ReadTimeout("synthetic transport failure")
+            # These shared funding/Restore cases require a retryable unknown-usage failure.
+            raise httpx.WriteTimeout("synthetic transport failure")
         message = next(item for item in body["input"] if item.get("role") == "user")
         context = json.loads(message["content"])
         operation = operations[0] if operations else model_choice(context)
