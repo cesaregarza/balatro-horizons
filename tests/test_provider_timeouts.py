@@ -1,4 +1,4 @@
-"""Unknown-usage read timeouts stop spending; all HTTP and gameplay are synthetic."""
+"""Response-phase failures stop retries; all HTTP and gameplay are synthetic."""
 
 import json
 
@@ -26,7 +26,9 @@ from balatro_horizons.harness.transport import DirectProvider, ProviderFailure
         (httpx.WriteTimeout, "PROVIDER_TRANSPORT_UNKNOWN", True),
         (httpx.ConnectError, "PROVIDER_TRANSPORT_UNKNOWN", True),
         (httpx.WriteError, "PROVIDER_TRANSPORT_UNKNOWN", True),
-        (httpx.ReadError, "PROVIDER_TRANSPORT_UNKNOWN", True),
+        (httpx.ReadError, "PROVIDER_RESPONSE_LOST", False),
+        (httpx.RemoteProtocolError, "PROVIDER_RESPONSE_LOST", False),
+        (httpx.TransportError, "PROVIDER_TRANSPORT_UNKNOWN", False),
     ],
 )
 def test_transport_error_classification(provider, failure, code, retryable, monkeypatch):
@@ -46,8 +48,16 @@ def test_transport_error_classification(provider, failure, code, retryable, monk
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
 @pytest.mark.parametrize("output_limit", [8192, 32_768])
-def test_read_timeout_never_retries_and_retains_one_reservation(
-    provider, output_limit, store, monkeypatch
+@pytest.mark.parametrize(
+    "failure,code",
+    [
+        (httpx.ReadTimeout, "PROVIDER_READ_TIMEOUT"),
+        (httpx.ReadError, "PROVIDER_RESPONSE_LOST"),
+        (httpx.RemoteProtocolError, "PROVIDER_RESPONSE_LOST"),
+    ],
+)
+def test_response_failure_never_retries_and_retains_one_reservation(
+    provider, output_limit, failure, code, store, monkeypatch
 ):
     config = Config(budgets=Limits(
         max_output_tokens_per_call=output_limit,
@@ -57,7 +67,7 @@ def test_read_timeout_never_retries_and_retains_one_reservation(
 
     def receive(request):
         requests.append(request)
-        raise httpx.ReadTimeout("PRIVATE_TIMEOUT_DETAIL", request=request)
+        raise failure("PRIVATE_TIMEOUT_DETAIL", request=request)
 
     spending = Spending(store.root / "private_runs" / "timeout-spending.json", 10)
     with httpx.Client(transport=httpx.MockTransport(with_input_count(receive))) as client:
@@ -70,7 +80,7 @@ def test_read_timeout_never_retries_and_retains_one_reservation(
 
     assert len(requests) == result["provider_calls"] == 1
     assert result["outcome"] == "INFRASTRUCTURE_FAILURE"
-    assert result["reason"] == "PROVIDER_READ_TIMEOUT"
+    assert result["reason"] == code
     assert result["committed_actions"] == 0
     assert result["cost_usd"] == pytest.approx(reserve)
     entries = json.loads(spending.path.read_text())
@@ -84,7 +94,7 @@ def test_read_timeout_never_retries_and_retains_one_reservation(
     assert reservation["request_id"] in entries
     assert reservation["payload"] == {"attempt": 1, "reserved_usd": reserve}
     assert [event["payload"] for event in events if event["type"] == "provider_error"] == [{
-        "code": "PROVIDER_READ_TIMEOUT", "provider_code": None, "usage": "unknown",
+        "code": code, "provider_code": None, "usage": "unknown",
     }]
     assert not any(event["type"] == "provider_response" for event in events)
     assert "PRIVATE_TIMEOUT_DETAIL" not in json.dumps(events)
