@@ -40,6 +40,8 @@ from balatro_horizons.storage.journal import Store
 @pytest.fixture
 def harness(store, monkeypatch):
     config = luna()
+    # Keep the exact monetary boundary fixtures independent of the production default.
+    config.budgets.max_output_tokens_per_call = 8192
     config.budgets.paid_calls_enabled = True
     config.budgets.max_episode_cost_usd = 1
     monkeypatch.setenv("OPENAI_API_KEY", "mock-only")
@@ -56,7 +58,8 @@ def harness(store, monkeypatch):
         )
         calls.append(body)
         if failures:
-            raise httpx.ReadTimeout("synthetic transport failure")
+            # These shared funding/Restore cases require a retryable unknown-usage failure.
+            raise httpx.WriteTimeout("synthetic transport failure")
         message = next(item for item in body["input"] if item.get("role") == "user")
         context = json.loads(message["content"])
         operation = operations[0] if operations else model_choice(context)
@@ -436,7 +439,7 @@ def test_cache_write_price_is_used_for_reservation():
     model = config.models["luna"].model_copy(
         update={"cached_input_usd_per_million": 0.02, "cache_write_input_usd_per_million": 0.4}
     )
-    assert reservation_usd(model, config.budgets) == 0.0229376
+    assert reservation_usd(model, config.budgets) == pytest.approx(0.0524288)
 
 
 def test_stopped_batch_revalidates_configuration_and_evidence_kind(harness):

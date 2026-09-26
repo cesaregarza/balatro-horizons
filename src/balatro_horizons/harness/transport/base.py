@@ -1,6 +1,7 @@
 """One provider transport state machine driven by immutable field-name specs."""
 
 import json
+import math
 import os
 from collections.abc import Callable
 from copy import deepcopy
@@ -9,7 +10,10 @@ from typing import Any
 
 import httpx
 
-from balatro_horizons.config import PROVIDER_TIMEOUT_SECONDS
+from balatro_horizons.config import (
+    PROVIDER_MIN_OUTPUT_TOKENS_PER_SECOND,
+    PROVIDER_TIMEOUT_SECONDS,
+)
 from balatro_horizons.harness.context.model_view import compact_context, truncate_summaries
 from balatro_horizons.harness.contract import Context, Exchanges, RawOperation
 from balatro_horizons.harness.input_limits import InputCounter, check_request_bytes
@@ -123,7 +127,14 @@ class Transport:
         self.model, self.limits = model.model_copy(deep=True), limits.model_copy(deep=True)
         self.spec = provider_spec(model.provider)
         self.key_name = self.spec.key_name
-        self.client = client or httpx.Client(timeout=PROVIDER_TIMEOUT_SECONDS, trust_env=False)
+        # Non-streaming reads must leave time for the entire configured output allowance.
+        read_timeout = max(PROVIDER_TIMEOUT_SECONDS, math.ceil(
+            self.limits.max_output_tokens_per_call / PROVIDER_MIN_OUTPUT_TOKENS_PER_SECOND
+        ))
+        self.client = client or httpx.Client(
+            timeout=httpx.Timeout(PROVIDER_TIMEOUT_SECONDS, read=read_timeout),
+            trust_env=False,
+        )
         self.last_request = None
         self.last_response = None
         self.available_tools = set()
@@ -171,6 +182,9 @@ class Transport:
             response = self.client.post(
                 self.spec.endpoint, headers=self.spec.headers(key), json=body
             )
+        except httpx.ReadTimeout:
+            # Generation may have been billed; do not repeat unknown spend automatically.
+            raise ProviderFailure("PROVIDER_READ_TIMEOUT") from None
         except httpx.TransportError:
             raise ProviderFailure("PROVIDER_TRANSPORT_UNKNOWN", True) from None
         self._check_status(response)

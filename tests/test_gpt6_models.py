@@ -75,7 +75,7 @@ def test_each_effort_uses_standard_stateless_responses(configured, effort):
     assert body["service_tier"] == "default" and body["store"] is False
     assert body["prompt_cache_options"] == {"mode": "explicit"}
     assert body["truncation"] == "disabled"
-    assert body["max_output_tokens"] == config.budgets.max_output_tokens_per_call
+    assert body["max_output_tokens"] == config.budgets.max_output_tokens_per_call == 32_768
     assert body["parallel_tool_calls"] is False
     assert "temperature" not in body and "previous_response_id" not in body
     assert {tool["name"] for tool in body["tools"]} >= {"select_blind", "inspect_state"}

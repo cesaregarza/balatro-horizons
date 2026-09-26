@@ -195,16 +195,17 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
     assert "MOCK_SUMMARY" in json.dumps(review.advance(session["review_token"]))
 
 
-def test_unknown_http_attempts_consume_budget_before_retry(store, monkeypatch):
+def test_retryable_unknown_http_attempts_consume_budget_before_retry(store, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "mock-only")
     config = luna()
+    config.budgets.max_output_tokens_per_call = 8192  # Historical fixed-reservation fixture.
     config.budgets.paid_calls_enabled = True
     config.budgets.max_episode_cost_usd = 0.02  # one 0.0180224 reservation fits
     calls = []
 
     def receive(request):
         calls.append(request)
-        raise httpx.ReadTimeout("mock timeout")
+        raise httpx.WriteTimeout("mock timeout")
 
     policy = DirectProvider(
         config.models["luna"],

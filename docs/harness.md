@@ -46,8 +46,34 @@ units. Overrides are recorded and cannot silently widen a frozen episode.
 | `max_game_actions` | 1,500 |
 | `max_provider_calls` | 2,000 |
 | `max_helper_calls_per_decision` | 8 |
-| `max_output_tokens_per_call` | 8,192 tokens |
+| `max_output_tokens_per_call` | 32,768 tokens |
 | `max_transport_attempts` | 3 |
+
+The output ceiling includes reasoning and the final tool call; it is not a generation
+target. Higher ceilings increase the worst-case pre-call reservation, while complete
+usage still settles at the reported charge. Explicit YAML/saved limits override this
+default. Update saved operator limits separately for future runs; existing frozen runs
+retain their recorded allowance, including 8,192-token runs.
+
+Provider requests are non-streaming: no output arrives until generation finishes, so
+the read-inactivity timeout must accommodate the full output allowance. It is
+`max(90, ceil(max_output_tokens_per_call / PROVIDER_MIN_OUTPUT_TOKENS_PER_SECOND))`
+seconds, using a conservative sizing assumption of 36 output tokens/second. That is
+911 seconds for 32,768 tokens (228 seconds for an explicit 8,192-token allowance).
+This is not a throughput guarantee; slower generation or queueing can still time out.
+Connect, write and pool timeouts remain 90 seconds; native game timeouts are separate
+and unchanged. Injected transport clients retain their own timeout settings.
+
+A read timeout ends the current episode with `INFRASTRUCTURE_FAILURE` / `PROVIDER_READ_TIMEOUT`.
+Usage is unknown, so its single reservation stays retained; there is **no in-episode retry**.
+Campaign scheduling is unchanged: infrastructure failures may get a separate episode
+attempt, up to the existing two-attempt limit, under the shared ledger and campaign cap.
+Other transport errors, including connect/pool/write failures, retain the existing
+bounded retry policy and reserve separately for each attempt. Stop is checked before
+calls and between retries, not during an in-flight request: a pending Stop can wait
+for the read timeout (about 15 minutes at the default ceiling). Streaming with chunk-gap
+timeouts and cancelling in-flight calls on Stop are separate follow-ups, not part of
+this change. Neither saved settings nor historical run limits are rewritten.
 
 Trim the oldest working-memory frame, then a loaded helper result, then a public event; if none remains,
 fail with `LOCAL_CONTEXT_LIMIT`. Never trim the current observation, notebook or action constraints.

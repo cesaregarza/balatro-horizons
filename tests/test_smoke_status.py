@@ -95,6 +95,7 @@ def test_smoke_preflight_uses_shared_admission_without_paid_execution(
     from test_openai_luna import luna
 
     config = luna()
+    config.budgets.max_output_tokens_per_call = 8192  # Historical fixed-reservation fixture.
     config.budgets.max_episode_cost_usd = episode_cap
     config.budgets.max_batch_cost_usd = campaign_cap
     ledger = tmp_path / "private/openai-luna-smoke/spending.json"
