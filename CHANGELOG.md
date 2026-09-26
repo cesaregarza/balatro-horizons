@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-26 — Do not resend requests after losing the provider response
+
+- End an episode with non-retryable `PROVIDER_RESPONSE_LOST` on `ReadError` or
+  `RemoteProtocolError`, retaining one unknown-usage reservation for the failed
+  request. Preserve the distinct `PROVIDER_READ_TIMEOUT` reason for read timeouts.
+- Replace blanket transport retries with the explicit connect/pool/write error
+  allowlist. Unclassified transport failures now stop without an automatic retry;
+  HTTP status handling, retry limits, dollar caps and settlement are unchanged.
+- Extend offline tests across both providers and 8K/32K limits, pinning one
+  request, one retained reservation, the terminal reason and sanitized journals.
+  Campaign episode scheduling, streaming and in-flight Stop behavior are unchanged.
+
 ## 2026-09-26 — More output headroom for reasoning
 
 - Raise the shared per-call output ceiling from 8,192 to 32,768 tokens, including

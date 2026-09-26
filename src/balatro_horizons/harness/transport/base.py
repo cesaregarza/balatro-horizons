@@ -185,8 +185,16 @@ class Transport:
         except httpx.ReadTimeout:
             # Generation may have been billed; do not repeat unknown spend automatically.
             raise ProviderFailure("PROVIDER_READ_TIMEOUT") from None
-        except httpx.TransportError:
+        except (httpx.ReadError, httpx.RemoteProtocolError):
+            raise ProviderFailure("PROVIDER_RESPONSE_LOST") from None
+        except (
+            httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout,
+            httpx.WriteError, httpx.WriteTimeout,
+        ):
             raise ProviderFailure("PROVIDER_TRANSPORT_UNKNOWN", True) from None
+        except httpx.TransportError:
+            # Only known connection/admission/send failures authorize a transport retry.
+            raise ProviderFailure("PROVIDER_TRANSPORT_UNKNOWN") from None
         self._check_status(response)
         try:
             result = response.json()

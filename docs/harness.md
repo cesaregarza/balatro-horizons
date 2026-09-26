@@ -65,11 +65,16 @@ Connect, write and pool timeouts remain 90 seconds; native game timeouts are sep
 and unchanged. Injected transport clients retain their own timeout settings.
 
 A read timeout ends the current episode with `INFRASTRUCTURE_FAILURE` / `PROVIDER_READ_TIMEOUT`.
-Usage is unknown, so its single reservation stays retained; there is **no in-episode retry**.
+A broken response (`ReadError` or `RemoteProtocolError`, including a server disconnect)
+ends it with `INFRASTRUCTURE_FAILURE` / `PROVIDER_RESPONSE_LOST`. In either case, usage
+is unknown, so the failed request's single reservation stays retained; there is
+**no in-episode retry**. Provider exception text is never copied into the journal.
 Campaign scheduling is unchanged: infrastructure failures may get a separate episode
 attempt, up to the existing two-attempt limit, under the shared ledger and campaign cap.
-Other transport errors, including connect/pool/write failures, retain the existing
-bounded retry policy and reserve separately for each attempt. Stop is checked before
+Only `ConnectError`, `ConnectTimeout`, `PoolTimeout`, `WriteError` and `WriteTimeout`
+are retryable transport exceptions, with the existing bounds and a separate reservation
+for each attempt. Other transport exceptions stop as non-retryable
+`PROVIDER_TRANSPORT_UNKNOWN`; HTTP status retry handling is unchanged. Stop is checked before
 calls and between retries, not during an in-flight request: a pending Stop can wait
 for the read timeout (about 15 minutes at the default ceiling). Streaming with chunk-gap
 timeouts and cancelling in-flight calls on Stop are separate follow-ups, not part of
