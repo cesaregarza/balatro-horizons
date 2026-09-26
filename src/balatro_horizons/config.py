@@ -51,6 +51,7 @@ MAX_ARITHMETIC_NODES = 64
 
 # Provider transport is independent of the Windows game bridge's timeout below.
 PROVIDER_TIMEOUT_SECONDS = 90
+PROVIDER_READ_TIMEOUT_SECONDS = 300
 
 
 class Options(BaseModel):
@@ -63,7 +64,7 @@ class Limits(Options):
     max_helper_calls_per_decision: int = Field(default=8, ge=0)
     max_input_tokens_per_call: int = Field(default=DEFAULT_INPUT_TOKEN_LIMIT, ge=128)
     max_request_bytes: int = Field(default=DEFAULT_REQUEST_BYTE_LIMIT, ge=1024)
-    max_output_tokens_per_call: int = Field(default=8192, ge=64)
+    max_output_tokens_per_call: int = Field(default=32_768, ge=64)
     max_consecutive_invalid_actions: int = Field(default=3, ge=1)
     max_transport_attempts: int = Field(default=3, ge=1, le=3)
     memory_max_characters: int = Field(

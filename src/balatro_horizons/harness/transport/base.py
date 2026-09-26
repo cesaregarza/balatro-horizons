@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from balatro_horizons.config import PROVIDER_TIMEOUT_SECONDS
+from balatro_horizons.config import PROVIDER_READ_TIMEOUT_SECONDS, PROVIDER_TIMEOUT_SECONDS
 from balatro_horizons.harness.context.model_view import compact_context, truncate_summaries
 from balatro_horizons.harness.contract import Context, Exchanges, RawOperation
 from balatro_horizons.harness.input_limits import InputCounter, check_request_bytes
@@ -123,7 +123,10 @@ class Transport:
         self.model, self.limits = model.model_copy(deep=True), limits.model_copy(deep=True)
         self.spec = provider_spec(model.provider)
         self.key_name = self.spec.key_name
-        self.client = client or httpx.Client(timeout=PROVIDER_TIMEOUT_SECONDS, trust_env=False)
+        self.client = client or httpx.Client(
+            timeout=httpx.Timeout(PROVIDER_TIMEOUT_SECONDS, read=PROVIDER_READ_TIMEOUT_SECONDS),
+            trust_env=False,
+        )
         self.last_request = None
         self.last_response = None
         self.available_tools = set()

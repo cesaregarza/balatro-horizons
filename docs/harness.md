@@ -46,8 +46,18 @@ units. Overrides are recorded and cannot silently widen a frozen episode.
 | `max_game_actions` | 1,500 |
 | `max_provider_calls` | 2,000 |
 | `max_helper_calls_per_decision` | 8 |
-| `max_output_tokens_per_call` | 8,192 tokens |
+| `max_output_tokens_per_call` | 32,768 tokens |
 | `max_transport_attempts` | 3 |
+
+The output ceiling includes reasoning and the final tool call; it is not a generation
+target. Higher ceilings increase the worst-case pre-call reservation, while complete
+usage still settles at the reported charge. Explicit YAML/saved limits override this
+default. Update saved operator limits separately for future runs; existing frozen runs
+retain their recorded allowance, including 8,192-token runs.
+
+Provider HTTP reads allow 300 seconds of inactivity so longer reasoning can finish.
+Connect, write and pool timeouts remain 90 seconds; native game timeouts are separate
+and unchanged. Injected transport clients retain their own timeout settings.
 
 Trim the oldest working-memory frame, then a loaded helper result, then a public event; if none remains,
 fail with `LOCAL_CONTEXT_LIMIT`. Never trim the current observation, notebook or action constraints.
