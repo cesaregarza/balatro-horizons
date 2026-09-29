@@ -12,6 +12,8 @@
 - Keep the single v8 tool interface. Add offline coverage for all 120 selections,
   both provider formats, caching-prefix stability, privacy and legacy/new recovery.
   Native execution is unchanged; reuse native evidence without new launches.
+- Pin the selector browser check under delayed bootstrap and wait for the exact
+  full option lists, fixing a CI hydration race without weakening coverage.
 
 ## 2026-09-28 — Independent deck and stake selection
 
