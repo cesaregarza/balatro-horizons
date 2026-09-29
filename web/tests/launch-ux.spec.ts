@@ -8,13 +8,16 @@ const config = {
   budgets: { paid_calls_enabled: true, max_episode_cost_usd: 3.5, max_batch_cost_usd: 12 }, skills: "none",
 };
 
-async function mockApp(page: import("@playwright/test").Page) {
+async function mockApp(page: import("@playwright/test").Page, bootstrapDelay = 0) {
   const starts: any[] = [];
   const settings: any[] = [];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (path === "/api/bootstrap") return route.fulfill({ json: { operator_token: "mock", config, workbench: true, paid_credentials: {} } });
+    if (path === "/api/bootstrap") {
+      if (bootstrapDelay) await new Promise((resolve) => setTimeout(resolve, bootstrapDelay));
+      return route.fulfill({ json: { operator_token: "mock", config, workbench: true, paid_credentials: {} } });
+    }
     if (path === "/api/episodes") return route.fulfill({ json: [] });
     if (path === "/api/panels" || path === "/api/batches") return route.fulfill({ json: [] });
     if (path === "/api/explore/sessions") return route.fulfill({ json: { review_token: "mock-review", view: null } });
@@ -57,13 +60,14 @@ test("launch draft, including private seed, survives tab navigation in memory", 
 
 test("every standard deck and stake is available independently, including on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const { starts, settings } = await mockApp(page);
+  // The selector mounts after bootstrap, not necessarily before page.goto returns.
+  const { starts, settings } = await mockApp(page, 250);
   const deck = page.getByLabel("Deck", { exact: true });
   const stake = page.getByLabel("Stake (difficulty)");
-  expect(await deck.locator("option").evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))).toEqual([
+  await expect.poll(() => deck.locator("option").evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))).toEqual([
     "RED", "BLUE", "YELLOW", "GREEN", "BLACK", "MAGIC", "NEBULA", "GHOST", "ABANDONED", "CHECKERED", "ZODIAC", "PAINTED", "ANAGLYPH", "PLASMA", "ERRATIC",
   ]);
-  expect(await stake.locator("option").evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))).toEqual([
+  await expect.poll(() => stake.locator("option").evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))).toEqual([
     "WHITE", "RED", "GREEN", "BLACK", "BLUE", "PURPLE", "ORANGE", "GOLD",
   ]);
   await stake.selectOption("ORANGE");

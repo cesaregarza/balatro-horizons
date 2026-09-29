@@ -1,7 +1,8 @@
 # Harness
 
 `tools_v8` is the single active interface. Before its first decision, a run freezes the prompt,
-rules guide, skills catalog, provider capability, memory policy, model/pricing settings and limits.
+selected deck/stake, rules guide, skills catalog, provider capability, memory policy,
+model/pricing settings and limits.
 Immutable `agent-protocol.json` binds checkpoints and ordinary branches to that snapshot.
 Missing snapshots fail with `AGENT_PROTOCOL_SNAPSHOT_MISSING`; retired interfaces fail with
 `AGENT_PROTOCOL_INTERFACE_RETIRED`. Neither is rewritten. Run-level [Restore](dashboard.md#restore-unfinished-runs)
@@ -17,6 +18,7 @@ inspection and arithmetic are read-only. Regeneration is a new bounded request, 
 
 | Surface | Delivery and preservation contract |
 | --- | --- |
+| Run configuration | New runs append `Run configuration: deck=PLASMA; stake=ORANGE.` (with their selected names) to the frozen rules prefix, alongside an immutable `run_configuration` pair. Both provider formats deliver it before the first decision; it stays identical across actions and helpers, before OpenAI's existing cache breakpoint. Saved-default/draft changes cannot alter it. No seed, runtime settings, paths or hashes are added to model input. |
 | Object IDs | Positive integers, not array positions: assigned on first public appearance, never reused, stable across moves. Concealment never reconnects hidden identities. The backend resolves canonical opaque handles before unchanged phase, observation, count and legality checks; unknown IDs, strings, booleans and stale targets are refused. |
 | Episode IDs | Separate integer namespace for historical lookups; decision numbers and pagination offsets retain their meaning. Restore rebuilds both tables from selected public ancestry. |
 | Audit and history | No audit/event hashes, notebook checksums or event UUIDs; omitted history is a count. Retrieval uses offsets or episode/decision references. Complete summaries are projected before truncation; inspection/history pages are projected before UTF-8 pagination, so cursors address delivered text. |
@@ -28,6 +30,16 @@ inspection and arithmetic are read-only. Regeneration is a new bounded request, 
 V8 changes frozen protocol identity, not existing runs: v7/pre-compaction runs need their retained executor;
 the source-compatibility gate refuses silently changing their request format. Native evidence can be reused
 independently when native interface/runtime bytes are identical.
+
+Adding the public run-configuration prefix is a **v8 context fix**, not a new tool
+interface: tools, IDs, observations and provider serialization are unchanged. The
+snapshot identity changes for new runs. Restore, funded continuations and branches
+inherit the original pair and prefix; a conflicting pair is refused for snapshots
+that contain it, including human continuations. Legacy snapshots without the field
+remain without it and are never backfilled from current settings. The exact deployed
+#69 source has a [reviewed source-compatibility rule](restore-compatibility.md#frozen-run-configuration-upgrade)
+requiring the ordinary explicit Restore acceptance. Start a new root run to receive
+the added context; older runs keep their original model inputs.
 
 The defaults below come from `config.py`; bytes and provider tokens are separate
 units. Overrides are recorded and cannot silently widen a frozen episode.

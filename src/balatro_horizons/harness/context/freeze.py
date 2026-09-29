@@ -28,6 +28,17 @@ def episode_limits(config):
     return config.budgets.model_dump(exclude={"paid_calls_enabled", "max_batch_cost_usd"})
 
 
+def run_configuration(config):
+    # Only public game choices belong in model context, not runtime configuration.
+    return {"deck": config.environment.deck, "stake": config.environment.stake}
+
+
+def validate_run_configuration(bundle, config):
+    # Legacy snapshots must keep their original inputs, without backfilled context.
+    if "run_configuration" in bundle and bundle["run_configuration"] != run_configuration(config):
+        raise ValueError("AGENT_PROTOCOL_CONFIGURATION_CHANGED")
+
+
 def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     template = load_prompt(ROOT) if prompt_bytes is None else prompt_bytes
     try:
@@ -39,12 +50,15 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     from balatro_horizons.harness.outcomes import VERSION as outcome_version
     tools = tool_catalog(skills)
     model = policy.model if isinstance(policy, Policy) else None
+    selection = run_configuration(config)
     return {
         "version": "agent-protocol-v1",
         "interface": FROZEN_INTERFACE,
         "prompt_utf8": raw.decode("utf-8"),
         "prompt_sha256": hashlib.sha256(raw).hexdigest(),
-        "rules_kernel": rules_kernel(skills),
+        "rules_kernel": (rules_kernel(skills) + "\n\nRun configuration: "
+                         f"deck={selection['deck']}; stake={selection['stake']}."),
+        "run_configuration": selection,
         "tool": None,
         "tool_catalog": tools,
         "tool_policy": "stable_catalog_local_phase_rejection",
@@ -122,6 +136,7 @@ def restore_protocol(store, checkpoint):
 
 
 def validate_continuation(bundle, config, agent, *, human=False):
+    validate_run_configuration(bundle, config)
     if (
         bundle["episode_limits"] != episode_limits(config)
         or bundle["benchmark"] != config.benchmark
