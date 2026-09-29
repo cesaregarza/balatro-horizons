@@ -31,10 +31,10 @@ test("review distinguishes skip offers from owned effects and escapes descriptio
       return;
     }
     const data = await response.json();
-    addPublicInformation(data.view.observation.state);
+    if (data.view) addPublicInformation(data.view.observation.state);
     await route.fulfill({ response, json: data });
   });
-  await page.route(/\/api\/explore\/decisions\/\d+$/, async (route) => {
+  await page.route(/\/api\/explore\/decisions\/\d+(?:\?.*)?$/, async (route) => {
     const response = await route.fetch();
     if (!response.ok()) {
       await route.fulfill({ response });
@@ -55,12 +55,11 @@ test("review distinguishes skip offers from owned effects and escapes descriptio
   const response = await created;
   expect(response.ok(), await response.text()).toBe(true);
   const { episode_id } = await response.json();
-  await expect(page.getByRole("status")).toContainText("Run created");
+  await expect(page.getByRole("status").filter({ hasText: "Run created" })).toBeVisible();
   // Run creation precedes the worker's first observation; this fixture needs a completed run.
   await awaitIdleWorker(page);
-  const newRun = page.getByRole("row").filter({
-    has: page.getByText(episode_id.slice(0, 10), { exact: true }),
-  });
+  await page.getByRole("button", { name: "Runs", exact: true }).click();
+  const newRun = page.locator(".episode-card").filter({ hasText: episode_id.slice(0, 10) });
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await newRun.getByRole("button", { name: "Explore decisions" }).click();

@@ -1,9 +1,12 @@
 """Run launch and operator status routes."""
 
 import secrets
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import ValidationError
 
+from balatro_horizons.config import ModelConfig
 from balatro_horizons.game.windows_context import connection_status
 
 from .middleware import require_operator
@@ -25,6 +28,17 @@ def new_seed():
 def start_run(request: Request, data: RunInput):
     state = request.app.state
     chosen = state.config.model_copy(deep=True)
+    agent = _configured_agent(state.config.models, data.agent)
+    if data.model_settings is not None:
+        model = chosen.models.get(agent)
+        if model is None:
+            raise ValueError("MODEL_SETTINGS_REQUIRE_CONFIGURED_MODEL")
+        configured = model.model_dump()
+        configured["settings"] = {**model.settings, **data.model_settings}
+        try:
+            chosen.models[agent] = ModelConfig.model_validate(configured)
+        except ValidationError as error:
+            raise ValueError("INVALID_MODEL_SETTINGS") from error
     if data.preset == "smoke":
         chosen.environment.stake = "WHITE"
     if data.cost_override is not None:
@@ -36,12 +50,24 @@ def start_run(request: Request, data: RunInput):
     return {
         "episode_id": state.runs.start(
             chosen,
-            data.agent,
+            agent,
             data.seed or new_seed(),
             offline=data.offline,
             calibration=data.calibration,
         )
     }
+
+
+def _configured_agent(models, requested):
+    if requested in models or not requested.startswith("model:"):
+        return requested
+    matches = [
+        key for key, model in models.items()
+        if requested == f"model:{model.provider}:{quote(model.model, safe='')}"
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    raise ValueError("MODEL_NOT_CONFIGURED" if not matches else "AMBIGUOUS_CONFIGURED_MODEL")
 
 
 @router.post("/api/stop", dependencies=[Depends(require_operator)])

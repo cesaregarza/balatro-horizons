@@ -99,6 +99,11 @@ def seek(request: Request, data: SeekReview, token=Depends(require_session)):
     return request.app.state.workbench.seek(token, data.decision)
 
 
+@router.post("/api/review/revisit")
+def revisit(request: Request, data: SeekReview, token=Depends(require_session)):
+    return request.app.state.workbench.revisit(token, data.decision)
+
+
 @router.get("/api/review/branch-capability")
 def branch_capability(request: Request, token=Depends(require_session)):
     review = request.app.state.workbench
@@ -211,6 +216,9 @@ def compare_branch(request: Request, branch_id: str):
 
 
 def _comparison_run(state, episode_id):
+    from balatro_horizons.review.operator_library import project_episode
+    from balatro_horizons.review.protocol_label import protocol_label
+
     events = state.store.events(episode_id)
     state.review.expose(
         episode_id,
@@ -219,9 +227,14 @@ def _comparison_run(state, episode_id):
         model_identity_seen=True,
         max_event_seen=len(events) - 1,
     )
+    summary = state.store.summary(episode_id)
+    metadata = project_episode({"episode_id": episode_id,
+                                "manifest": state.store.manifest(episode_id), "summary": summary})
+    metadata["recorded_interface"] = metadata["recorded_interface"] or protocol_label(state.store, episode_id)
     return {
         "episode_id": episode_id,
-        "summary": state.store.summary(episode_id),
+        "summary": summary,
+        "metadata": metadata,
         "trajectory": [
             {
                 "decision": event["observation_id"],

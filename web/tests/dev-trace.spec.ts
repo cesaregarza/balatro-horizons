@@ -7,7 +7,7 @@ import {
   toolTitle,
   type Trace,
 } from "../src/devTracePresentation";
-import { awaitIdleWorker } from "./runHelpers";
+import { awaitIdleWorker, openTechnicalInspection } from "./runHelpers";
 
 async function setup(page: Page) {
   const { operator_token } = await (
@@ -65,11 +65,11 @@ async function setup(page: Page) {
       },
     }),
   );
-  await page.route(/\/api\/explore\/decisions\/(67|68)$/, (route) =>
+  await page.route(/\/api\/explore\/decisions\/(67|68)(?:\?.*)?$/, (route) =>
     route.fulfill({
       json: {
         ...view,
-        decision: Number(route.request().url().split("/").at(-1)),
+        decision: Number(new URL(route.request().url()).pathname.split("/").at(-1)),
         transition: null,
       },
     }),
@@ -161,9 +161,10 @@ test("dev mode lazily reveals full calls on helper-only decisions, including mob
   });
   await page.goto(`/#explore/${eid}/67`);
   await expect(
-    page.getByRole("heading", { name: "No game actions recorded yet" }),
+    page.getByRole("region", { name: "Recorded choices" }),
   ).toBeVisible();
   expect(requests).toBe(0);
+  await openTechnicalInspection(page);
   await page.getByLabel("Dev mode", { exact: true }).check();
   const panel = page.getByRole("region", { name: "Model tool calls" });
   await expect(
@@ -197,6 +198,7 @@ test("dev mode lazily reveals full calls on helper-only decisions, including mob
     panel.getByText('"cash_cost": "5"', { exact: false }),
   ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Back to choices" }).click();
   await page
     .getByRole("region", { name: "Recorded choices" })
     .getByRole("button", { name: /#68/ })
@@ -224,6 +226,7 @@ test("only incomplete traces poll; disabling dev mode stops its requests", async
     return route.fulfill({ json: data });
   });
   await page.goto(`/#explore/${eid}/67`);
+  await openTechnicalInspection(page);
   await page.getByLabel("Dev mode", { exact: true }).check();
   await expect(
     page.getByRole("heading", {
@@ -254,6 +257,7 @@ test("changing selection cannot display a late response from the previous decisi
     route.fulfill({ json: trace(68) }),
   );
   await page.goto(`/#explore/${eid}/67`);
+  await openTechnicalInspection(page);
   await page.getByLabel("Dev mode", { exact: true }).check();
   await expect.poll(() => started).toBe(true);
   await page
@@ -304,6 +308,7 @@ test("prices, model claims, notebook mutations and observed changes remain disti
     route.fulfill({ json: data }),
   );
   await page.goto(`/#explore/${eid}/67`);
+  await openTechnicalInspection(page);
   await page.getByLabel("Dev mode", { exact: true }).check();
   const panel = page.getByRole("region", { name: "Model tool calls" });
   await expect(
@@ -346,6 +351,7 @@ test("malformed and multiple calls show rejection, never inferred execution", as
     route.fulfill({ json: data }),
   );
   await page.goto(`/#explore/${eid}/67`);
+  await openTechnicalInspection(page);
   await page.getByLabel("Dev mode", { exact: true }).check();
   const panel = page.getByRole("region", { name: "Model tool calls" });
   await expect(

@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-28 — Dashboard workflow and navigation
+
+- Add an explicitly revealed operator library with searchable/filterable model,
+  effort and run metadata, paginated continuation groups, mobile cards and paired
+  descriptive comparisons. Preserve the blinded library and exposure accounting.
+- Preserve tab/decision history, launch drafts, filters and assessment drafts;
+  add exact one-based jumps, useful empty states, phone deep links and guarded
+  backward navigation over already-revealed staged-review information.
+- Show unfinished attempts and failure links without Dev mode, explain recovery
+  eligibility before offering actions, and keep spending prominent. Move exports
+  and technical inspection out of the primary workflow and load raw records lazily.
+- Apply validated launch model settings per run without silently saving defaults.
+  Show effective dollar ceilings, open new continuations directly, and surface
+  active-worker navigation and Stop controls without changing consent or limits.
+- Reuse bounded verified dashboard reads with source-identity invalidation; keep
+  execution journals, export schemas, harness v8 and native recovery gates intact.
+
 ## 2026-09-26 — Do not resend requests after losing the provider response
 
 - End an episode with non-retryable `PROVIDER_RESPONSE_LOST` on `ReadError` or

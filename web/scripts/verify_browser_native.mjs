@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Review only: this script never launches the game, branches, or calls a provider.
 import { chromium, expect } from '../node_modules/@playwright/test/index.mjs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
-const usage = 'Usage: verify_browser_native.mjs EPISODE_ID [BRANCH_ID] | --release | --explore EPISODE_ID [DECISION_ID]\nExplorer mode reads recorded decisions on desktop and phone; it records retrospective exposure. BH_WORKBENCH_URL defaults to http://127.0.0.1:8765.';
+const usage = 'Usage: verify_browser_native.mjs EPISODE_ID [BRANCH_ID] | --release | --explore EPISODE_ID [DECISION_ID]\nExplorer mode reads recorded decisions on desktop and phone, reports board timings and detail bytes, and records retrospective exposure. BH_WORKBENCH_URL defaults to http://127.0.0.1:8765.';
 if (process.argv[2] === '--help') {
   console.log(usage);
   process.exit(0);
@@ -14,45 +14,79 @@ if (process.argv[2] === '--explore') {
   if (!/^[a-f0-9]{32}$/.test(eid || '') || !/^\d+$/.test(process.argv[4] ?? '0') || !Number.isSafeInteger(decision) || decision < 0 || process.argv.length > 5) throw new Error(usage);
   const origin = process.env.BH_WORKBENCH_URL || 'http://127.0.0.1:8765';
   const artifacts = new URL('../../reports/verification/', import.meta.url);
+  await mkdir(artifacts, { recursive: true });
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1512, height: 1100 } });
     const errors = [];
+    const detailLoads = [];
+    const timings = {};
     page.on('pageerror', error => errors.push(error.message));
+    page.on('response', response => {
+      const match = new URL(response.url()).pathname.match(/^\/api\/explore\/decisions\/(\d+)$/);
+      if (!match) return;
+      detailLoads.push((async () => {
+        await response.finished();
+        return { decision: Number(match[1]), json_bytes: (await response.body()).length,
+          duration_ms: Math.round(response.request().timing().responseEnd) };
+      })().catch(error => { errors.push(error.message); return null; }));
+    });
     await page.route('**/api/**', route => {
       const request = route.request();
-      if (/\/api\/(runs|branches|verify|stop)(\/|$)/.test(new URL(request.url()).pathname) && request.method() !== 'GET') {
-        errors.push('Explorer attempted a game mutation');
+      const inspection = request.method() === 'POST' && new URL(request.url()).pathname === '/api/explore/sessions';
+      if (request.method() !== 'GET' && !inspection) {
+        errors.push('Explorer attempted a non-inspection mutation');
         return route.abort();
       }
       return route.continue();
     });
+    const initialStart = performance.now();
     await page.goto(`${origin}/#explore/${eid}/${decision}`);
     const list = page.getByRole('region', { name: 'Recorded choices' });
     const detail = page.getByRole('region', { name: 'Decision details' });
-    await expect(list).toBeVisible();
+    await expect(list).toBeVisible({ timeout: 30000 });
     const total = await list.locator('button').count();
     expect(total).toBeGreaterThan(0);
     const selected = list.locator('button').filter({ has: page.getByText(`#${decision + 1}`, { exact: true }) });
     await selected.click();
-    await expect(detail.getByRole('button', { name: 'Annotate this decision' })).toBeVisible();
+    await expect(detail.getByRole('button', { name: 'Annotate this decision' })).toBeVisible({ timeout: 30000 });
+    timings.initial_board_ms = Math.round(performance.now() - initialStart);
+    const numbers = await list.locator('.decision-number').allTextContents();
+    const following = numbers[numbers.indexOf(`#${decision + 1}`) + 1];
+    if (following) {
+      const nextDecision = Number(following.slice(1)) - 1;
+      const started = performance.now();
+      await Promise.all([
+        page.waitForResponse(response => new URL(response.url()).pathname === `/api/explore/decisions/${nextDecision}`),
+        detail.getByRole('button', { name: 'Next matching decision' }).click(),
+      ]);
+      await expect(detail.getByRole('button', { name: 'Annotate this decision' })).toBeVisible({ timeout: 30000 });
+      timings.next_board_ms = Math.round(performance.now() - started);
+      await selected.click();
+      await expect(detail.getByRole('button', { name: 'Annotate this decision' })).toBeVisible();
+    }
     await page.screenshot({ path: new URL('native-explorer-desktop.png', artifacts).pathname, fullPage: true });
     await page.getByRole('combobox', { name: 'Action filter', exact: true }).selectOption('uncommitted');
     const uncommitted = await list.locator('button').count();
-    if (uncommitted) await expect(detail.getByRole('button', { name: 'After decision', exact: true })).toBeDisabled();
+    if (uncommitted) {
+      await list.locator('button').first().click();
+      await expect(detail.getByRole('button', { name: 'After decision', exact: true })).toBeDisabled();
+    }
     await page.getByRole('button', { name: 'Clear filters' }).click();
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(list).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.screenshot({ path: new URL('native-explorer-mobile.png', artifacts).pathname, fullPage: true });
-    await selected.click();
-    await expect(detail.getByRole('button', { name: 'Annotate this decision' })).toBeVisible();
+    await page.goto(`${origin}/#explore/${eid}/${decision}`);
+    await expect(detail.getByRole('button', { name: 'Annotate this decision' })).toBeVisible({ timeout: 30000 });
+    await expect(detail.locator('[data-decision-detail-heading]')).toBeInViewport();
+    await page.screenshot({ path: new URL('native-explorer-mobile-detail.png', artifacts).pathname });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole('button', { name: 'Back to choices' }).click();
     await expect(selected).toBeFocused();
+    await page.screenshot({ path: new URL('native-explorer-mobile.png', artifacts).pathname });
+    const detailResponses = await Promise.all(detailLoads);
     expect(errors).toEqual([]);
     const result = { status: 'passed', episode_id: eid, decision, total_requests: total, uncommitted_requests: uncommitted,
-      checks: ['retrospective navigation', 'uncommitted filter', 'desktop detail', 'phone detail and return', 'no horizontal overflow', 'no browser errors or game mutation'] };
+      timings, detail_responses: detailResponses,
+      checks: ['retrospective navigation', 'uncommitted filter', 'desktop detail', 'phone deep link and return', 'no horizontal overflow', 'no browser errors or non-inspection mutation'] };
     await writeFile(new URL('native-explorer.json', artifacts), JSON.stringify(result, null, 2) + '\n');
     console.log(JSON.stringify(result));
   } finally { await browser.close(); }
@@ -79,9 +113,10 @@ page.on('pageerror', error => errors.push(error.message));
 try {
   await page.goto(origin);
   if (mobile) expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  const row = page.getByRole('row').filter({ hasText: episode.slice(0, 10) });
+  await page.getByLabel('Search runs').fill(episode);
+  const row = page.locator('.episode-card').filter({ hasText: episode.slice(0, 10) });
   await expect(row).toContainText('Native');
-  await row.getByRole('button', { name: 'Review →' }).click();
+  await row.getByRole('button', { name: 'Review', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'What was knowable here?' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Recorded decision' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Run ended' })).toHaveCount(0);
@@ -97,7 +132,8 @@ try {
   if (branch) {
     await page.getByRole('button', { name: 'Runs', exact: true }).click();
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await page.getByRole('row').filter({ hasText: branch.slice(0, 10) })
+    await page.getByLabel('Search runs').fill(branch);
+    await page.locator('.episode-card').filter({ hasText: branch.slice(0, 10) })
       .getByRole('button', { name: 'Compare outcomes', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Original run', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Branch', exact: true })).toBeVisible();

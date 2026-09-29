@@ -97,7 +97,7 @@ async function openReview(page: Page, options: {
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Review →" }).click();
+  await page.getByRole("button", { name: "Review", exact: true }).click();
   await expect(page.getByRole("heading", { name: "What was knowable here?" })).toBeVisible();
   await page.getByRole("button", { name: "Explore an alternative" }).click();
   return { branches, releaseBranch };

@@ -10,6 +10,7 @@ import os
 import uuid
 
 from balatro_horizons.contracts import AnnotationInput
+from balatro_horizons.review.read_cache import VerifiedReadCache
 from balatro_horizons.storage.journal import atomic_json, identifier, locked, now
 
 ACTION_EVENT_TYPES = frozenset({
@@ -29,6 +30,10 @@ class ReviewService:
         self.root = store.root / "review"
         self.root.mkdir(exist_ok=True)
         self.session_root = self.root
+        self._read_cache = VerifiedReadCache()
+
+    def _events(self, eid, *, compact=False):
+        return self._read_cache.events(self.store, eid, compact=compact)
 
     def _append(self, path, row):
         with locked(path.with_suffix(".lock")):
@@ -63,7 +68,7 @@ class ReviewService:
             raise ReviewError("UNKNOWN_REVIEW_SESSION")
         return path, json.loads(path.read_text())
 
-    def open_explorer(self, eid, *, prior_seed_exposure=False):
+    def open_explorer(self, eid, *, prior_seed_exposure=False, include_view=True):
         """Open a read-only retrospective session for ordinary dashboard use."""
         self.store.manifest(eid)
         token = uuid.uuid4().hex
@@ -73,23 +78,24 @@ class ReviewService:
             "stage": "transition",
             "mode": "retrospective",
         }
+        events = self._events(eid)
         self.expose(
             eid,
             "retrospective_open",
             outcome_seen=True,
             model_identity_seen=True,
-            max_event_seen=len(self.store.events(eid)) - 1,
+            max_event_seen=len(events) - 1,
         )
         if prior_seed_exposure:
             self.expose(eid, "prior_seed_exposure", prior_seed_exposure=True)
         atomic_json(self.session_root / (token + ".json"), session, immutable=True)
-        if not any(event["type"] == "observation" for event in self.store.events(eid)):
+        if not include_view or not any(event["type"] == "observation" for event in events):
             return {"review_token": token, "view": None}
         return {"review_token": token, "view": self.explore_view(token)}
 
-    def _decision(self, session):
-        with locked(self.store.episode_path(session["episode_id"]) / ".writer.lock"):
-            events = self.store.events(session["episode_id"])
+    def _decision(self, session, *, compact=False):
+        events = (self._events(session["episode_id"], compact=True) if compact
+                  else self._events(session["episode_id"]))
         observations = [event for event in events if event["type"] == "observation"]
         index = session["decision_index"]
         if index >= len(observations):
@@ -98,11 +104,11 @@ class ReviewService:
         end = observations[index + 1]["sequence"] if index + 1 < len(observations) else len(events)
         return events, observations, start, events[start["sequence"] + 1 : end]
 
-    def _at_decision(self, session, decision):
+    def _at_decision(self, session, decision, *, compact=False):
         if session["mode"] != "retrospective":
             raise ReviewError("RETROSPECTIVE_REVIEW_REQUIRED")
-        with locked(self.store.episode_path(session["episode_id"]) / ".writer.lock"):
-            events = self.store.events(session["episode_id"])
+        events = (self._events(session["episode_id"], compact=True) if compact
+                  else self._events(session["episode_id"]))
         observations = [event for event in events if event["type"] == "observation"]
         index = next(
             (i for i, event in enumerate(observations) if event["observation_id"] == decision), None
@@ -127,8 +133,8 @@ class ReviewService:
             if event["sequence"] <= max_seen
         ]
 
-    def _build_view(self, session, *, staged=False):
-        events, observations, start, segment = self._decision(session)
+    def _build_view(self, session, *, staged=False, compact=False):
+        events, observations, start, segment = self._decision(session, compact=compact)
         stage = session["stage"] if staged else "transition"
         eid = session["episode_id"]
         manifest = self.store.manifest(eid)
@@ -155,7 +161,12 @@ class ReviewService:
                 max_seen = observations[index + 1]["sequence"]
                 result["can_advance"] = staged
             else:
-                result["terminal"] = self.store.summary(eid)
+                terminal = next((event for event in reversed(events) if event["type"] == "terminal"), None)
+                result["terminal"] = (
+                    {**terminal["payload"], "terminal_event_id": terminal["event_id"],
+                     "journal_head": terminal["hash"]}
+                    if terminal else None
+                )
                 result["can_advance"] = False
                 if staged and result["terminal"]:
                     self.expose(
@@ -208,7 +219,9 @@ class ReviewService:
         _, session = self.session(token)
         if session["mode"] != "retrospective":
             raise ReviewError("RETROSPECTIVE_REVIEW_REQUIRED")
-        report = build_summary(self.store, session["episode_id"])
+        report = build_summary(
+            self.store, session["episode_id"], verified_reader=self._read_cache
+        )
         return {
             key: report.get(key)
             for key in (
@@ -217,9 +230,14 @@ class ReviewService:
             )
         }
 
-    def decision(self, token, decision):
+    def decision(self, token, decision, *, technical=True):
         _, session = self.session(token)
-        return self._view(self._at_decision(session, decision))
+        if technical:
+            return self._view(self._at_decision(session, decision))
+        from balatro_horizons.review.detail_projection import compact_detail
+
+        selected = self._at_decision(session, decision, compact=True)
+        return compact_detail(self._build_view(selected, compact=True))
 
     def seek(self, token, decision):
         """Resolve a detail without mutating the read-only dashboard session."""
@@ -263,7 +281,7 @@ class ReviewService:
             raise ReviewError("ANNOTATION_OUTSIDE_REVEALED_RANGE")
         exposed = {
             event["event_id"]
-            for event in self.store.events(eid)
+            for event in self._events(eid)
             if event["sequence"] <= view["exposure"]["max_event_seen"]
         }
         if not set(data.evidence_event_ids) <= exposed:

@@ -1,0 +1,31 @@
+.decision-explorer .review-top { margin-bottom: 12px; }
+.decision-explorer h1 { font-size: 28px; margin: 0; }
+.explorer-run-summary { margin: 10px 0; }
+.explorer-run-summary .explorer-identity { margin: 8px 0; gap: 8px 12px; }
+.explorer-progress { margin: 8px 0; font-size: 13px; }
+.explorer-progress strong { text-transform: capitalize; color: #f0d1ac; }
+.explorer-failure { padding: 10px 12px; border-left: 3px solid #e2a37f; background: #2b2530; }
+.explorer-failure p { margin: 0 0 8px; }
+.explorer-failure details { display: inline-block; margin: 0 10px; font-size: 12px; }
+.decision-explorer .ante-navigation { margin-top: 12px; }
+.decision-jump { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.decision-jump label { margin: 0; width: 145px; }
+.decision-jump input { width: 100%; }
+.decision-jump p { margin: 0; }
+.decision-detail .detail-navigation { position: sticky; top: -24px; z-index: 3; background: #141f2d; padding: 12px 0; margin: -12px 0 14px; border-bottom: 1px solid #35475e; }
+.explorer-secondary { margin-top: 18px; padding: 12px; border: 1px solid #304154; border-radius: 8px; }
+.explorer-recovery .panel { margin: 12px 0; padding: 12px; }
+.explorer-recovery h2 { font-size: 16px; margin: 0; }
+.explorer-recovery .area-title { gap: 10px; }
+.explorer-recovery .area-title p { margin: 6px 0; font-size: 12px; }
+.recovery-refusal p { margin: 8px 0; }
+.recovery-refusal details { font-size: 12px; }
+.annotation-mode { scroll-margin-top: 20px; }
+@media (max-width: 1000px) {
+  .decision-detail .detail-navigation { top: 0; }
+}
+@media (max-width: 700px) {
+  .decision-detail .detail-navigation { top: -16px; }
+  .decision-jump { gap: 8px; }
+  .explorer-recovery .area-title { flex-wrap: wrap; }
+}

@@ -179,7 +179,7 @@ test("model defaults deduplicate aliases without rewriting historical settings",
   });
 });
 
-test("model and effort persist; launching preserves fresh budgets and exact settings", async ({
+test("explicit defaults persist; launching keeps fresh budgets and uses run-only settings", async ({
   page,
 }) => {
   const bootstrap = await (await page.request.get("/api/bootstrap")).json();
@@ -268,9 +268,9 @@ test("model and effort persist; launching preserves fresh budgets and exact sett
     await page.getByRole("button", { name: /Start test episode/ }).click();
     const response = await created;
     expect(response.ok(), await response.text()).toBe(true);
-    await expect(page.getByRole("status")).toContainText("Run created");
+    await expect(page.getByRole("status").filter({ hasText: "Run created" })).toBeVisible();
     expect(launches).toEqual([
-      { agent: modelKey(terra), offline: true, preset: "pilot", seed: null },
+      { agent: modelKey(terra), model_settings: { ...terra.settings, reasoning_effort: "max" }, offline: true, preset: "pilot", seed: null },
     ]);
     const saved = (await (await page.request.get("/api/bootstrap")).json())
       .config;
@@ -278,7 +278,7 @@ test("model and effort persist; launching preserves fresh budgets and exact sett
     expect(saved.skills).toBe("none");
     expect(saved.models[modelKey(terra)].settings).toEqual({
       ...terra.settings,
-      reasoning_effort: "max",
+      reasoning_effort: "high",
     });
     expect(saved.models["terra-tools"]).toMatchObject(models["terra-tools"]);
     expect(saved.models["terra-cache"]).toMatchObject(terra);
@@ -387,7 +387,7 @@ test("model and effort persist; launching preserves fresh budgets and exact sett
   }
 });
 
-test("a settings rejection prevents a run from starting", async ({ page }) => {
+test("a rejected explicit defaults save never starts a run", async ({ page }) => {
   await page.route("**/api/bootstrap", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
@@ -405,7 +405,7 @@ test("a settings rejection prevents a run from starting", async ({ page }) => {
   });
   await page.goto("/");
   await page.getByLabel("Model", { exact: true }).selectOption(modelKey(terra));
-  await page.getByRole("button", { name: /Start test episode/ }).click();
+  await page.getByRole("button", { name: "Save model defaults", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("WORKER_BUSY");
   expect(launches).toBe(0);
 });

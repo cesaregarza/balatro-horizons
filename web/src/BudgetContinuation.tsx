@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { budgetContinuationPreview, continueBudget, type BudgetContinuationPreview } from "./api/client";
 import { CostOverrideControls, type CostOverride } from "./CostOverrideControls";
+import { RecoveryRefusal } from "./screens/decision-explorer/RecoveryRefusal";
 
 const dollars = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
@@ -77,7 +78,7 @@ export function BudgetContinuation({ episodeId, onRestored }: { episodeId: strin
     {open && <div>
       {loading && <p role="status">Reviewing the continuation plan…</p>}
       {error && <p role="alert" className="error">{error}</p>}
-      {preview && !preview.available && <p role="status">Continuation unavailable: {preview.reason || "The server did not provide a reason."}</p>}
+      {preview && !preview.available && <RecoveryRefusal title="Continuation unavailable" reason={preview.reason} />}
       {preview && error && <button disabled={submitting} onClick={() => void inspect()}>Refresh plan</button>}
       {preview?.available && plan && <div>
         <h3>Review additional spend</h3>
@@ -85,7 +86,7 @@ export function BudgetContinuation({ episodeId, onRestored }: { episodeId: strin
         <p>A $10 continuation allowance makes the new total ceiling {dollars.format(plan.new_cap_usd)}.</p>
         <p>This launches 0 preliminary tests and 1 checked restore in the same game instance. The continuation is a separate, unscored child; the original run and research record are unchanged.</p>
         {plan.source_compatibility === "compatible_update" && <p><strong>Compatible code update:</strong> this continuation uses compatible updated code. Historical protocol identity is preserved.</p>}
-        {plan.additional_available === false && <p role="status">Additional $10 unavailable: {plan.additional_reason || "The $10 continuation allowance is not available for this run."}</p>}
+        {plan.additional_available === false && <RecoveryRefusal title="Additional $10 unavailable" reason={plan.additional_reason} />}
         <CostOverrideControls
           value={selection}
           onChange={setSelection}
@@ -109,7 +110,7 @@ export function BudgetContinuation({ episodeId, onRestored }: { episodeId: strin
           </button>
         </div>
       </div>}
-      {preview && !preview.available && !error && <button disabled={submitting} onClick={() => void inspect()}>Refresh plan</button>}
+      {preview && !preview.available && !error && /BUSY|RUNTIME|ENVIRONMENT/.test(preview.reason || "") && <button disabled={submitting} onClick={() => void inspect()}>Refresh plan</button>}
       {error && !preview && <button disabled={submitting} onClick={() => void inspect()}>Retry plan</button>}
       <button disabled={submitting} onClick={() => { setOpen(false); setPreview(null); setError(""); setSelection(null); setAuthorizePaid(false); setAcceptUpdate(false); }}>Cancel</button>
     </div>}

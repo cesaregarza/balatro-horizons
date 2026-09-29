@@ -23,6 +23,7 @@ class RunInput(Input):
     preset: Literal["pilot", "smoke"] = "pilot"
     cost_override: Literal[10, "uncapped"] | None = None
     confirm_uncapped: bool = Field(default=False, strict=True)
+    model_settings: dict | None = None
 
     @model_validator(mode="after")
     def confirmed_cost_override(self):
@@ -35,6 +36,13 @@ class OpenReview(Input):
     episode_id: str
     retrospective: bool = False
     prior_seed_exposure: bool = False
+
+
+class OpenExplorer(Input):
+    episode_id: str
+    retrospective: bool = False
+    prior_seed_exposure: bool = False
+    include_view: bool = True
 
 
 class SeekReview(Input):

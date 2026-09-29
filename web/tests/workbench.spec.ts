@@ -17,7 +17,7 @@ test("synthetic run, progressive reveal, escaped annotation, replay-ready branch
   });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: /Every choice leaves/ }),
+    page.getByRole("heading", { name: "Runs and experiments" }),
   ).toBeVisible();
   await awaitIdleWorker(page);
   const created = page.waitForResponse(
@@ -29,22 +29,22 @@ test("synthetic run, progressive reveal, escaped annotation, replay-ready branch
   const response = await created;
   expect(response.ok(), await response.text()).toBe(true);
   const { episode_id } = await response.json();
-  const newRun = page.getByRole("row").filter({
-    has: page.getByText(episode_id.slice(0, 10), { exact: true }),
-  });
+  await expect(page).toHaveURL(new RegExp(`#explore/${episode_id}`));
+  await page.getByRole("button", { name: "Runs", exact: true }).click();
+  const newRun = page.locator(".episode-card").filter({ hasText: episode_id.slice(0, 10) });
   await expect(newRun).toBeVisible();
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await newRun.getByRole("button", { name: "Review →" }).click();
+    await newRun.getByRole("button", { name: "Review", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "What was knowable here?" }),
     ).toBeVisible();
   }).toPass({ timeout: 10000 });
   await expect(
-    page.getByRole("heading", { name: "Recorded decision" }),
+    page.getByRole("region", { name: "Research review workspace" }).getByRole("heading", { name: "Recorded decision" }),
   ).toHaveCount(0);
   await expect(
-    page.getByText("SYNTHETIC TEST", { exact: false }).first(),
+    page.getByRole("region", { name: "Research review workspace" }).getByText("SYNTHETIC TEST", { exact: false }).first(),
   ).toBeVisible();
   await page
     .getByLabel("What tradeoff do you see?")
@@ -67,6 +67,14 @@ test("synthetic run, progressive reveal, escaped annotation, replay-ready branch
   await expect(
     page.getByRole("heading", { name: "After the action" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Next decision", exact: true }).click();
+  await expect(page.getByLabel("Revealed decision", { exact: true })).toHaveValue("1");
+  await page.getByRole("button", { name: "Previous revealed decision" }).click();
+  await expect(page.getByLabel("Revealed decision", { exact: true })).toHaveValue("0");
+  await expect(page.getByRole("heading", { name: "After the action" })).toBeVisible();
+  await page.getByRole("button", { name: "Return to latest revealed" }).click();
+  await expect(page.getByRole("heading", { name: "Recorded decision" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Previous revealed decision" }).click();
   await expect(
     page.getByRole("button", { name: "Explore an alternative" }),
   ).toBeEnabled();
@@ -82,7 +90,7 @@ test("synthetic run, progressive reveal, escaped annotation, replay-ready branch
     fullPage: true,
   });
   await page.getByRole("button", { name: "Skip blind", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Branch created:");
+  await expect(page.getByRole("status").filter({ hasText: "Branch created:" })).toBeVisible();
   expect(verificationPosts).toBe(0);
   await page.getByRole("button", { name: "Runs", exact: true }).click();
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
