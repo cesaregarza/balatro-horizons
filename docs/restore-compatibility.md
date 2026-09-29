@@ -100,6 +100,34 @@ model or prompt cannot reuse that receipt, even with a rehashed checkpoint.
 The older 1× catalogue stays pinned to its original target; the native runtime
 comparison still prevents migrating those runs into the current 16× release.
 
+### Frozen run-configuration upgrade
+
+The full implementation fingerprint of the deployed #69 source
+`9dcd8bf5878338e090dc3363f5dd9d8d7bbd3893` has a separate one-way migration.
+It pins the exact old and accepted whole-module ASTs for
+`harness/context/freeze.py` and `harness/runtime.py`: new roots freeze their public
+deck/stake in the stable rules prefix, and continuation admission checks the pair
+**only when that original snapshot contains it**. No comparison file or method
+is omitted, no current-side normalization is added, and the native manifest is
+byte-identical. Unlisted historical fingerprints and changed/reverted target
+modules cannot inherit this approval.
+
+This preserves legacy execution inputs rather than adding missing information to
+them. A legacy snapshot's original rules prefix, absent `run_configuration` field,
+protocol hash and source hash survive Restore and subsequent branches unchanged.
+New snapshots retain their pair. A separately confirmed budget extension still
+changes only the dollar allowance, not either snapshot's prefix or pair. Saved
+defaults and dashboard drafts do not supply continuation context.
+
+The existing `restore-source-v1` receipt, operator acceptance, release/environment
+admission and single checked replay are still required. Direct branching from an
+old-source root still refuses; an admitted Restore child can carry its proof into
+a branch. Tests compare immutable Git source, reject mutations on both sides and
+exercise legacy/new Restore, branch and budget children with mock providers.
+These are offline compatibility checks, not new native certification or evidence
+of model quality. `tools_v8` remains the only active interface; v7 and previously
+incompatible sources are not admitted by this migration.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-28 — Frozen deck/stake model context
+
+- Deliver the selected public deck and stake in the stable rules prefix before
+  the first decision for both providers. Freeze only the pair, without runtime
+  paths, seeds or new model-facing hashes; defaults cannot change existing input.
+- Preserve original protocol bytes through Restore and branching. Admit the
+  exact deployed #69 source through a pinned one-way compatibility rule, keeping
+  its legacy prefix unchanged; new snapshots reject mismatched continuation pairs.
+  Funded children retain the same context and existing consent/receipt gates.
+- Keep the single v8 tool interface. Add offline coverage for all 120 selections,
+  both provider formats, caching-prefix stability, privacy and legacy/new recovery.
+  Native execution is unchanged; reuse native evidence without new launches.
+
 ## 2026-09-28 — Independent deck and stake selection
 
 - Replace the two launch presets with separate selectors for all 15 standard

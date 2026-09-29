@@ -108,6 +108,19 @@ FUNDING_UPGRADES = {
 }
 
 
+# #70: freeze public choices for new runs and validate them when present. The
+# deployed #69 source keeps its legacy prefix; this does not backfill old inputs.
+RUN_CONFIGURATION_SOURCE = "09d36839d6b1733eb64e2aa19156f95ffe94c332355248132d34709f09a20348"
+RUN_CONFIGURATION_UPGRADES = {
+    "harness/context/freeze.py": (
+        "5945972b563e3f886d4e9fbe08d530d406a4012ad0560d0ab024750af5246208",
+        "0192793ed27c0d36e7e1aba7a4da98ab2ada53806768aa00b2985d39edf83847"),
+    "harness/runtime.py": (
+        "3a6c4fb98dd429dfc83ddea57eb0e7a83c5131b4684e3d278fd6c39697ebe77b",
+        "fd7e7fd5f3d81bbecc6b99b8acf62142222902aa52844bbfef722cd5d83a349c"),
+}
+
+
 def upgrade_historical_manifest(manifest, source_hash):
     result = dict(manifest)
     prefix = "src/balatro_horizons/"
@@ -117,9 +130,10 @@ def upgrade_historical_manifest(manifest, source_hash):
             result[name] = accepted
     for path, accepted in SOURCE_ADDITIONS.get(source_hash, {}).items():
         result.setdefault(prefix + path, accepted)
-    if source_hash == FUNDING_SOURCE:
-        for path, (previous, accepted) in FUNDING_UPGRADES.items():
-            name = prefix + path
-            if result.get(name) == previous:
-                result[name] = accepted
+    upgrades = {FUNDING_SOURCE: FUNDING_UPGRADES,
+                RUN_CONFIGURATION_SOURCE: RUN_CONFIGURATION_UPGRADES}.get(source_hash, {})
+    for path, (previous, accepted) in upgrades.items():
+        name = prefix + path
+        if result.get(name) == previous:
+            result[name] = accepted
     return result

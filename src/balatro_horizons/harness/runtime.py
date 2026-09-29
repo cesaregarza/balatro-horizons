@@ -121,8 +121,12 @@ class Runner(RuntimeDiagnosticsMixin, DecisionRuntimeMixin):
     def _validate_resume_protocol(self, resume):
         if not resume:
             return
-        from balatro_horizons.harness.context.freeze import episode_limits
+        from balatro_horizons.harness.context.freeze import (
+            episode_limits,
+            validate_run_configuration,
+        )
 
+        validate_run_configuration(self.protocol, self.config)
         if self.protocol["episode_limits"] != episode_limits(self.config):
             raise ValueError("AGENT_PROTOCOL_CONFIGURATION_CHANGED")
         model = self.policy.model if isinstance(self.policy, Policy) else None

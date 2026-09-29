@@ -88,6 +88,9 @@ Boss Blind; the native game still determines and progresses through those blinds
 The API accepts validated `deck` and `stake` fields. Legacy `pilot`/`smoke` preset
 requests remain supported but cannot be mixed with explicit choices. Synthetic
 mode remains a plumbing fixture, not a simulation of the selected deck's rules.
+New runs also freeze the selected names into the model's stable rules prefix.
+Restore and branching preserve the original prefix, including its absence on
+legacy runs; see the [model context contract](harness.md#what-the-model-receives).
 Ordinary native launch preflight requires a matching capability certificate for the
 selected pair before creating a run. Additional pairs require the measured
 [configuration coverage](evidence.md#standard-deck-and-stake-coverage) receipt;
