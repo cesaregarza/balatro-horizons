@@ -102,3 +102,29 @@ def test_native_selection_retains_session_and_certificate_gates(monkeypatch):
 def test_cost_confirmation_cannot_be_bypassed_by_game_choices():
     with pytest.raises(ValueError, match="UNCAPPED_CONFIRMATION_REQUIRED"):
         RunInput(deck="PLASMA", stake="GOLD", cost_override="uncapped")
+
+
+@pytest.mark.parametrize("calibration", [False, True])
+def test_early_certificate_check_preserves_explicit_calibration_path(store, monkeypatch, calibration):
+    from balatro_horizons.api import routes_runs
+
+    app = create_app(store.root, Config())
+    start = Mock(return_value="c" * 32)
+    app.state.runs.start = start
+    gate = Mock(side_effect=ValueError("NATIVE_CAPABILITY_CERTIFICATE_MISMATCH"))
+    monkeypatch.setattr(routes_runs, "require_native_selection", gate)
+    with TestClient(app) as client:
+        headers = {"X-BH-Operator": client.get("/api/bootstrap").json()["operator_token"]}
+        response = client.post("/api/runs", headers=headers, json={
+            "deck": "BLUE", "stake": "ORANGE", "offline": False, "calibration": calibration,
+        })
+    if calibration:
+        assert response.status_code == 200
+        gate.assert_not_called()
+        assert start.call_args.kwargs == {"offline": False, "calibration": True}
+    else:
+        assert response.status_code == 400
+        assert "NATIVE_CAPABILITY_CERTIFICATE_MISMATCH" in response.text
+        gate.assert_called_once()
+        start.assert_not_called()
+    assert store.list_episodes() == []

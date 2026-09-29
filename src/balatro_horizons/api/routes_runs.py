@@ -47,7 +47,7 @@ def start_run(request: Request, data: RunInput):
     if "uncapped" in (chosen.budgets.max_episode_cost_usd, chosen.budgets.max_batch_cost_usd):
         if not data.confirm_uncapped:
             raise ValueError("UNCAPPED_CONFIRMATION_REQUIRED")
-    if not data.offline:
+    if not data.offline and not data.calibration:
         require_native_selection(chosen.environment)
     return {
         "episode_id": state.runs.start(

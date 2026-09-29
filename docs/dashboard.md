@@ -88,7 +88,7 @@ Boss Blind; the native game still determines and progresses through those blinds
 The API accepts validated `deck` and `stake` fields. Legacy `pilot`/`smoke` preset
 requests remain supported but cannot be mixed with explicit choices. Synthetic
 mode remains a plumbing fixture, not a simulation of the selected deck's rules.
-Native launch preflight still requires a matching capability certificate for the
+Ordinary native launch preflight requires a matching capability certificate for the
 selected pair before creating a run. Additional pairs require the measured
 [configuration coverage](evidence.md#standard-deck-and-stake-coverage) receipt;
 adding a dropdown does not expand certification or bypass spending consent.
