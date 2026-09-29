@@ -6,9 +6,10 @@ factory small and gives the CLI and browser the same strict input contract.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from balatro_horizons.cost_limits import DollarCap, require_capped_defaults
+from balatro_horizons.run_configuration import validate_choice
 
 
 class Input(BaseModel):
@@ -20,13 +21,22 @@ class RunInput(Input):
     offline: bool = True
     calibration: bool = False
     seed: str | None = Field(default=None, min_length=1, max_length=32, pattern=r"^[A-Za-z0-9]+$")
-    preset: Literal["pilot", "smoke"] = "pilot"
+    preset: Literal["pilot", "smoke"] | None = None
+    deck: str | None = None
+    stake: str | None = None
     cost_override: Literal[10, "uncapped"] | None = None
     confirm_uncapped: bool = Field(default=False, strict=True)
     model_settings: dict | None = None
 
+    @field_validator("deck", "stake")
+    @classmethod
+    def standard_game_choice(cls, value, info):
+        return validate_choice(value, info.field_name)
+
     @model_validator(mode="after")
     def confirmed_cost_override(self):
+        if self.preset is not None and (self.deck is not None or self.stake is not None):
+            raise ValueError("PRESET_WITH_EXPLICIT_CONFIGURATION")
         if self.cost_override == "uncapped" and not self.confirm_uncapped:
             raise ValueError("UNCAPPED_CONFIRMATION_REQUIRED")
         return self

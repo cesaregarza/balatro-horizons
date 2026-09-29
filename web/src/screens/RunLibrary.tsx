@@ -7,12 +7,14 @@ import { useRunAction } from "./useRunAction";
 import { RuntimeConnection, useRuntimeConnection } from "./RuntimeConnection";
 import { configureModel, EMPTY_CAPABILITIES, effortDefault, modelCatalog, modelKey, modelLabel, supportsCachedHarness } from "../modelSelection";
 import { LibraryTable } from "./run-library/LibraryTable";
+import { RunConfiguration, gameChoiceLabel } from "./run-library/RunConfiguration";
 import "./run-library/library.css";
 
 export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes, busy, run, openExplorer, openReview, onCompare, priorSeedExposure, setPriorSeedExposure, watch, setWatch, status, setNotice, onHumanStart, onRunStarted }: any) {
   const [agent, setAgent] = useState("heuristic");
   const [offline, setOffline] = useState(true);
-  const [preset, setPreset] = useState("pilot");
+  const [deck, setDeck] = useState(config.deck ?? "RED");
+  const [stake, setStake] = useState(config.stake ?? "GOLD");
   const [seed, setSeed] = useState("");
   const [effort, setEffort] = useState("medium");
   const [costOverride, setCostOverride] = useState<CostOverride>(null);
@@ -52,8 +54,8 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
             <optgroup label="Models">{Object.entries(catalog).map(([key, value]) => <option key={key} value={key}>{modelLabel(value, capabilities)}</option>)}</optgroup>
             <optgroup label="Baselines & human control"><option value="heuristic">Heuristic baseline</option><option value="random_legal">Random legal baseline</option>{workbench && <option value="human">Human player</option>}</optgroup>
           </select></label>
-          <label>Game configuration<select value={preset} onChange={(e) => setPreset(e.target.value)}><option value="pilot">Red / Gold · strategic pilot</option><option value="smoke">Red / White · smoke</option></select></label>
         </div>
+        <RunConfiguration deck={deck} stake={stake} onDeck={setDeck} onStake={setStake} disabled={busy} />
         {selectedModel && <>
           <ModelControls model={selectedModel} effort={effort} onEffort={setEffort} capabilities={capabilities} disabled={busy} />
           <button disabled={busy || !selectedModelSupported} onClick={() => action(async () => { await saveModelDefaults(); setNotice("Model defaults saved. No run started."); })}>Save model defaults</button>
@@ -66,7 +68,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
         <dl className="launch-summary" aria-label="Launch summary">
           <dt>Mode</dt><dd>{offline ? "Synthetic test" : "Real native game"}</dd>
           <dt>Model / effort</dt><dd>{selectedModel ? `${modelLabel(selectedModel, capabilities)} / ${effort || "provider default"}` : `${agent} / not applicable`}</dd>
-          <dt>Preset</dt><dd>{preset === "pilot" ? "Red / Gold · strategic pilot" : "Red / White · smoke"}</dd>
+          <dt>Deck / stake</dt><dd>{gameChoiceLabel(deck)} Deck / {gameChoiceLabel(stake)} Stake</dd>
           <dt>Episode limit</dt><dd>{episodeLimit == null ? (costOverride === "uncapped" ? "Uncapped · this run only" : "Not configured") : `$${Number(episodeLimit).toFixed(2)}`}</dd>
           <dt>Batch limit</dt><dd>{batchLimit == null ? (costOverride === "uncapped" ? "Uncapped · this run only" : "Not configured") : `$${Number(batchLimit).toFixed(2)}`}</dd>
           <dt>Provider calls</dt><dd>{selectedModel ? budgets.paid_calls_enabled ? "Paid execution enabled" : "Paid execution disabled" : "No provider calls"}</dd>
@@ -79,7 +81,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
               const chosen = selectedModel ? configureModel(selectedModel, effort, capabilities) : null;
               const result = await startRun({
                 agent: chosen ? modelKey(chosen) : agent, ...(chosen ? { model_settings: chosen.settings } : {}),
-                offline, preset, seed: seed || null,
+                offline, deck, stake, seed: seed || null,
                 ...(costOverride === null ? {} : { cost_override: costOverride }),
                 ...(costOverride === "uncapped" ? { confirm_uncapped: true } : {}),
               });

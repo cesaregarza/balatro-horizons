@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-28 — Independent deck and stake selection
+
+- Replace the two launch presets with separate selectors for all 15 standard
+  decks and eight stakes, backed by one browser/API catalog. Preserve in-memory
+  drafts and show the chosen pair in the launch summary.
+- Validate and freeze choices per run without changing saved defaults, historical
+  records, paid-execution consent or cost ceilings. Retain legacy preset requests
+  and reject ambiguous mixed requests. Native preflight refuses uncertified pairs
+  before creating an episode.
+- Add a one-process, unpaid startup/profile collector and explicit, dry-run-first
+  coverage acceptance. Require measured coverage for all 120 pairs and current
+  parent/source/environment bindings; preserve immutable prior certificates and
+  existing restoration gates. This is not a harness interface upgrade.
+
 ## 2026-09-28 — Dashboard workflow and navigation
 
 - Add an explicitly revealed operator library with searchable/filterable model,

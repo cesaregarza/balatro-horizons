@@ -270,7 +270,7 @@ test("explicit defaults persist; launching keeps fresh budgets and uses run-only
     expect(response.ok(), await response.text()).toBe(true);
     await expect(page.getByRole("status").filter({ hasText: "Run created" })).toBeVisible();
     expect(launches).toEqual([
-      { agent: modelKey(terra), model_settings: { ...terra.settings, reasoning_effort: "max" }, offline: true, preset: "pilot", seed: null },
+      { agent: modelKey(terra), model_settings: { ...terra.settings, reasoning_effort: "max" }, offline: true, deck: "RED", stake: "GOLD", seed: null },
     ]);
     const saved = (await (await page.request.get("/api/bootstrap")).json())
       .config;

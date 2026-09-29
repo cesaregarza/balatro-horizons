@@ -146,12 +146,24 @@ def stage_list(
     continuation_only: bool = False,
     interruption_only: bool = False,
     session_expiry_only: bool = False,
+    configurations_only: bool = False,
 ) -> tuple[Stage, ...]:
     """Select a non-executing plan, rejecting incompatible resume modes."""
     selected = sum((resume_certification, resume_actions, gameplay_only, connection_only,
-                    continuation_only, interruption_only, session_expiry_only))
+                    continuation_only, interruption_only, session_expiry_only, configurations_only))
     if selected > 1:
         raise ValueError("RESUME_MODES_ARE_MUTUALLY_EXCLUSIVE")
+    if configurations_only:
+        from balatro_horizons.evidence.configurations import pairs
+
+        return (Stage(
+            "standard deck/stake startup coverage", 1, len(pairs()),
+            ("one owned calibration process; menu/start reuses it for every configuration",
+             "verify requested deck/stake, ready public observation and actual profile hash",
+             "no provider calls, gameplay actions, certificate writes or restoration certification"),
+            "bh evidence collect --configurations-only --baseline-root BASE --offline-report OFFLINE --report NEW",
+            "native-configurations-*.json",
+        ),)
     if session_expiry_only:
         return (Stage(
             "session expiry between repetitions", 1, 1,
@@ -199,6 +211,7 @@ def plan(**options) -> dict:
             or options.get("continuation_only", False)
             or options.get("interruption_only", False)
             or options.get("session_expiry_only", False)
+            or options.get("configurations_only", False)
         ),
         "capability_activation_requested": False,
     }

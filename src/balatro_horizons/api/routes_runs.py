@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from balatro_horizons.config import ModelConfig
 from balatro_horizons.game.windows_context import connection_status
+from balatro_horizons.run_configuration import apply_choices, require_native_selection
 
 from .middleware import require_operator
 from .models import RunInput
@@ -39,14 +40,15 @@ def start_run(request: Request, data: RunInput):
             chosen.models[agent] = ModelConfig.model_validate(configured)
         except ValidationError as error:
             raise ValueError("INVALID_MODEL_SETTINGS") from error
-    if data.preset == "smoke":
-        chosen.environment.stake = "WHITE"
+    apply_choices(chosen, data)
     if data.cost_override is not None:
         chosen.budgets.max_episode_cost_usd = data.cost_override
         chosen.budgets.max_batch_cost_usd = data.cost_override
     if "uncapped" in (chosen.budgets.max_episode_cost_usd, chosen.budgets.max_batch_cost_usd):
         if not data.confirm_uncapped:
             raise ValueError("UNCAPPED_CONFIRMATION_REQUIRED")
+    if not data.offline:
+        require_native_selection(chosen.environment)
     return {
         "episode_id": state.runs.start(
             chosen,

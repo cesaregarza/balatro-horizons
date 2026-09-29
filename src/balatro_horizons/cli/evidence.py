@@ -1,6 +1,8 @@
 """Evidence command family over package-owned orchestration."""
 
+import json
 import subprocess
+import sys
 
 
 def run_evidence_command(args):
@@ -14,10 +16,15 @@ def run_evidence_command(args):
             continuation_only=args.continuation_only,
             interruption_only=args.interruption_only,
             session_expiry_only=args.session_expiry_only,
+            configurations_only=args.configurations_only,
             resume_actions=getattr(args, "resume_actions", False),
             resume_certification=getattr(args, "resume_certification", False),
         )
     if operation == "collect":
+        if args.configurations_only:
+            return collect_configurations(args)
+        if args.baseline_root is not None or args.offline_report is not None:
+            raise ValueError("BASELINE_AND_OFFLINE_REPORT_REQUIRE_CONFIGURATIONS_ONLY")
         if args.session_expiry_only:
             return collect_session_expiry(args)
         if args.fixture_report is not None:
@@ -45,9 +52,32 @@ def run_evidence_command(args):
         return publish()
     if operation == "reuse":
         return reuse_evidence(args)
+    if operation == "configurations":
+        from balatro_horizons.evidence.configurations import accept
+
+        return accept(args.root, args.baseline, args.report, args.offline_report, apply=args.apply)
     from balatro_horizons.evidence.inspect import inspect_artifact
 
     return inspect_artifact(args.artifact, args.limit)
+
+
+def collect_configurations(args):
+    from balatro_horizons.config import ROOT, load_config
+    from balatro_horizons.evidence.collect.configurations import collect
+
+    if (not args.report or not args.baseline_root or not args.offline_report
+            or args.from_stage or args.episode_id or args.fixture_report or args.gameplay_only
+            or args.continuation_only or args.interruption_only or args.session_expiry_only):
+        raise ValueError("CONFIGURATION_COLLECTION_REQUIRES_BASELINE_REPORT_AND_OFFLINE_ONLY")
+    result = collect(load_config(ROOT / "configs/pilot.yaml"), args.baseline_root,
+                     args.offline_report, args.report,
+                     on_progress=lambda completed, total: print(
+                         json.dumps({"configurations_checked": completed, "total": total}),
+                         file=sys.stderr, flush=True,
+                     ))
+    if result["status"] != "passed":
+        raise ValueError(result["reason"])
+    return result
 
 
 def collect_session_expiry(args):
