@@ -325,6 +325,45 @@ do not rewrite the certificate hash.
 
 Public exports are schema-selected and privacy-scanned. Seeds, raw state, saves,
 credentials, private paths, and divergence payloads stay private. Red/White and
-Red/Gold are the supported certified configurations. Paid-provider compatibility
+Red/Gold remain the base full-suite configurations. Additional standard pairs
+require the measured startup/profile extension below. Paid-provider compatibility
 and scientific evaluation require separate evidence and budgets; this pipeline
 makes no paid calls.
+
+### Standard deck and stake coverage
+
+The dashboard offers every standard deck/stake pair, but native admission still
+checks the exact pair and its measured profile hash. Extend a candidate only from
+a retained, passing certificate with identical native components and environment,
+plus a current source-bound offline report. Keep the retained checkout unchanged;
+the candidate must have exact copies of its private certificate records, lock and
+native evidence artifacts, and a valid registered Windows connection.
+
+```bash
+uv run bh offline --web --report reports/verification/offline-run-setup.json
+uv run bh evidence plan --configurations-only
+uv run bh evidence collect --configurations-only \
+  --baseline-root ../retained-certified-release \
+  --offline-report reports/verification/offline-run-setup.json \
+  --report reports/verification/native-configurations.json
+uv run bh evidence configurations --root . --baseline auto \
+  --offline-report reports/verification/offline-run-setup.json \
+  --report reports/verification/native-configurations.json
+```
+
+The collector takes the candidate and baseline native-worker locks nonblockingly
+and uses **one owned calibration process with 120 menu/start resets**. Each start
+checks the actual deck and stake, ready blind-selection boundary, public
+observation and profile hash. It records no seeds or raw observations and makes
+no provider calls or gameplay actions. It stops on the first unexpected result,
+retains a failed receipt, and never launches a replacement process or publishes
+a certificate. Do not rerun an unchanged passing collection.
+
+The final command is a read-only acceptance plan. Add `--apply` only to activate
+the complete, current receipt in the prepared candidate. Acceptance requires all
+120 distinct pairs, unchanged already-certified profile hashes, exact parent
+certificate/source/environment/catalog bindings, and passed offline checks.
+It preserves the original immutable certificate and writes a new derived record;
+it neither broadens checkpoint/restoration scope nor migrates historical runs.
+The extension proves configuration selection and initial profile compatibility,
+not 120 complete games, model quality, or per-configuration replay certification.

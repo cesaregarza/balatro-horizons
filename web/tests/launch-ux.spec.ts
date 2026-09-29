@@ -38,17 +38,41 @@ test("launch shows effective limits and sends selected settings without saving d
   await page.getByLabel("Reasoning effort").selectOption("high");
   await page.getByRole("button", { name: /Start test episode/ }).click();
   await expect.poll(() => starts.length).toBe(1);
-  expect(starts[0]).toMatchObject({ agent: modelKey, model_settings: { temperature: 0.2, reasoning_effort: "high" }, offline: true, preset: "pilot", seed: null });
+  expect(starts[0]).toMatchObject({ agent: modelKey, model_settings: { temperature: 0.2, reasoning_effort: "high" }, offline: true, deck: "RED", stake: "GOLD", seed: null });
   expect(settings).toHaveLength(0);
 });
 
 test("launch draft, including private seed, survives tab navigation in memory", async ({ page }) => {
   await mockApp(page);
   await page.getByLabel("Private seed").fill("private-draft-seed");
-  await page.getByLabel("Game configuration").selectOption("smoke");
+  await page.getByLabel("Deck", { exact: true }).selectOption("BLUE");
+  await page.getByLabel("Stake (difficulty)").selectOption("PURPLE");
   await page.getByRole("button", { name: "Models & budgets", exact: true }).click();
   await page.getByRole("button", { name: "Runs", exact: true }).click();
   await expect(page.getByLabel("Private seed")).toHaveValue("private-draft-seed");
-  await expect(page.getByLabel("Game configuration")).toHaveValue("smoke");
+  await expect(page.getByLabel("Deck", { exact: true })).toHaveValue("BLUE");
+  await expect(page.getByLabel("Stake (difficulty)")).toHaveValue("PURPLE");
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
+});
+
+test("every standard deck and stake is available independently, including on a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { starts, settings } = await mockApp(page);
+  const deck = page.getByLabel("Deck", { exact: true });
+  const stake = page.getByLabel("Stake (difficulty)");
+  expect(await deck.locator("option").evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))).toEqual([
+    "RED", "BLUE", "YELLOW", "GREEN", "BLACK", "MAGIC", "NEBULA", "GHOST", "ABANDONED", "CHECKERED", "ZODIAC", "PAINTED", "ANAGLYPH", "PLASMA", "ERRATIC",
+  ]);
+  expect(await stake.locator("option").evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))).toEqual([
+    "WHITE", "RED", "GREEN", "BLACK", "BLUE", "PURPLE", "ORANGE", "GOLD",
+  ]);
+  await stake.selectOption("ORANGE");
+  await deck.selectOption("ERRATIC");
+  await expect(stake).toHaveValue("ORANGE");
+  await expect(page.getByLabel("Launch summary")).toContainText("Erratic Deck / Orange Stake");
+  await page.getByRole("button", { name: /Start test episode/ }).click();
+  await expect.poll(() => starts.length).toBe(1);
+  expect(starts[0]).toEqual({ agent: "heuristic", offline: true, deck: "ERRATIC", stake: "ORANGE", seed: null });
+  expect(settings).toHaveLength(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

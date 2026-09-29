@@ -235,7 +235,8 @@ export type RuntimeConnection = {
 export type RunInput = {
   agent: string;
   offline: boolean;
-  preset: string;
+  deck: string;
+  stake: string;
   seed: string | null;
   cost_override?: 10 | "uncapped" | null;
   confirm_uncapped?: boolean;

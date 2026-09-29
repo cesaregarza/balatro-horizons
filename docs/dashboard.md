@@ -80,6 +80,19 @@ applied to a copy; only **Save model defaults** writes persistent defaults. A ne
 run or continuation opens its explorer. Worker status is explicitly revealed;
 active/recent cards open runs, and idle Stop controls are disabled.
 
+Deck and **Stake (difficulty)** are independent selectors covering the 15 standard
+decks and eight cumulative stakes. They start from the configured defaults, stay
+in the in-memory draft across tabs, and are frozen into the new run without
+changing saved defaults or earlier runs. Stake is not a choice of Small, Big, or
+Boss Blind; the native game still determines and progresses through those blinds.
+The API accepts validated `deck` and `stake` fields. Legacy `pilot`/`smoke` preset
+requests remain supported but cannot be mixed with explicit choices. Synthetic
+mode remains a plumbing fixture, not a simulation of the selected deck's rules.
+Ordinary native launch preflight requires a matching capability certificate for the
+selected pair before creating a run. Additional pairs require the measured
+[configuration coverage](evidence.md#standard-deck-and-stake-coverage) receipt;
+adding a dropdown does not expand certification or bypass spending consent.
+
 The ordinary explorer includes unfinished requests and links to a failed final
 attempt. Spend remains first; exports, legends and debugging are secondary.
 Ordinary detail requests use `technical=false`, retaining boards and returned
