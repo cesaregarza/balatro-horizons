@@ -48,13 +48,42 @@ class WorkbenchService(ReviewService):
         return self._view(session)
 
     def _view(self, session):
-        return self._build_view(session, staged=True)
+        result = self._build_view(session, staged=True)
+        _, observations, _, _ = self._decision(session)
+        index, stage = _frontier(session)
+        result["navigation"] = {
+            "decisions": [row["observation_id"] for row in observations[:index + 1]],
+            "frontier_decision": observations[index]["observation_id"],
+            "frontier_stage": stage,
+            "at_frontier": (session["decision_index"], session["stage"]) == (index, stage),
+        }
+        return result
+
+    def revisit(self, token, decision):
+        """Return to already revealed information without widening the frontier."""
+        path, _ = self.session(token)
+        with locked(path.with_suffix(".lock")):
+            session = json.loads(path.read_text())
+            frontier, stage = _frontier(session)
+            _, observations, _, _ = self._decision(session)
+            index = next((i for i, row in enumerate(observations[:frontier + 1])
+                          if row["observation_id"] == decision), None)
+            if index is None:
+                raise ReviewError("REVIEW_DECISION_NOT_REVEALED")
+            session.update(frontier_index=frontier, frontier_stage=stage,
+                           decision_index=index, stage=stage if index == frontier else "transition")
+            atomic_json(path, session)
+        return self._view(session)
 
     def advance(self, token):
         path, _ = self.session(token)
         with locked(path.with_suffix(".lock")):
             session = json.loads(path.read_text())
-            if session["stage"] == "observation":
+            frontier, stage = _frontier(session)
+            if session["decision_index"] < frontier:
+                session["decision_index"] += 1
+                session["stage"] = stage if session["decision_index"] == frontier else "transition"
+            elif session["stage"] == "observation":
                 session["stage"] = "action"
             elif session["stage"] == "action":
                 session["stage"] = "transition"
@@ -64,15 +93,29 @@ class WorkbenchService(ReviewService):
                     raise ReviewError("NO_NEXT_DECISION")
                 session["decision_index"] += 1
                 session["stage"] = "observation"
+            if session["decision_index"] >= frontier:
+                frontier, stage = session["decision_index"], session["stage"]
+            session.update(frontier_index=frontier, frontier_stage=stage)
             atomic_json(path, session)
-        return self.view(token)
+        return self._view(session)
 
     def seek(self, token, decision):
         """Move the workbench cursor to an actual recorded decision ID."""
         path, _ = self.session(token)
         with locked(path.with_suffix(".lock")):
             session = self._at_decision(json.loads(path.read_text()), decision)
+            frontier, stage = _frontier(session)
+            if session["decision_index"] >= frontier:
+                frontier, stage = session["decision_index"], session["stage"]
+            session.update(frontier_index=frontier, frontier_stage=stage)
             atomic_json(path, session)
         return self._view(session)
+
+
+def _frontier(session):
+    """Old sessions start from their existing cursor, never from journal length."""
+    return (session.get("frontier_index", session["decision_index"]),
+            session.get("frontier_stage", session["stage"]))
+
 
 __all__ = ["ReviewError", "WorkbenchService"]

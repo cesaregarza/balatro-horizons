@@ -1,0 +1,10 @@
+.branch-comparison { max-width: 1180px; margin: 1rem auto; padding: 0 1rem 3rem; }
+.comparison-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.comparison-heading h1 { margin: .15rem 0; }
+.branch-comparison .panel { margin: 1rem 0; }
+.comparison-run-headings { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.comparison-run-headings h3 { margin: .4rem 0; }
+.branch-comparison td code { overflow-wrap: anywhere; }
+.branch-comparison details { margin-top: 1rem; }
+.branch-comparison details pre { overflow-x: auto; }
+@media (max-width: 620px) { .comparison-heading { align-items: start; flex-direction: column; } .comparison-run-headings { grid-template-columns: 1fr; gap: .2rem; } }

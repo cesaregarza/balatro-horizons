@@ -12,11 +12,14 @@ test("browser explorer verification help and invalid arguments need no browser",
   });
   assert.equal(help.status, 0);
   assert.equal(help.stdout.includes("--explore EPISODE_ID [DECISION_ID]"), true);
+  assert.equal(help.stdout.includes("board timings and detail bytes"), true);
   for (const args of [
     ["bad", "0"],
     ["e".repeat(32), "-1"],
     ["e".repeat(32), "1.5"],
     ["e".repeat(32), ""],
+    ["e".repeat(32), "9007199254740992"],
+    ["e".repeat(32), "0", "extra"],
   ]) {
     const result = spawnSync(process.execPath, [script, "--explore", ...args], {
       encoding: "utf8",

@@ -14,12 +14,12 @@ export default defineConfig({
   projects: [
     {
       name: "dashboard",
-      testMatch: /(?:card-modifiers|cost-overrides|decisions|dev-trace(?:-ids)?|model-selection|polling|public-information|run-spend|runtime-connection)\.spec\.ts/,
+      testMatch: /(?:card-modifiers|cost-overrides|decisions|dev-trace(?:-ids)?|model-selection|polling|public-information|run-spend|runtime-connection|library-ux|launch-ux|explorer-ux|annotation-ux|navigation-ux)\.spec\.ts/,
       use: { baseURL: "http://127.0.0.1:8766" },
     },
     {
       name: "workbench",
-      testMatch: /(?:budget-continuation|branch-cost|workbench|restore)\.spec\.ts/,
+      testMatch: /(?:budget-continuation|branch-cost|workbench|restore|review-navigation)\.spec\.ts/,
       use: { baseURL: "http://127.0.0.1:8767" },
     },
   ],

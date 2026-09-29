@@ -21,19 +21,19 @@ test("expired connection blocks native launch, reconnect restores it, synthetic 
     return route.fulfill({ json: { episode_id: "a".repeat(32) } });
   });
   await page.goto("/");
-  await page.getByLabel("Synthetic pipeline test").uncheck();
+  await page.getByLabel("Synthetic test episode").uncheck();
   await expect(
     page.getByRole("button", { name: /Start native run/ }),
   ).toBeDisabled();
   await expect(
     page.getByText(/Windows runtime connection needs refreshing/),
   ).toBeVisible();
-  await page.getByLabel("Synthetic pipeline test").check();
+  await page.getByLabel("Synthetic test episode").check();
   await expect(
     page.getByRole("button", { name: /Start test episode/ }),
   ).toBeEnabled();
   ready = true;
-  await page.getByLabel("Synthetic pipeline test").uncheck();
+  await page.getByLabel("Synthetic test episode").uncheck();
   await expect(
     page.getByRole("button", { name: /Start native run/ }),
   ).toBeEnabled();
@@ -51,7 +51,7 @@ test("runtime connection fails closed and can recover from a network error", asy
     return route.fulfill({ json: { ready: true, code: null, message: "Windows connection registered" } });
   });
   await page.goto("/");
-  await page.getByLabel("Synthetic pipeline test").uncheck();
+  await page.getByLabel("Synthetic test episode").uncheck();
   await expect(page.getByRole("button", { name: /Start native run/ })).toBeDisabled();
   await expect(page.getByText("Cannot check the runtime connection.")).toBeVisible();
   reachable = true;

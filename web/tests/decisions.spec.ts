@@ -1,8 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { awaitIdleWorker } from "./runHelpers";
+import { awaitIdleWorker, openTechnicalInspection } from "./runHelpers";
 
 async function exported(page: Page, format: "json" | "jsonl") {
+  await openTechnicalInspection(page);
   const download = page.waitForEvent("download");
   await page
     .getByRole("button", {
@@ -50,7 +51,7 @@ test("explorer filters choices, jumps both ways, and opens retrospective annotat
   const eid = await fixture(page);
   await page.goto("/");
   await page
-    .getByRole("row")
+    .locator(".episode-card")
     .filter({ hasText: eid.slice(0, 10) })
     .getByRole("button", { name: "Explore decisions" })
     .click();
@@ -64,6 +65,7 @@ test("explorer filters choices, jumps both ways, and opens retrospective annotat
     .getByRole("combobox", { name: "Action filter", exact: true })
     .selectOption("build");
   await expect(list.locator("button")).toHaveCount(1);
+  await list.locator("button").click();
   await expect(
     detail.getByRole("heading", { name: "Buy Test Joker", exact: true }),
   ).toBeVisible();
@@ -115,7 +117,7 @@ test("explorer filters choices, jumps both ways, and opens retrospective annotat
   await expect(
     page.getByText("retrospective review", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByLabel("Through decision")).toHaveValue("3");
+  await expect(page.getByLabel("Through decision")).toHaveValue("4");
   await page
     .getByLabel("What tradeoff do you see?")
     .fill("Reviewing this purchase after seeing its outcome.");

@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import {
   gameMoney, objectNames, quotedPrice, recordedModelContext, toolTitle, type Trace, type TraceCall, type TraceEvent,
 } from "../src/devTracePresentation";
-import { awaitIdleWorker } from "./runHelpers";
+import { awaitIdleWorker, openTechnicalInspection } from "./runHelpers";
 
 const event = (type: string, payload: any): TraceEvent => ({
   event_id: type, sequence: 1, timestamp: "fixture", type, payload,
@@ -59,6 +59,7 @@ for (const provider of ["openai", "anthropic"]) {
     };
     await page.route("**/api/explore/decisions/*/trace", (route) => route.fulfill({ json: data }));
     await page.goto(`/#explore/${eid}/0`);
+    await openTechnicalInspection(page);
     await page.getByLabel("Dev mode", { exact: true }).check();
     const panel = page.getByRole("region", { name: "Model tool calls" });
     await expect(panel.getByText("Requested: Buy Eternal Joker (∞)", { exact: true })).toBeVisible();

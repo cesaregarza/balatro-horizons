@@ -15,6 +15,11 @@
 * {
   box-sizing: border-box;
 }
+[hidden] { display: none !important; }
+.dismiss-notice { float: right; padding: 0 8px; margin-left: 12px; }
+.review-navigation { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 14px 0; }
+.review-navigation label { margin: 0; }
+.header-right { flex-wrap: wrap; justify-content: flex-end; }
 body {
   margin: 0;
 }

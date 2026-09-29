@@ -1,5 +1,11 @@
 import { expect, type Page } from "@playwright/test";
 
+export async function openTechnicalInspection(page: Page) {
+  const summary = page.getByText("Exports, display guide and technical inspection", { exact: true });
+  const details = summary.locator("..");
+  if (!(await details.evaluate((element) => (element as HTMLDetailsElement).open))) await summary.click();
+}
+
 export async function awaitIdleWorker(page: Page, operatorToken?: string) {
   const token =
     operatorToken ??

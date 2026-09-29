@@ -13,8 +13,8 @@ dashboard always mounts the run library, live status, decision exploration,
 cost/model-budget settings, batches, reports, and cheap append-only
 retrospective annotations under the `/api/explore...` and core namespaces.
 These surfaces remain usable when the flag is off; workbench-only routes are
-registered separately, including budget-continuation and restore admission. There are 24
-mounted routes flag-off, 44 flag-on, and 20 workbench-only routes.
+registered separately, including budget-continuation and restore admission. There are 25
+mounted routes flag-off, 46 flag-on, and 21 workbench-only routes.
 
 The workbench owns staged reveal/review, branching and comparison, human
 takeover, budget continuation, and verification. Its `/api/review*`,
@@ -53,7 +53,55 @@ Action labels come from the single packaged `review/action_descriptors.json`,
 also imported by TypeScript. Route names and accessible labels are versioned UI
 contracts; changes require matching browser coverage.
 Unknown edition text is escaped and never used as a CSS class. Explorer decision
-numbers start at 1; journal IDs and workbench trajectory numbers are zero-based.
+numbers, annotation controls, branch provenance and workbench trajectories start
+at 1. API and journal IDs remain zero-based; no historical records are renumbered.
+
+## Finding and navigating runs
+
+The library starts in **Blinded review**. **Operator details** explicitly reveals
+model identity and outcomes and records exposure before returning those fields.
+Search/filter by model, effort text, harness text, deck/stake, status and evidence;
+hide test/fixture records, sort, and page through continuation families. Each
+continuation keeps its own Explore, Review and comparison actions. Select two
+records for a descriptive comparison; missing metadata remains unknown, and
+independent outcomes do not establish causal effects.
+
+Run/decision navigation has meaningful browser Back/Forward entries. Tabs retain
+the selected decision, filters, scroll and in-memory drafts. Empty inspector tabs
+link back to the library. **Go to decision** is an exact one-based jump, separate
+from text search. Phone deep links open the requested detail. Unsaved assessments
+are guarded before replacing their editor/run and are not silently retargeted by
+history navigation. Seed drafts remain only in memory, never local storage.
+
+**Start a run** jumps to a preserved launch draft. The confirmation summary shows
+model/effort, real versus synthetic mode, deck/stake and both effective dollar
+ceilings. Per-run model settings are validated against the configured model and
+applied to a copy; only **Save model defaults** writes persistent defaults. A new
+run or continuation opens its explorer. Worker status is explicitly revealed;
+active/recent cards open runs, and idle Stop controls are disabled.
+
+The ordinary explorer includes unfinished requests and links to a failed final
+attempt. Spend remains first; exports, legends and debugging are secondary.
+Ordinary detail requests use `technical=false`, retaining boards and returned
+reasoning summaries without heavy request/helper bodies. **Exact public decision
+records** fetches those records only when opened. The legacy detail response and
+download schemas remain unchanged.
+
+Explorer reads reuse hash-verified journal snapshots while device, inode, size,
+mtime and ctime are unchanged. This separate cache admits journals up to 96 MiB,
+retains at most four snapshots and 32 MiB of compressed data total, and falls back to normal
+verified reads above those bounds. Each snapshot includes an ordinary display
+projection so board navigation does not decode heavy technical bodies. Accounting,
+exports and exact records still use the full verified data. Cached results are decoded afresh so a caller
+cannot mutate later reads. Library harness labels use a bounded, hash-checked
+genesis reference and frozen protocol bundle; this is display provenance, not
+certification of the rest of the journal. Missing historical metadata stays unknown.
+
+For a repeatable read-only browser check against an isolated server/store, run
+`BH_WORKBENCH_URL=http://127.0.0.1:8768 node web/scripts/verify_browser_native.mjs --explore EPISODE_ID 20`.
+It reports first/next board timings and detail bytes, checks desktop and phone
+deep links, and saves screenshots under `reports/verification/`. It records normal
+inspection exposure in that store but refuses non-inspection mutation requests.
 
 Status polling reads a compact per-episode cache, not the full journal on every
 request. Device, inode, size, modification time, or change time invalidates the
@@ -103,6 +151,10 @@ operator controls, including explicit budget continuation.
 Explore and staged-review tokens use separate stores: an explore token cannot
 advance a workbench cursor. Retrospective annotation lists use the explicitly
 selected decision boundary without mutating the read-only explore cursor.
+Staged review retains a separate high-water cursor. **Previous revealed decision**
+and **Return to latest revealed** revisit only already-revealed information;
+future decision IDs and unrevealed actions/consequences remain unavailable.
+`POST /api/review/revisit` does not relax retrospective-only seek/detail access.
 
 `bh summarize --episode-id EPISODE_ID --output summary.json
 --markdown-output summary.md` writes a new public JSON decision ledger and an
@@ -112,7 +164,9 @@ files. Recorded model notes remain claims, separate from observed transitions.
 
 ### Restore unfinished runs
 
-Open **Decision Explorer → Restore run** for a read-only plan, then explicitly
+Opening a stopped run checks recovery eligibility read-only. Completed games do
+not advertise Restore; unavailable plans explain the next step with the technical
+code in a disclosure. Use **Decision Explorer → Restore run**, then explicitly
 authorize the continuation and any compatible-code update. Restore creates an
 unscored child through one checked replay; it never rewrites the parent or resets
 its funding. See [run recovery](run-recovery.md#restore-unfinished-runs) for

@@ -30,6 +30,8 @@ async function openRunLibrary(page: Page, options: { delayStart?: boolean; runSt
     }
     if (path === "/api/episodes") return route.fulfill({ json: [] });
     if (path === "/api/panels" || path === "/api/batches") return route.fulfill({ json: [] });
+    if (path === "/api/explore/sessions") return route.fulfill({ json: { review_token: "mock-review", view: null } });
+    if (path === "/api/explore/decisions") return route.fulfill({ json: { manifest: { episode_id: episodeId, agent: "fixture", config: { models: {} } }, summary: null, actions: [], uncommitted_actions: [], rounds: [] } });
     if (path === "/api/operator/status") {
       return route.fulfill({ json: { running: false, active_episode: null, episodes: [], error: null } });
     }
@@ -55,19 +57,18 @@ async function openRunLibrary(page: Page, options: { delayStart?: boolean; runSt
 test("default limits omit both override fields from a new run", async ({ page }) => {
   const { runs, settings } = await openRunLibrary(page);
   await page.getByRole("button", { name: /Start test episode/ }).click();
-  await expect(page.getByRole("status")).toContainText("Run created");
-  expect(settings).toHaveLength(1);
-  expect(settings[0]).toMatchObject({ budgets: config.budgets });
-  expect(runs).toEqual([{ agent: "model:anthropic:claude-cost-test", offline: true, preset: "pilot", seed: null }]);
+  await expect(page.getByRole("status").filter({ hasText: "Run created" })) .toContainText("Run created");
+  expect(settings).toHaveLength(0);
+  expect(runs).toEqual([{ agent: "model:anthropic:claude-cost-test", model_settings: {}, offline: true, preset: "pilot", seed: null }]);
 });
 
 test("$10 sends the exact per-run ceiling", async ({ page }) => {
   const { runs } = await openRunLibrary(page);
   await page.getByRole("button", { name: "$10 total" }).click();
   await page.getByRole("button", { name: /Start test episode/ }).click();
-  await expect(page.getByRole("status")).toContainText("Run created");
+  await expect(page.getByRole("status").filter({ hasText: "Run created" })) .toContainText("Run created");
   expect(runs).toEqual([{
-    agent: "model:anthropic:claude-cost-test", offline: true, preset: "pilot", seed: null, cost_override: 10,
+    agent: "model:anthropic:claude-cost-test", model_settings: {}, offline: true, preset: "pilot", seed: null, cost_override: 10,
   }]);
 });
 
@@ -78,7 +79,7 @@ test("switching from a configured model to a baseline drops its override", async
   await modelPicker.selectOption("heuristic");
   await expect(page.getByRole("group", { name: "Cost for this new run" })).toHaveCount(0);
   await page.getByRole("button", { name: /Start test episode/ }).click();
-  await expect(page.getByRole("status")).toContainText("Run created");
+  await expect(page.getByRole("status").filter({ hasText: "Run created" })) .toContainText("Run created");
   expect(runs).toEqual([{ agent: "heuristic", offline: true, preset: "pilot", seed: null }]);
 });
 
@@ -117,9 +118,9 @@ test("accepted Uncapped confirmation sends its required flag", async ({ page }) 
   await page.getByRole("button", { name: "Uncapped" }).click();
   await expect(page.getByRole("button", { name: "Uncapped" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: /Start test episode/ }).click();
-  await expect(page.getByRole("status")).toContainText("Run created");
+  await expect(page.getByRole("status").filter({ hasText: "Run created" })) .toContainText("Run created");
   expect(runs).toEqual([{
-    agent: "model:anthropic:claude-cost-test", offline: true, preset: "pilot", seed: null,
+    agent: "model:anthropic:claude-cost-test", model_settings: {}, offline: true, preset: "pilot", seed: null,
     cost_override: "uncapped", confirm_uncapped: true,
   }]);
 });
@@ -130,12 +131,14 @@ test("successful start resets Uncapped so the next run uses current limits", asy
   await page.getByRole("button", { name: "Uncapped" }).click();
   const start = page.getByRole("button", { name: /Start test episode/ });
   await start.click();
+  await expect(page).toHaveURL(/#explore/);
+  await page.getByRole("button", { name: "Runs", exact: true }).click();
   await expect(start).toBeEnabled();
   await expect(page.getByRole("button", { name: "Current limits" })).toHaveAttribute("aria-pressed", "true");
   await start.click();
   await expect.poll(() => runs.length).toBe(2);
   expect(runs[0]).toMatchObject({ cost_override: "uncapped", confirm_uncapped: true });
-  expect(runs[1]).toEqual({ agent: "model:anthropic:claude-cost-test", offline: true, preset: "pilot", seed: null });
+  expect(runs[1]).toEqual({ agent: "model:anthropic:claude-cost-test", model_settings: {}, offline: true, preset: "pilot", seed: null });
 });
 
 test("busy state disables overrides and rapid duplicate clicks submit once", async ({ page }) => {
@@ -149,6 +152,8 @@ test("busy state disables overrides and rapid duplicate clicks submit once", asy
   await start.click({ force: true });
   expect(runs).toHaveLength(1);
   releaseStart();
+  await expect(page).toHaveURL(/#explore/);
+  await page.getByRole("button", { name: "Runs", exact: true }).click();
   await expect(start).toBeEnabled();
   expect(runs).toHaveLength(1);
 });

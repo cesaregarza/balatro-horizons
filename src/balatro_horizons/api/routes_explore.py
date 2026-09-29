@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Request
 
-from balatro_horizons.api.models import OpenReview, SeekReview
+from balatro_horizons.api.models import OpenExplorer, SeekReview
 from balatro_horizons.review.export import export_response
 
 from .middleware import require_operator, require_session
@@ -32,12 +32,19 @@ def episodes(request: Request):
     return rows
 
 
+@router.get("/api/operator/episodes", dependencies=[Depends(require_operator)])
+def operator_episodes(request: Request):
+    return request.app.state.operator_library.episodes()
+
+
 @router.post("/api/explore/sessions", dependencies=[Depends(require_operator)])
-def open_explorer(request: Request, data: OpenReview):
+def open_explorer(request: Request, data: OpenExplorer):
     if not data.retrospective:
         raise ValueError("RETROSPECTIVE_REVIEW_REQUIRED")
     return request.app.state.review.open_explorer(
-        data.episode_id, prior_seed_exposure=data.prior_seed_exposure
+        data.episode_id,
+        prior_seed_exposure=data.prior_seed_exposure,
+        include_view=data.include_view,
     )
 
 
@@ -47,8 +54,9 @@ def decisions(request: Request, token=Depends(require_session)):
 
 
 @router.get("/api/explore/decisions/{decision}")
-def decision_detail(request: Request, decision: int, token=Depends(require_session)):
-    return request.app.state.review.decision(token, decision)
+def decision_detail(request: Request, decision: int, technical: bool = True,
+                    token=Depends(require_session)):
+    return request.app.state.review.decision(token, decision, technical=technical)
 
 
 @router.get("/api/explore/decisions/{decision}/trace")

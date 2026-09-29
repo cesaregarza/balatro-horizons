@@ -186,6 +186,12 @@ export type View = {
   review_mode: string;
   exposure: Record<string, unknown>;
   trajectory: TimelinePoint[];
+  navigation?: {
+    decisions: number[];
+    frontier_decision: number;
+    frontier_stage: "observation" | "action" | "transition";
+    at_frontier: boolean;
+  };
 };
 export type TimelinePoint = {
   decision: number;
@@ -205,6 +211,16 @@ export type Episode = {
   fixture: string | null;
   agent?: string;
 };
+export type OperatorEpisode = Episode & {
+  parent_episode_id: string | null;
+  model_name: string;
+  reasoning_effort: string | null;
+  recorded_interface: string | null;
+  outcome: string | null;
+  reason: string | null;
+  cost_usd: number | null;
+  committed_actions: number | null;
+};
 export type Bootstrap = {
   operator_token: string;
   config: any;
@@ -223,6 +239,7 @@ export type RunInput = {
   seed: string | null;
   cost_override?: 10 | "uncapped" | null;
   confirm_uncapped?: boolean;
+  model_settings?: Record<string, unknown>;
 };
 export type ReviewOpenInput = {
   episode_id: string;
@@ -268,6 +285,7 @@ async function request<T>(path: string, method = "GET", body?: unknown, reviewTo
 
 export const bootstrap = () => request<Bootstrap>("/bootstrap");
 export const listEpisodes = () => request<Episode[]>("/episodes");
+export const listOperatorEpisodes = () => request<OperatorEpisode[]>("/operator/episodes");
 export const restorePreview = (episodeId: string) => request<RestorePreview>("/operator/episodes/" + episodeId + "/restore");
 export const restoreRun = (episodeId: string, input: { parent_head: string; plan_hash: string; authorize_paid: boolean; accept_compatible_update: boolean; confirm_uncapped?: boolean }) => request<{ episode_id: string }>("/operator/episodes/" + episodeId + "/restore", "POST", input);
 export const budgetContinuationPreview = (episodeId: string) => request<BudgetContinuationPreview>("/operator/episodes/" + episodeId + "/continue-budget");
@@ -278,11 +296,12 @@ export const operatorStatus = () => request<any>("/operator/status");
 export const operatorRuntime = (signal?: AbortSignal) => request<RuntimeConnection>("/operator/runtime", "GET", undefined, undefined, signal);
 export const saveSettings = (input: unknown) => request<any>("/settings", "PUT", input);
 export const openReview = (input: ReviewOpenInput) => request<{ review_token: string; view: View }>("/reviews", "POST", input);
-export const openExplorer = (input: ReviewOpenInput) => request<{ review_token: string; view: View | null }>("/explore/sessions", "POST", { ...input, retrospective: true });
+export const openExplorer = (input: ReviewOpenInput) => request<{ review_token: string; view: View | null }>("/explore/sessions", "POST", { ...input, retrospective: true, include_view: false });
 export const reviewView = (token: string) => request<View>("/review", "GET", undefined, token);
 export const advanceReview = (token: string) => request<View>("/review/advance", "POST", {}, token);
+export const revisitReview = (token: string, decision: number) => request<View>("/review/revisit", "POST", { decision }, token);
 export const listDecisions = (token: string) => request<DecisionLedger>(explorerPath("/decisions"), "GET", undefined, token);
-export const decisionDetail = (token: string, decision: number) => request<View>(`${explorerPath("/decisions")}/${decision}`, "GET", undefined, token);
+export const decisionDetail = (token: string, decision: number, technical = false, signal?: AbortSignal) => request<View>(`${explorerPath("/decisions")}/${decision}${technical ? "" : "?technical=false"}`, "GET", undefined, token, signal);
 export const decisionTrace = (token: string, decision: number, signal?: AbortSignal) => request<any>(`${explorerPath("/decisions")}/${decision}/trace`, "GET", undefined, token, signal);
 export const seekReview = (token: string, decision: number) => request<View>(explorerPath("/seek"), "POST", { decision }, token);
 export const listAnnotations = (token: string, decision?: number) => request<any[]>(`${explorerPath("/annotations")}${decision === undefined ? "" : `?decision=${decision}`}`, "GET", undefined, token);

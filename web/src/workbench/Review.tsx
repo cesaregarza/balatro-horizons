@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { advanceReview, branchCapability, createBranch, listReviewAnnotations, type Action, type BranchCapability, type BranchInput, type View } from "../api/client";
+import { advanceReview, branchCapability, createBranch, listReviewAnnotations, revisitReview, type Action, type BranchCapability, type BranchInput, type View } from "../api/client";
 import { Board } from "../Board";
 import { ReasoningSummaries } from "./ReasoningSummaries";
 import { Trajectory } from "./Trajectory";
 import { Annotate } from "../screens/Annotate";
 
-export function Review({ token, initial, onBranch, onExplore }: { token: string; initial: View; onBranch: (id: string) => void; onExplore: (decision: number) => void }) {
+export function Review({ token, initial, onBranch, onExplore, onDirtyChange }: { token: string; initial: View; onBranch: (id: string) => void; onExplore: (decision: number) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const [view, setView] = useState(initial);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -13,6 +13,8 @@ export function Review({ token, initial, onBranch, onExplore }: { token: string;
   const [capability, setCapability] = useState<BranchCapability>({ enabled: false, reason: null, requires_uncapped_confirmation: false });
   const [annotations, setAnnotations] = useState<any[]>([]);
   const branchLock = useRef(false);
+  const dirty = useRef(false);
+  const [editorRevision, setEditorRevision] = useState(0);
 
   useEffect(() => {
     branchCapability(token).then(setCapability).catch(() => {});
@@ -21,6 +23,17 @@ export function Review({ token, initial, onBranch, onExplore }: { token: string;
   async function run(task: () => Promise<void>) {
     setBusy(true); setError("");
     try { await task(); } catch (caught) { setError(String(caught)); } finally { setBusy(false); }
+  }
+  async function move(task: () => Promise<View>) {
+    if (busy || (dirty.current && !window.confirm("Discard your unsaved assessment before changing the revealed information?"))) return;
+    await run(async () => {
+      const next = await task();
+      setView(next); setBranching(false); setEditorRevision((revision) => revision + 1);
+    });
+  }
+  async function save(task: () => Promise<void>) {
+    setBusy(true);
+    try { await task(); } finally { setBusy(false); }
   }
   async function branch(mode: BranchInput["mode"], actions: Action[] = []) {
     if (!capability.enabled || busy || branchLock.current) return;
@@ -45,12 +58,21 @@ export function Review({ token, initial, onBranch, onExplore }: { token: string;
   const recoveryMethod = view.evidence_kind === "NATIVE"
     ? "The recorded prefix replays once in the same game process."
     : "The recorded snapshot is restored.";
+  const revealed = view.navigation?.decisions || [view.decision];
+  const position = revealed.indexOf(view.decision);
+  const revisiting = view.navigation && !view.navigation.at_frontier;
   return <div>
     <div className="review-top"><div><p className="eyebrow">DECISION {view.decision + 1} · {view.evidence_kind === "NATIVE" ? "NATIVE RUN" : "SYNTHETIC TEST"}</p><h2>What was knowable here?</h2></div><span className="badge">{view.review_mode} review</span></div>
     <p><button onClick={() => onExplore(view.decision)}>Explore full run</button> <span className="muted">Jump between decisions. Reveals the whole run and records outcome exposure.</span></p>
     {view.fixture && <p className="notice">Native evaluator fixture: {view.fixture}. Test setup may alter game state. Excluded from benchmark scores.</p>}
     {!view.fixture && !view.evaluation_eligible && <p className="muted">Calibration, synthetic, or assisted episode · excluded from autonomous benchmark scores.</p>}
     <div className="stages">{["observation", "action", "transition"].map((stage) => <span key={stage} className={stage === view.stage ? "current" : ""}>{stage === "observation" ? "1 · Available information" : stage === "action" ? "2 · Agent action" : "3 · Consequences"}</span>)}</div>
+    <div className="review-navigation" aria-label="Revealed decision navigation">
+      <button disabled={busy || position <= 0} onClick={() => void move(() => revisitReview(token, revealed[position - 1]))}>Previous revealed decision</button>
+      <label>Revealed decision<select aria-label="Revealed decision" value={view.decision} disabled={busy} onChange={(event) => void move(() => revisitReview(token, Number(event.target.value)))}>{revealed.map((decision) => <option key={decision} value={decision}>Decision #{decision + 1}</option>)}</select></label>
+      {revisiting && <button disabled={busy} onClick={() => void move(() => revisitReview(token, view.navigation!.frontier_decision))}>Return to latest revealed</button>}
+      <span className="muted">Only information you have already revealed is available here.</span>
+    </div>
     {view.review_mode !== "prospective" && <p className="notice">Your exposure history is recorded with this review. Earlier labels remain unchanged.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     <Board key={view.decision} observation={view.observation} />
@@ -58,8 +80,8 @@ export function Review({ token, initial, onBranch, onExplore }: { token: string;
     {view.transition && <section className="panel"><h3>After the action</h3><div className="stats">{["money", "hands", "discards", "chips"].map((key) => <div key={key}><small>{key}</small><strong>{view.observation.state.resources[key] ?? "?"} → {view.transition!.state.resources[key] ?? "?"}</strong></div>)}</div><Board observation={view.transition} /></section>}
     {view.terminal && <section className="panel"><h3>Run ended</h3><pre>{JSON.stringify(view.terminal, null, 2)}</pre></section>}
     <Trajectory points={view.trajectory || []} />
-    <Annotate key={`${token}:${view.decision}`} token={token} view={view} annotations={annotations} setAnnotations={setAnnotations} busy={busy} run={run} route="review" />
-    <div className="review-footer"><button className="primary" disabled={busy || (view.stage === "transition" && !view.can_advance)} onClick={() => run(async () => setView(await advanceReview(token)))}>{view.stage === "observation" ? "Reveal agent action" : view.stage === "action" ? "Reveal consequences" : "Next decision"}</button><button disabled={busy || !capability.enabled} onClick={() => setBranching(!branching)}>Explore an alternative</button></div>
+    <Annotate key={`${token}:${view.decision}:${editorRevision}`} token={token} view={view} annotations={annotations} setAnnotations={setAnnotations} busy={busy} run={save} route="review" onDirtyChange={(value) => { dirty.current = value; onDirtyChange?.(value); }} />
+    <div className="review-footer"><button className="primary" disabled={busy || (!revisiting && view.stage === "transition" && !view.can_advance)} onClick={() => void move(() => advanceReview(token))}>{revisiting ? "Next revealed decision" : view.stage === "observation" ? "Reveal agent action" : view.stage === "action" ? "Reveal consequences" : "Next decision"}</button><button disabled={busy || !capability.enabled} onClick={() => setBranching(!branching)}>Explore an alternative</button></div>
     <p className="muted">Branch readiness checks the recorded replay or restore inputs, journal, and protocol. When you branch, {recoveryMethod} Public and private state is checked before continuation proceeds. A mismatch stops before any provider call.</p>
     {!capability.enabled && <p className="muted">{capability.reason}</p>}
     {branching && <section className="panel"><h3>Branch from this decision</h3><p>The original run stays unchanged. {recoveryMethod} Public and private state is checked before continuation or any provider call. Choose one alternative action below, or resume control.</p>

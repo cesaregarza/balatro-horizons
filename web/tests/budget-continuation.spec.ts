@@ -106,7 +106,7 @@ test("preview is read-only and $10 adds an allowance without sending a combined 
   await page.getByRole("button", { name: "$10 more" }).click();
   await page.getByLabel(/I authorize the paid continuation/).check();
   await page.getByRole("button", { name: "Add $10 and continue" }).click();
-  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toBeVisible();
   expect(posts).toEqual([{
     parent_terminal_hash: parentHash,
     plan_hash: planHash,
@@ -138,7 +138,7 @@ test("uncapped selection is red, cancel sends nothing, and acceptance sends expl
   await uncapped.click();
   await page.getByLabel(/I authorize the paid continuation/).check();
   await page.getByRole("button", { name: "Continue uncapped" }).click();
-  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toBeVisible();
   expect(posts).toEqual([{
     parent_terminal_hash: parentHash,
     plan_hash: planHash,
@@ -159,7 +159,7 @@ test("compatible source requires separate acceptance", async ({ page }) => {
   await expect(submit).toBeDisabled();
   await page.getByLabel(/I accept continuing with this compatible code update/).check();
   await submit.click();
-  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toBeVisible();
   expect(posts[0]).toEqual({
     parent_terminal_hash: parentHash,
     plan_hash: planHash,
@@ -172,16 +172,16 @@ test("compatible source requires separate acceptance", async ({ page }) => {
 test("unavailable $10 allowance stays disabled while confirmed Uncapped can proceed", async ({ page }) => {
   const { posts } = await openBudgetStop(page, {
     additionalAvailable: false,
-    additionalReason: "No additional room under the finite episode limit.",
+    additionalReason: "EPISODE_CAP_BELOW_RESERVATION",
   });
   await page.getByRole("button", { name: "Review cost override" }).click();
-  await expect(page.getByText("Additional $10 unavailable: No additional room under the finite episode limit.")).toBeVisible();
+  await expect(page.getByText("Additional $10 unavailable: The episode ceiling cannot cover the next call's reservation.")).toBeVisible();
   await expect(page.getByRole("button", { name: "$10 more" })).toBeDisabled();
   page.once("dialog", (dialog) => { void dialog.accept(); });
   await page.getByRole("button", { name: "Uncapped" }).click();
   await page.getByLabel(/I authorize the paid continuation/).check();
   await page.getByRole("button", { name: "Continue uncapped" }).click();
-  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toBeVisible();
   expect(posts).toEqual([{
     parent_terminal_hash: parentHash,
     plan_hash: planHash,
@@ -220,7 +220,7 @@ test("rapid duplicate clicks submit one continuation", async ({ page }) => {
   await page.getByRole("button", { name: "Continuing…" }).click({ force: true });
   expect(posts).toHaveLength(1);
   releasePost();
-  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toBeVisible();
   expect(posts).toHaveLength(1);
 });
 

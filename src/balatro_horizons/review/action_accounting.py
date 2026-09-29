@@ -4,12 +4,29 @@ from balatro_horizons.harness.terminals import INCOMPLETE_TERMINAL_REASON, RECOV
 from balatro_horizons.workbench.branches import inherited_events
 
 
-def action_accounting(store, eid, records, summary):
+class _ReviewAncestryReader:
+    """Supply verified reads to the unchanged runtime lineage validator."""
+
+    def __init__(self, store, reader):
+        self.store, self.reader = store, reader
+
+    def manifest(self, eid):
+        return self.store.manifest(eid)
+
+    def events(self, eid):
+        return self.reader.events(self.store, eid)
+
+
+def action_accounting(store, eid, records, summary, *, event_reader=None):
     """Count only verified public commits, not decision IDs or private saves."""
     if (summary or {}).get("reason") == INCOMPLETE_TERMINAL_REASON:
         raise ValueError(INCOMPLETE_TERMINAL_REASON)
     own = sum(event["type"] == "action_commit" for event in records)
-    inherited = sum(event["type"] == "action_commit" for event in inherited_events(store, eid))
+    ancestry = store if event_reader is None else _ReviewAncestryReader(store, event_reader)
+    inherited = sum(
+        event["type"] == "action_commit"
+        for event in inherited_events(ancestry, eid)
+    )
     # Runner terminals include the restored prefix. Recovery and pre-run
     # failures count only this journal; never infer that distinction from a delta.
     started = any(event["type"] == "episode_start" for event in records)

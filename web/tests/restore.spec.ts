@@ -64,8 +64,8 @@ test("restore preview is read-only until explicit confirmation", async ({ page }
   expect(posts).toEqual([]);
   await page.getByLabel(/I authorize the paid continuation/).check();
   await page.getByRole("button", { name: "Restore and continue" }).click();
-  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
-  await expect(page).not.toHaveURL(/#explore/);
+  await expect(page).toHaveURL(new RegExp(`#explore/${"b".repeat(32)}`));
+  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toBeVisible();
   expect(posts[0]?.url).toMatch(new RegExp(`/api/operator/episodes/${eid}/restore$`));
   expect(posts[0]?.body).toEqual({
     parent_head: parent, plan_hash: planHash, authorize_paid: true, accept_compatible_update: false,
@@ -74,12 +74,10 @@ test("restore preview is read-only until explicit confirmation", async ({ page }
 
 test("blocked plans explain the reason without a submit action", async ({ page }) => {
   const { posts } = await app(page, { episode_id: eid, available: false, reason: "WORKER_BUSY", plan: null });
-  await page.getByRole("button", { name: "Restore run" }).click();
-  await expect(page.getByText("Restore unavailable: WORKER_BUSY")).toBeVisible();
+  await expect(page.getByText("Restore unavailable: The worker is running another task.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Restore and continue" })).toHaveCount(0);
   expect(posts).toEqual([]);
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByRole("button", { name: "Restore run" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check again" })).toBeVisible();
 });
 
 test("compatible update is disclosed and requires explicit acceptance", async ({ page }) => {
@@ -92,7 +90,7 @@ test("compatible update is disclosed and requires explicit acceptance", async ({
   await expect(submit).toBeDisabled();
   await page.getByLabel(/I accept continuing with this compatible code update/).check();
   await submit.click();
-  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toBeVisible();
   expect(posts[0]?.body).toEqual({ parent_head: parent, plan_hash: planHash, authorize_paid: true, accept_compatible_update: true });
 });
 
@@ -142,7 +140,7 @@ test("rapid duplicate clicks send only one restore request", async ({ page }) =>
   await pending.click({ force: true });
   expect(posts).toHaveLength(1);
   releasePost();
-  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toBeVisible();
   expect(posts).toHaveLength(1);
 });
 
@@ -164,7 +162,7 @@ test("uncapped restore requires a fresh confirmation and sends its flag only aft
 
   page.once("dialog", (dialog) => { void dialog.accept(); });
   await page.getByRole("button", { name: "Restore and continue" }).click();
-  await expect(page.getByRole("button", { name: "Hide live status" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toBeVisible();
   expect(posts[0]?.body).toEqual({
     parent_head: parent, plan_hash: planHash, authorize_paid: true,
     accept_compatible_update: false, confirm_uncapped: true,

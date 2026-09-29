@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from balatro_horizons.config import ROOT, Config, load_config
+from balatro_horizons.review.operator_library import OperatorLibrary
 from balatro_horizons.review.operator_status import OperatorStatus
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService
@@ -66,6 +67,7 @@ def install_state(app, store, review, workbench, config, settings_path, output_r
     app.state.workbench = workbench
     app.state.runs = RunService(store, review)
     app.state.operator_status = OperatorStatus(store, review)
+    app.state.operator_library = OperatorLibrary(store, review)
     app.state.config = config
     app.state.settings_path = settings_path
     app.state.output_root = output_root or ROOT

@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { restorePreview, restoreRun, type RestorePreview } from "./api/client";
+import { RecoveryRefusal } from "./screens/decision-explorer/RecoveryRefusal";
 
 const dollars = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
 function amount(value: number | "uncapped" | null) {
@@ -7,7 +8,7 @@ function amount(value: number | "uncapped" | null) {
   return value == null ? "No cap" : dollars.format(value);
 }
 
-export function RestoreRun({ episodeId, onRestored }: { episodeId: string; onRestored: (newEpisodeId: string) => void }) {
+export function RestoreRun({ episodeId, onRestored, outcome, autoPreview = false }: { episodeId: string; onRestored: (newEpisodeId: string) => void; outcome?: string; autoPreview?: boolean }) {
   const [preview, setPreview] = useState<RestorePreview | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -16,8 +17,22 @@ export function RestoreRun({ episodeId, onRestored }: { episodeId: string; onRes
   const [authorizePaid, setAuthorizePaid] = useState(false);
   const [acceptUpdate, setAcceptUpdate] = useState(false);
   const submitLock = useRef(false);
+  const finished = ["WIN", "GAME_LOSS"].includes(outcome || "");
 
-  async function inspect() {
+  useEffect(() => {
+    let current = true;
+    setPreview(null); setOpen(false); setError(""); setAuthorizePaid(false); setAcceptUpdate(false);
+    if (autoPreview && !finished) {
+      setLoading(true);
+      restorePreview(episodeId).then((data) => { if (current) setPreview(data); })
+        .catch(() => { if (current) setError("Could not check recovery availability. Try checking again."); })
+        .finally(() => { if (current) setLoading(false); });
+    }
+    return () => { current = false; };
+  }, [episodeId, autoPreview, finished]);
+
+  async function inspect(force = false) {
+    if (preview && !force && !error) { setOpen(true); return; }
     setOpen(true); setLoading(true); setError(""); setPreview(null);
     setAuthorizePaid(false); setAcceptUpdate(false);
     try { setPreview(await restorePreview(episodeId)); }
@@ -61,15 +76,20 @@ export function RestoreRun({ episodeId, onRestored }: { episodeId: string; onRes
   const needsPaid = Boolean(plan?.requires_paid_authorization);
   const needsUpdate = plan?.source_compatibility === "compatible_update";
   const canConfirm = Boolean(plan && !error && (!needsPaid || authorizePaid) && (!needsUpdate || acceptUpdate) && !submitting);
+  if (finished) return <section aria-label="Restore run"><p className="muted">Game completed · no checkpoint continuation needed.</p></section>;
   return <section className="panel" aria-label="Restore run">
     <div className="area-title"><div><h2>Continue from a checkpoint</h2><p className="muted">Creates a separate, unscored continuation. The original run stays immutable.</p></div>
-      {!open && <button onClick={() => void inspect()}>Restore run</button>}
+      {!open && !loading && (!preview || preview.available) && <button onClick={() => void inspect()}>Restore run</button>}
     </div>
+    {!open && loading && <p role="status">Checking recovery availability…</p>}
+    {!open && preview && !preview.available && <RecoveryRefusal reason={preview.reason} />}
+    {!open && error && <p role="alert" className="error">{error}</p>}
+    {!open && (error || (preview && !preview.available && /BUSY|RUNTIME|ENVIRONMENT/.test(preview.reason || ""))) && <button onClick={() => void inspect(true)}>Check again</button>}
     {open && <div>
       {loading && <p role="status">Checking the latest restore plan…</p>}
       {error && <p role="alert" className="error">{error}</p>}
-      {preview && !preview.available && <p role="status">Restore unavailable: {preview.reason || "The server did not provide a reason."}</p>}
-      {preview && error && <button onClick={() => void inspect()}>Refresh plan</button>}
+      {preview && !preview.available && <RecoveryRefusal reason={preview.reason} />}
+      {preview && error && <button onClick={() => void inspect(true)}>Refresh plan</button>}
       {preview?.available && plan && <div>
         <h3>Review this continuation</h3>
         <p>Latest checkpoint: resume before decision {plan.decision + 1}.</p>
@@ -81,9 +101,9 @@ export function RestoreRun({ episodeId, onRestored }: { episodeId: string; onRes
         {needsUpdate && <label><input type="checkbox" checked={acceptUpdate} onChange={(event) => setAcceptUpdate(event.target.checked)} /> I accept continuing with this compatible code update.</label>}
         <div className="actions"><button className="primary" disabled={!canConfirm} onClick={() => void confirm()}>{submitting ? "Restoring…" : "Restore and continue"}</button></div>
       </div>}
-      {preview && !preview.available && !error && <button onClick={() => void inspect()}>Refresh plan</button>}
-      {error && !preview && <button onClick={() => void inspect()}>Retry plan</button>}
-      <button disabled={submitting} onClick={() => { setOpen(false); setPreview(null); setError(""); }}>Cancel</button>
+      {preview && !preview.available && !error && /BUSY|RUNTIME|ENVIRONMENT/.test(preview.reason || "") && <button onClick={() => void inspect(true)}>Refresh plan</button>}
+      {error && !preview && <button onClick={() => void inspect(true)}>Retry plan</button>}
+      <button disabled={submitting} onClick={() => { setOpen(false); if (!autoPreview || error) setPreview(null); setError(""); setAuthorizePaid(false); setAcceptUpdate(false); }}>Cancel</button>
     </div>}
   </section>;
 }

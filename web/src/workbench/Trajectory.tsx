@@ -65,17 +65,17 @@ export function Trajectory({ points }: { points: TimelinePoint[] }) {
                 )}
               <circle cx={x(i)} cy={y(v)} r="5" fill="#ebc773">
                 <title>
-                  Decision {points[i].decision}: {v}
+                  Decision {points[i].decision + 1}: {v}
                 </title>
               </circle>
             </g>
           ) : null,
         )}
         <text x="48" y="169" fill="currentColor" fontSize="12">
-          Decision {points[0]?.decision}
+          Decision {points.length ? points[0].decision + 1 : "—"}
         </text>
         <text x="690" y="169" fill="currentColor" fontSize="12">
-          {points.at(-1)?.decision}
+          {points.length ? points.at(-1)!.decision + 1 : "—"}
         </text>
       </svg>
       <label>
@@ -86,7 +86,7 @@ export function Trajectory({ points }: { points: TimelinePoint[] }) {
         >
           {points.map((p, i) => (
             <option key={p.decision} value={i}>
-              {p.decision} · {p.phase.toLowerCase().replaceAll("_", " ")}
+              {p.decision + 1} · {p.phase.toLowerCase().replaceAll("_", " ")}
             </option>
           ))}
         </select>

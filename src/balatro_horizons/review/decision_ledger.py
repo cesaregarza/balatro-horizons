@@ -39,18 +39,30 @@ def recorded_protocol_interface(store, records):
     return None
 
 
-def summary_input(store, eid):
+def summary_input(store, eid, *, verified_reader=None):
     """Project only report inputs; opaque provider output is never an export input."""
-    with locked(store.episode_path(eid) / ".writer.lock"):
-        records = store.events(eid)
+    if verified_reader is None:
+        with locked(store.episode_path(eid) / ".writer.lock"):
+            records = store.events(eid)
+            manifest = store.manifest(eid)
+            summary = store.summary(eid)
+        event_reader = None
+    else:
+        records = verified_reader.events(store, eid)
         manifest = store.manifest(eid)
-        summary = store.summary(eid)
+        terminal = next((event for event in reversed(records)
+                         if event["type"] == "terminal"), None)
+        summary = ({**terminal["payload"], "terminal_event_id": terminal["event_id"],
+                    "journal_head": terminal["hash"]} if terminal else None)
+        event_reader = verified_reader
     events = event_projection(records)
     public = {
         "manifest": manifest_projection(manifest),
         "summary": summary,
         "spend": run_spend(records, summary, restoration=manifest.get("restoration")),
-        "action_accounting": action_totals.action_accounting(store, eid, records, summary),
+        "action_accounting": action_totals.action_accounting(
+            store, eid, records, summary, event_reader=event_reader
+        ),
         "events": events,
         "journal_head": records[-1]["hash"] if records else None,
         "last_timestamp": records[-1]["timestamp"] if records else manifest["created_at"],
@@ -366,9 +378,9 @@ def pending_decisions(events, observations, live):
     ]
 
 
-def build_summary(store, eid):
+def build_summary(store, eid, *, verified_reader=None):
     """Build a retrospective ledger with verified public provenance."""
-    public = summary_input(store, eid)
+    public = summary_input(store, eid, verified_reader=verified_reader)
     result = summarize(public)
     result["spend"] = public["spend"]
     started = datetime.fromisoformat(public["manifest"]["created_at"])
