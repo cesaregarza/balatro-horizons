@@ -15,6 +15,7 @@ from balatro_horizons.evidence.identity_migrations import (
     CLAUDE_UPGRADES,
     RUN_CONFIGURATION_SOURCE,
     RUN_CONFIGURATION_UPGRADES,
+    WORKSPACE_UPGRADES,
 )
 from balatro_horizons.evidence.provenance import (
     fingerprint_sources,
@@ -48,7 +49,10 @@ def test_deployed_source_has_only_the_exact_reviewed_execution_delta(deployed_so
     before, after = execution_manifest(deployed_sources), execution_manifest(current)
     changed = {name.removeprefix(PREFIX): (before.get(name), after.get(name))
                for name in before.keys() | after.keys() if before.get(name) != after.get(name)}
-    assert changed == {**RUN_CONFIGURATION_UPGRADES, **CLAUDE_UPGRADES}
+    expected = {**RUN_CONFIGURATION_UPGRADES, **CLAUDE_UPGRADES}
+    for path, (_, target) in WORKSPACE_UPGRADES.items():
+        expected[path] = (expected[path][0], target)
+    assert changed == expected
     assert native_component_manifest(deployed_sources) == native_component_manifest(current)
     assert execution_manifest(deployed_sources, historical=True, preserved_provider="baseline") == after
     receipt = compatibility.prepare_compatibility(

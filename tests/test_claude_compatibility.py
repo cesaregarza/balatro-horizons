@@ -7,7 +7,11 @@ import pytest
 from balatro_horizons.config import ROOT
 from balatro_horizons.evidence import compatibility
 from balatro_horizons.evidence.execution_identity import execution_manifest
-from balatro_horizons.evidence.identity_migrations import CLAUDE_SOURCE, CLAUDE_UPGRADES
+from balatro_horizons.evidence.identity_migrations import (
+    CLAUDE_SOURCE,
+    CLAUDE_UPGRADES,
+    WORKSPACE_UPGRADES,
+)
 from balatro_horizons.evidence.provenance import (
     fingerprint_sources,
     native_component_manifest,
@@ -35,7 +39,10 @@ def test_exact_deployed_delta_is_admitted_only_for_unchanged_provider_paths(depl
     before, after = execution_manifest(deployed), execution_manifest(current)
     changed = {name.removeprefix(PREFIX): (before.get(name), after.get(name))
                for name in before.keys() | after.keys() if before.get(name) != after.get(name)}
-    assert changed == CLAUDE_UPGRADES
+    expected = dict(CLAUDE_UPGRADES)
+    for path, (_, target) in WORKSPACE_UPGRADES.items():
+        expected[path] = (expected[path][0], target)
+    assert changed == expected
     assert native_component_manifest(deployed) == native_component_manifest(current)
     for path in ("harness/transport/openai.py", "harness/transport/base.py", "harness/money.py",
                  "harness/context/freeze.py", "harness/decision.py", "harness/runtime.py"):

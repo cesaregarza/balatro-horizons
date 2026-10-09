@@ -1,6 +1,7 @@
 """Anthropic Messages field spec, thinking mapping, and conservative accounting."""
 
 import json
+import os
 
 from balatro_horizons.harness.transport.base import (
     ProviderFailure,
@@ -17,6 +18,13 @@ CAPABILITIES = {
     "reasoning_efforts": lambda model, _settings: EFFORTS if model in MODELS else (),
     "supported_settings": frozenset({"temperature", "thinking_budget", "reasoning_effort"}),
 }
+
+
+def headers(key):
+    values = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+    if workspace := os.environ.get("ANTHROPIC_WORKSPACE_ID"):
+        values["anthropic-workspace-id"] = workspace
+    return values
 
 
 def public_capabilities(model, settings):
@@ -206,7 +214,7 @@ SPEC = ProviderSpec(
     clear_terminals=frozenset({"max_tokens", "model_context_window_exceeded", "pause_turn"}),
     endpoint="https://api.anthropic.com/v1/messages",
     key_name="ANTHROPIC_API_KEY",
-    headers=lambda key: {"x-api-key": key, "anthropic-version": "2023-06-01"},
+    headers=headers,
     payload=payload,
     request_body=request_body,
     usage_cost=usage_cost,

@@ -24,6 +24,7 @@ def test_checks_stop_on_failure_and_remove_provider_credentials(tmp_path, monkey
     (tmp_path / ".venv/bin/python").touch()
     monkeypatch.setenv("OPENAI_API_KEY", "test-only-openai")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-only-anthropic")
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_test_only")
     calls = []
 
     def run(command, *, cwd, env, check):
@@ -32,6 +33,7 @@ def test_checks_stop_on_failure_and_remove_provider_credentials(tmp_path, monkey
         assert check is True
         assert "OPENAI_API_KEY" not in env
         assert "ANTHROPIC_API_KEY" not in env
+        assert "ANTHROPIC_WORKSPACE_ID" not in env
         if len(calls) == 2:
             raise subprocess.CalledProcessError(7, command)
 

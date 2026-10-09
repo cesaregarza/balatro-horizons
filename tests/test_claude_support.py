@@ -150,12 +150,15 @@ def test_signed_thinking_count_and_tool_result_are_exact_with_caching(monkeypatc
 
 def test_claude_runner_uses_compact_actions_bills_cache_and_freezes_defaults(store, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "mock-secret-not-real")
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_mock_private")
     config = Config(models={"claude": claude()})
     config.budgets.paid_calls_enabled = True
     config.budgets.max_episode_cost_usd, config.budgets.max_batch_cost_usd = 5.0, 10.0
     received, counted = [], []
 
     def receive(request):
+        assert request.headers["anthropic-workspace-id"] == "wrkspc_mock_private"
+        assert b"wrkspc_mock_private" not in request.content
         body = json.loads(request.content)
         if request.url.path.endswith("/count_tokens"):
             counted.append(body)
@@ -183,6 +186,9 @@ def test_claude_runner_uses_compact_actions_bills_cache_and_freezes_defaults(sto
     assert "opaque-signature" not in json.dumps(received[2])
     assert all(body["system"] == received[0]["system"] for body in received)
     assert "mock-secret-not-real" not in json.dumps(store.events(summary["episode_id"]))
+    assert "wrkspc_mock_private" not in json.dumps(store.events(summary["episode_id"]))
+    assert "wrkspc_mock_private" not in (store.episode_path(summary["episode_id"], True)
+                                        / "agent-protocol.json").read_text()
     frozen = json.loads((store.episode_path(summary["episode_id"], True)
                          / "agent-protocol.json").read_text())["model"]
     config.models["claude"].settings["reasoning_effort"] = "low"

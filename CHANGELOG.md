@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-09 — Anthropic organization-key workspace routing
+
+- Read optional backend `ANTHROPIC_WORKSPACE_ID` through the shared Anthropic
+  header builder for both token counting and generation. Keep workspace-scoped
+  keys and OpenAI requests unchanged; remove duplicated counter authentication.
+- Keep workspace identifiers out of prompts, frozen model settings and run
+  records. Strip the value from offline checks and verify native subprocesses
+  never inherit it. Document encrypted-secret injection for service launch.
+- Preserve exact-source Restore compatibility for the deployed Claude release
+  and previously admitted OpenAI/baseline releases without changing frozen
+  protocols, paid authorization, caps, gameplay or native execution.
+
 ## 2026-10-08 — Claude models and cache-aware execution (#72)
 
 - Add optional Settings presets for Fable 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5

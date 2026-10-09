@@ -162,6 +162,21 @@ workflow above, not the browser. In **Start a run**, choose the saved Claude mod
 and reasoning effort. Launch choices are run-only unless explicitly saved as defaults.
 An API key is required; a Claude chat subscription is not an API credential.
 
+Organization-wide/multi-workspace keys also require `ANTHROPIC_WORKSPACE_ID` in
+the backend environment. Both token counting and generation send it through the
+same `anthropic-workspace-id` header builder. Omit it for a single-workspace key;
+an absent or empty value sends no workspace header. It is not a model setting
+and is never added to request bodies, frozen protocols or public run records.
+See Anthropic's [authentication contract](https://platform.claude.com/docs/en/api/overview#authentication).
+
+On hosts using the age-backed secret helpers, store both values with hidden
+prompts (`addsecret ANTHROPIC_API_KEY` and `addsecret ANTHROPIC_WORKSPACE_ID`),
+then add `ANTHROPIC_WORKSPACE_ID` to the existing `secretrun` launch list:
+`secretrun OPENAI_API_KEY ANTHROPIC_API_KEY ANTHROPIC_WORKSPACE_ID -- bh review ...`.
+Use the existing launch arguments and restart only when the worker is idle.
+Do not put either value in source files, command arguments or the dashboard.
+The offline-check command strips all three values before running checks.
+
 The presets use the direct Messages API, standard global capacity
 (`service_tier: standard_only`), adaptive thinking, and efforts `low`, `medium`,
 `high`, `xhigh`, `max`. Fable and Sonnet default to `high`; Opus and Haiku to
