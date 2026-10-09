@@ -7,6 +7,7 @@ from balatro_horizons.harness.transport.anthropic import (
 )
 from balatro_horizons.harness.transport.anthropic import SPEC as ANTHROPIC_SPEC
 from balatro_horizons.harness.transport.anthropic import public_capabilities as anthropic_public
+from balatro_horizons.harness.transport.anthropic import validate_settings as anthropic_validate
 from balatro_horizons.harness.transport.base import (
     ProtocolFailure,
     ProviderFailure,
@@ -49,6 +50,8 @@ def validate_settings(provider, model, settings):
             raise ValueError(f"{model} does not support {settings[key]} {key}")
     if provider == "openai":
         openai_validate(model, settings)
+    else:
+        anthropic_validate(model, settings)
 
 
 def public_capability_table(models):

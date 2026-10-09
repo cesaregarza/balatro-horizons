@@ -16,13 +16,22 @@ from balatro_horizons.evidence.reuse import certified_revision, revision_sources
 from balatro_horizons.storage.journal import digest
 
 
-def _identity(sources, *, game_kind, historical=False):
+def _identity(sources, *, game_kind, historical=False, preserved_provider=None):
     native = native_component_manifest(sources)
     if game_kind == "synthetic":
         fake = "src/balatro_horizons/game/fake.py"
         native[fake] = hashlib.sha256(sources[fake]).hexdigest()
     return {"native_hash": digest(native),
-            "execution_hash": digest(execution_manifest(sources, historical=historical))}
+            "execution_hash": digest(execution_manifest(
+                sources, historical=historical, preserved_provider=preserved_provider,
+            ))}
+
+
+def _preserved_provider(protocol):
+    model = protocol.get("model")
+    if model is None:
+        return "baseline"
+    return "openai" if isinstance(model, dict) and model.get("provider") == "openai" else None
 
 
 def prepare_compatibility(source_hashes, protocol, *, game_kind):
@@ -35,6 +44,7 @@ def prepare_compatibility(source_hashes, protocol, *, game_kind):
     if not previous:
         return None
     identity = _identity(source_files(ROOT), game_kind=game_kind)
+    provider = _preserved_provider(protocol)
     revisions = {}
     for source in sorted(previous):
         try:
@@ -43,12 +53,14 @@ def prepare_compatibility(source_hashes, protocol, *, game_kind):
         except (subprocess.CalledProcessError, OSError, ValueError):
             raise ValueError("RESTORE_SOURCE_HISTORY_UNAVAILABLE") from None
         if (fingerprint_sources(historical) != source
-                or _identity(historical, game_kind=game_kind, historical=True) != identity):
+                or _identity(historical, game_kind=game_kind, historical=True,
+                             preserved_provider=provider) != identity):
             raise ValueError("RESTORE_SOURCE_INCOMPATIBLE")
         revisions[source] = revision
     return {"version": "restore-source-v1", "game_kind": game_kind,
             "accepted_implementation_hash": current,
-            "protocol_hash": digest(protocol), "source_revisions": revisions, **identity}
+            "protocol_hash": digest(protocol), "source_revisions": revisions,
+            "preserved_provider": provider, **identity}
 
 
 def validate_compatibility(record):
@@ -63,6 +75,9 @@ def validate_compatibility(record):
     game_kind = record.get("game_kind")
     if game_kind not in ("native", "synthetic"):
         raise ValueError("RESTORE_COMPATIBILITY_INVALID")
+    provider = record.get("preserved_provider")
+    if provider not in (None, "openai", "baseline"):
+        raise ValueError("RESTORE_COMPATIBILITY_INVALID")
     identity = _identity(source_files(ROOT), game_kind=game_kind)
     if any(record.get(key) != value for key, value in identity.items()):
         raise ValueError("RESTORE_SOURCE_INCOMPATIBLE")
@@ -72,7 +87,8 @@ def validate_compatibility(record):
     for source, revision in revisions.items():
         _, historical = _historical_sources(revision)
         if (fingerprint_sources(historical) != source
-                or _identity(historical, game_kind=game_kind, historical=True) != identity):
+                or _identity(historical, game_kind=game_kind, historical=True,
+                             preserved_provider=provider) != identity):
             raise ValueError("RESTORE_SOURCE_INCOMPATIBLE")
 
 
@@ -109,5 +125,6 @@ def require_protocol_compatibility(store, checkpoint, bundle):
     if record and bundle.get("budget_extension"):
         accepted.add(record.get("budget_protocol_hash"))
     if (record is None or digest(bundle) not in accepted
-            or bundle["implementation_hash"] not in record["source_revisions"]):
+            or bundle["implementation_hash"] not in record["source_revisions"]
+            or record.get("preserved_provider") != _preserved_provider(bundle)):
         raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")

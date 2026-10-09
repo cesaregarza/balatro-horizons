@@ -46,7 +46,7 @@ export function ModelControls({
       <p className="muted">
         The current harness loads details on demand and preserves provider
         reasoning across helper calls within a decision. Prompt caching is
-        included for supported OpenAI models.
+        included for supported OpenAI and Claude models with cache read/write prices configured.
         {model.provider === "openai" &&
           !supportsCachedHarness(model, capabilities) &&
           " Configure a supported model and cache read/write prices in Settings before starting."}

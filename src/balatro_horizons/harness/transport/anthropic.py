@@ -2,26 +2,45 @@
 
 import json
 
-from balatro_horizons.harness.transport.base import ProviderSpec, encode, tool_messages
+from balatro_horizons.harness.transport.base import (
+    ProviderFailure,
+    ProviderSpec,
+    encode,
+    tool_messages,
+)
+from balatro_horizons.harness.transport.claude_models import EFFORTS, HAIKU_INPUT_CEILING, MODELS
 
 CAPABILITIES = {
-    "prompt_cache_diagnostics": lambda _model: False,
-    "explicit_cache_mode": lambda _model: False,
+    "prompt_cache_diagnostics": lambda model: model in MODELS,
+    "explicit_cache_mode": lambda model: model in MODELS,
     "unsupported_settings": lambda _model: {},
-    "reasoning_efforts": lambda _model, _settings: (),
-    "supported_settings": frozenset({"temperature", "thinking_budget"}),
+    "reasoning_efforts": lambda model, _settings: EFFORTS if model in MODELS else (),
+    "supported_settings": frozenset({"temperature", "thinking_budget", "reasoning_effort"}),
 }
 
 
 def public_capabilities(model, settings):
+    current = model in MODELS
     return {
-        "display_name": model,
-        "prompt_cache_diagnostics": False,
-        "explicit_cache_mode": False,
-        "supported_settings": sorted(CAPABILITIES["supported_settings"]),
+        "display_name": MODELS[model][0] if current else model,
+        "prompt_cache_diagnostics": current,
+        "explicit_cache_mode": current,
+        "supported_settings": ["reasoning_effort"] if current else ["temperature", "thinking_budget"],
         "unsupported_settings": {},
-        "reasoning_efforts": [],
+        "reasoning_efforts": list(EFFORTS) if current else [],
+        "default_reasoning_effort": MODELS[model][1] if current else None,
     }
+
+
+def validate_settings(model, settings):
+    if model not in MODELS:
+        if "reasoning_effort" in settings:
+            raise ValueError("reasoning effort requires a declared adaptive-thinking Claude model")
+        return
+    if "temperature" in settings or "thinking_budget" in settings:
+        raise ValueError(f"{model} uses adaptive thinking, not temperature or thinking_budget")
+    if "reasoning_effort" in settings and settings["reasoning_effort"] not in EFFORTS:
+        raise ValueError(f"{model} requires low, medium, high, xhigh or max reasoning effort")
 
 
 def native_messages(items, result, spec):
@@ -90,42 +109,80 @@ def payload(ctx, exchanges):
 
 def request_body(transport, ctx, exchanges):
     settings = transport.model.settings
+    model = transport.model.model
+    if model == "claude-haiku-5-5" and (
+        transport.limits.max_input_tokens_per_call > HAIKU_INPUT_CEILING
+    ):
+        raise ProviderFailure("CLAUDE_LONG_CONTEXT_PRICING_NOT_CONFIGURED")
     body = {
-        "model": transport.model.model,
+        "model": model,
         **payload(ctx, exchanges),
         "tool_choice": {"type": "auto", "disable_parallel_tool_use": True},
         "max_tokens": transport.limits.max_output_tokens_per_call,
+        "service_tier": "standard_only",
     }
+    if model in MODELS:
+        body["thinking"] = {"type": "adaptive"}
+        body["output_config"] = {"effort": settings.get("reasoning_effort", MODELS[model][1])}
     if "thinking_budget" in settings:
+        if settings["thinking_budget"] >= body["max_tokens"]:
+            raise ProviderFailure("THINKING_BUDGET_MUST_BE_BELOW_OUTPUT_LIMIT")
         body["thinking"] = {"type": "enabled", "budget_tokens": settings["thinking_budget"]}
     if "temperature" in settings:
         body["temperature"] = settings["temperature"]
+    if transport.model.cache_write_input_usd_per_million is not None:
+        # Cache tools + the frozen system prefix, never per-decision observations.
+        body["system"] = [{
+            "type": "text",
+            "text": body["system"],
+            "cache_control": {"type": "ephemeral", "ttl": "5m"},
+        }]
     return body
 
 
 def usage_cost(model, response, reserved):
     usage = response.get("usage") if isinstance(response, dict) else None
-    if not isinstance(usage, dict):
+    totals = _usage_totals(usage)
+    if totals is None:
         return reserved
-    input_tokens, output_tokens = usage.get("input_tokens"), usage.get("output_tokens")
-    if (
-        type(input_tokens) is not int
-        or input_tokens < 0
-        or type(output_tokens) is not int
-        or output_tokens < 0
-    ):
-        return reserved
-    # Cache creation can be priced higher. Until explicit write pricing is configured,
-    # retain the full reservation whenever creation tokens are reported.
-    if usage.get("cache_creation_input_tokens"):
-        return reserved
-    cached = usage.get("cache_read_input_tokens", 0)
-    if type(cached) is not int or cached < 0:
-        return reserved
+    ordinary, output, cached, writes = totals
+    if model.model == "claude-haiku-5-5" and ordinary + cached + writes > HAIKU_INPUT_CEILING:
+        return reserved  # This release does not configure Haiku's long-context tier.
+    if model.cached_input_usd_per_million is None:
+        if writes:
+            return reserved
+        return ((ordinary + cached) * model.input_usd_per_million
+                + output * model.output_usd_per_million) / 1_000_000
     return (
-        (input_tokens + cached) * model.input_usd_per_million
-        + output_tokens * model.output_usd_per_million
+        ordinary * model.input_usd_per_million
+        + cached * model.cached_input_usd_per_million
+        + writes * model.cache_write_input_usd_per_million
+        + output * model.output_usd_per_million
     ) / 1_000_000
+
+
+def _usage_totals(usage):
+    if not isinstance(usage, dict):
+        return None
+    totals = (
+        usage.get("input_tokens"), usage.get("output_tokens"),
+        usage.get("cache_read_input_tokens", 0), usage.get("cache_creation_input_tokens", 0),
+    )
+    if any(type(value) is not int or value < 0 for value in totals):
+        return None
+    if usage.get("service_tier", "standard") != "standard":
+        return None
+    if usage.get("inference_geo", "global") != "global":
+        return None
+    detail = usage.get("cache_creation")
+    if detail is not None:
+        if not isinstance(detail, dict):
+            return None
+        short, long = detail.get("ephemeral_5m_input_tokens"), detail.get("ephemeral_1h_input_tokens")
+        # Only five-minute writes are configured. Do not guess the price of another TTL.
+        if type(short) is not int or short != totals[3] or type(long) is not int or long != 0:
+            return None
+    return totals
 
 
 SPEC = ProviderSpec(

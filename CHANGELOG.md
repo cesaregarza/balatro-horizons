@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-08 — Claude models and cache-aware execution (#72)
+
+- Add optional Settings presets for Fable 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5
+  with dated standard API rates. Saving is explicit and preserves other models,
+  permissions and caps. The model form now reports save errors and can clear
+  prior JSON settings or cache rates intentionally.
+- Support per-run low through Max effort with adaptive thinking, validated
+  before HTTP. Retain legacy manual thinking and unchanged V8 compact tools,
+  signed/redacted within-decision continuation, output limits and no-resend policy.
+- Add five-minute stable-prefix caching and disjoint ordinary/read/write/output
+  billing. Reserve the highest input rate; unknown usage and unconfigured pricing
+  keep the full reservation. Haiku's unconfigured >100k tier refuses locally.
+- Preserve exact-source OpenAI/baseline Restore eligibility from #69/#71 without
+  changing frozen inputs. Historical Claude behavior is not silently migrated.
+- Verification uses mocked provider HTTP, synthetic games and browser tests;
+  no paid call, native launch, credential change or deployment is part of this work.
+
 ## 2026-09-28 — Frozen deck/stake model context
 
 - Deliver the selected public deck and stake in the stable rules prefix before

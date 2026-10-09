@@ -128,6 +128,29 @@ These are offline compatibility checks, not new native certification or evidence
 of model quality. `tools_v8` remains the only active interface; v7 and previously
 incompatible sources are not admitted by this migration.
 
+### Claude provider addition
+
+The Claude addition pins five exact module changes from deployed `d30b772`:
+configuration/cache-rate validation and public presets, Anthropic's count fields,
+provider-specific settings dispatch, the Anthropic adapter, and the new Claude
+catalogue. It also composes with the exact `9dcd8bf` deck/stake migration above.
+The native manifest, OpenAI adapter, shared transport, spending ledger, frozen
+protocol and decision/runtime paths remain unchanged.
+
+This mapping applies **only** when the frozen protocol uses OpenAI or a baseline
+without a provider model. The receipt records `preserved_provider`, rechecks the
+exact historical source and current target ASTs, and binds that scope to the
+original protocol at execution. It does not infer the provider from current
+dashboard settings, omit provider files, normalize current code, or admit
+unlisted historical sources. Mutation tests cover every changed target and the
+new module. Original prompts, models, efforts, prices, caps and source hashes stay
+frozen. Operator acceptance and one checked native replay remain separate gates.
+
+Historical Anthropic runs refuse this migration: adaptive thinking and caching
+can change provider behavior, even with the same V8 game tools. They need their
+retained executor or a separately reviewed compatibility proof. New Claude runs
+can Restore under their matching source and frozen configuration as usual.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game

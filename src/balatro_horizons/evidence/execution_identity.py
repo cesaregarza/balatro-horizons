@@ -24,7 +24,7 @@ POLICY_FILES = frozenset({
 })
 
 
-def execution_manifest(sources, *, historical=False):
+def execution_manifest(sources, *, historical=False, preserved_provider=None):
     """Cover every fingerprinted execution file outside the native/policy layers."""
     prefix = "src/balatro_horizons/"
     native = native_component_manifest(sources)
@@ -37,5 +37,7 @@ def execution_manifest(sources, *, historical=False):
         if path in IMPLEMENTATION_FILES or path.split("/")[0] in IMPLEMENTATION_DIRECTORIES:
             result[name] = digest(ast.dump(ast.parse(content)))
     if historical:
-        return upgrade_historical_manifest(result, fingerprint_sources(sources))
+        return upgrade_historical_manifest(
+            result, fingerprint_sources(sources), preserved_provider=preserved_provider,
+        )
     return result

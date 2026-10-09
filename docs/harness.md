@@ -106,6 +106,7 @@ Provider-native reasoning/tool blocks continue within one decision, resetting af
 including retries, reserves configured ceilings/prices. Unknown usage stays reserved; record overage and stop
 the next request at the applicable episode/campaign cap. Paid calls require operator enablement, settings,
 and episode/batch caps. Anthropic `temperature` is incompatible with manual `thinking_budget`.
+Current Claude presets use adaptive thinking instead; see [Claude setup](#claude).
 
 Preview persistent credentials with `uv run bh credentials --source /path/to/private/provider.env`;
 add `--apply` to write. Source/destination must be native Linux paths. Only provider key names are accepted;
@@ -127,7 +128,7 @@ remain distinct categories. A cache diagnostic comparison is metadata-only and
 must use an episode-local baseline; it does not authorize a live probe or expose
 opaque provider content.
 The stable-prefix breakpoint precedes dynamic state, budgets, memory, and helper
-outputs. `comparison_response_id` advances only after a completed response with
+outputs. OpenAI's `comparison_response_id` advances only after a completed response with
 a nonempty ID; a new episode or branch starts without a baseline. Diagnostics
 are best effort; actual usage establishes cache read/write charges. Reserve the
 highest configured input rate, and keep the full reservation on inconsistent
@@ -151,6 +152,59 @@ Sources: [Sol](https://developers.openai.com/api/docs/models/gpt-6-sol), [Luna](
 [pricing](https://developers.openai.com/api/docs/pricing). Input limits above 272,000 tokens fail closed: long-context pricing is unconfigured.
 Use `bh human register` with a new alias, an existing model to clone and all four rates. Preview first;
 `--apply` saves without starting a run or changing budgets.
+
+### Claude
+
+In **Models & budgets**, choose a Claude preset, review its dated prices, then
+**Save model**. This does not change existing models, paid-execution permission,
+or spending caps. Configure `ANTHROPIC_API_KEY` in the backend using the credential
+workflow above, not the browser. In **Start a run**, choose the saved Claude model
+and reasoning effort. Launch choices are run-only unless explicitly saved as defaults.
+An API key is required; a Claude chat subscription is not an API credential.
+
+The presets use the direct Messages API, standard global capacity
+(`service_tier: standard_only`), adaptive thinking, and efforts `low`, `medium`,
+`high`, `xhigh`, `max`. Fable and Sonnet default to `high`; Opus and Haiku to
+`medium`. These exact model IDs reject `temperature` and manual `thinking_budget`
+settings locally. Older/custom identifiers retain manual thinking, whose budget
+must be smaller than the output ceiling; undeclared adaptive effort is refused.
+The shared output ceiling stays 32,768 and the harness stays `tools_v8`.
+
+Standard global API USD/million, verified 2026-10-08:
+
+| Exact model | Input | Cache read | 5-minute cache write | Output |
+| --- | ---: | ---: | ---: | ---: |
+| `claude-fable-5-1` | 10.00 | 0.25 | 12.50 | 50.00 |
+| `claude-opus-5-5` | 4.00 | 0.20 | 5.00 | 20.00 |
+| `claude-sonnet-5-5` | 2.00 | 0.10 | 2.50 | 10.00 |
+| `claude-haiku-5-5` | 0.10 | 0.01 | 0.125 | 0.50 |
+
+Haiku's preset covers at most 100,000 total input tokens (including cached input).
+Larger input ceilings refuse before counting or generation because long-context
+pricing is unconfigured. All presets keep the existing 32,768 input ceiling.
+The full worst-case reservation must fit the chosen dollar cap; for example,
+Fable's default per-call reservation is $2.048. Saving a model never raises a cap.
+
+Both cache prices enable a five-minute breakpoint on the frozen system prefix,
+after tools and before dynamic observations, money, memory and helper outputs.
+There is no warmup request or promised hit rate. Leaving both cache rates blank
+keeps the legacy uncached request. Anthropic's reported `input_tokens` are ordinary
+uncached input; reads and writes are separate, disjoint categories. Signed and
+redacted thinking blocks continue unchanged inside a decision, and reasoning
+tokens are already included in output. Malformed usage, inconsistent write
+details, an unconfigured TTL/tier/region or missing write pricing retains the
+full reservation. Input counting includes adaptive thinking and output effort.
+
+Sources: [model IDs/defaults](https://platform.claude.com/docs/en/models/overview),
+[pricing](https://platform.claude.com/docs/en/about-claude/pricing),
+[effort](https://platform.claude.com/docs/en/build-with-claude/effort),
+[caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching),
+[Messages request](https://platform.claude.com/docs/en/api/messages/create),
+[input counting](https://platform.claude.com/docs/en/api/messages/count_tokens).
+Offline tests use mocked HTTP and synthetic games; they do not establish live
+Anthropic compatibility or model quality. Native behavior is unchanged and uses
+existing evidence. [Older-run compatibility](restore-compatibility.md#claude-provider-addition)
+preserves eligible OpenAI runs without silently upgrading historical Claude runs.
 
 ## Money
 
