@@ -121,7 +121,28 @@ RUN_CONFIGURATION_UPGRADES = {
 }
 
 
-def upgrade_historical_manifest(manifest, source_hash):
+# #72: provider-specific behavior changes cannot migrate historical Claude runs.
+# OpenAI and baselines are unchanged; allow only these exact deployed sources.
+CLAUDE_SOURCE = "d62e9a39c93905fca46718a49facfe9539d417fd637c824ce8e0e6c8d76a56bc"
+CLAUDE_UPGRADES = {
+    "config.py": (
+        "e9af4b21aab554bf0ddd672143a6ec8ff5a1d809f48de20df4625b08ea0fafea",
+        "e00ab214a0e0bb798f228444b192d618164eafd41b7fc1f2aa41923b71e302a9"),
+    "harness/input_limits.py": (
+        "077f592680618efaab785e6424aea58a007785581311d16ea8f56fb1715b645c",
+        "9600c3580cc4c88a9eed0c02d8510a920ef7adfe8ee0785b047c4ec9897f41e4"),
+    "harness/transport/__init__.py": (
+        "27f4039346d09780b9d69e4435f754bea4f8a1e2298beb435f2afe3693e1ada7",
+        "9eb47ad5bdf2d6b5d2c49e633078aa2cb180a480f3c5563a67620514785ffd18"),
+    "harness/transport/anthropic.py": (
+        "61dd2613ecc98ef2904a13822d83a0767c13360c2cb2a381e3d059d70d60f740",
+        "4ffb2af84fc13851d8fa0edef73a3a1bc25ab55655938bcd628d5c701c10969f"),
+    "harness/transport/claude_models.py": (
+        None, "1f30411336a6055292d54285ca90483defc06992a96071ebb5b27f1e2a604b27"),
+}
+
+
+def upgrade_historical_manifest(manifest, source_hash, *, preserved_provider=None):
     result = dict(manifest)
     prefix = "src/balatro_horizons/"
     for path, (previous, accepted) in MODULE_UPGRADES.items():
@@ -132,6 +153,9 @@ def upgrade_historical_manifest(manifest, source_hash):
         result.setdefault(prefix + path, accepted)
     upgrades = {FUNDING_SOURCE: FUNDING_UPGRADES,
                 RUN_CONFIGURATION_SOURCE: RUN_CONFIGURATION_UPGRADES}.get(source_hash, {})
+    if (preserved_provider in ("openai", "baseline")
+            and source_hash in (CLAUDE_SOURCE, RUN_CONFIGURATION_SOURCE)):
+        upgrades = {**upgrades, **CLAUDE_UPGRADES}
     for path, (previous, accepted) in upgrades.items():
         name = prefix + path
         if result.get(name) == previous:

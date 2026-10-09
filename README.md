@@ -60,6 +60,8 @@ guide. Credentials, seeds, raw engine state, saves, private manifests, and
 journals stay outside public exports.
 
 [GPT-6 Sol and Luna setup](docs/harness.md#gpt-6-sol-and-luna): [Sol config](configs/gpt6-sol-smoke.yaml), [Luna config](configs/gpt6-luna-smoke.yaml).
+[Claude setup](docs/harness.md#claude): opt-in dashboard presets, adaptive thinking,
+and five-minute prefix caching with separate read/write billing.
 
 ## Checks and evidence
 

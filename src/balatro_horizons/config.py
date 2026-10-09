@@ -100,8 +100,6 @@ class ModelConfig(Options):
             self.cache_write_input_usd_per_million is None
         ):
             raise ValueError("configure both cache read and write rates")
-        if self.cached_input_usd_per_million is not None and self.provider != "openai":
-            raise ValueError("category cache pricing is currently OpenAI-only")
         from balatro_horizons.harness.transport import validate_settings
 
         validate_settings(self.provider, self.model, self.settings)
@@ -175,6 +173,7 @@ class Config(Options):
 
     def public(self):
         from balatro_horizons.harness.transport import public_capability_table
+        from balatro_horizons.harness.transport.claude_models import presets
 
         return {
             "benchmark": self.benchmark,
@@ -185,6 +184,7 @@ class Config(Options):
             "budgets": self.budgets.model_dump(),
             "models": {k: v.model_dump() for k, v in self.models.items()},
             "model_capabilities": public_capability_table(self.models),
+            "model_presets": presets(),
         }
 
 

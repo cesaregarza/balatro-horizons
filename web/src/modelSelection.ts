@@ -16,6 +16,7 @@ export type ModelCapability = {
   supported_settings: string[];
   unsupported_settings: Record<string, (string | number)[]>;
   reasoning_efforts: string[];
+  default_reasoning_effort?: string | null;
 };
 
 export type CapabilityTable = {
@@ -65,6 +66,7 @@ export function effortOptions(model: ModelConfig, capabilities = EMPTY_CAPABILIT
 export function effortDefault(model: ModelConfig, capabilities = EMPTY_CAPABILITIES) {
   return String(
     model.settings.reasoning_effort ??
+      capabilityFor(model, capabilities)?.default_reasoning_effort ??
       (effortOptions(model, capabilities).includes("medium") ? "medium" : ""),
   );
 }
@@ -72,7 +74,6 @@ export function effortDefault(model: ModelConfig, capabilities = EMPTY_CAPABILIT
 export function supportsCachedHarness(model: ModelConfig, capabilities = EMPTY_CAPABILITIES) {
   const declared = capabilityFor(model, capabilities);
   return (
-    model.provider === "openai" &&
     declared?.prompt_cache_diagnostics === true &&
     declared.explicit_cache_mode === true &&
     model.cached_input_usd_per_million != null &&
@@ -93,9 +94,7 @@ export function configureModel(
     throw new Error("Unsupported reasoning effort for this model.");
   const settings = {
     ...supportedSettings(model.provider, model.settings, capabilities),
-    ...(model.provider === "openai" && effort
-      ? { reasoning_effort: effort }
-      : {}),
+    ...(effort ? { reasoning_effort: effort } : {}),
   };
   const unsupported = capabilityFor(model, capabilities)?.unsupported_settings ?? {};
   for (const [key, values] of Object.entries(unsupported)) {

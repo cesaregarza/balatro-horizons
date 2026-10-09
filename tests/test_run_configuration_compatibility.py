@@ -12,6 +12,7 @@ from balatro_horizons.evidence import compatibility
 from balatro_horizons.evidence.certification import read_checkpoint
 from balatro_horizons.evidence.execution_identity import execution_manifest
 from balatro_horizons.evidence.identity_migrations import (
+    CLAUDE_UPGRADES,
     RUN_CONFIGURATION_SOURCE,
     RUN_CONFIGURATION_UPGRADES,
 )
@@ -47,9 +48,9 @@ def test_deployed_source_has_only_the_exact_reviewed_execution_delta(deployed_so
     before, after = execution_manifest(deployed_sources), execution_manifest(current)
     changed = {name.removeprefix(PREFIX): (before.get(name), after.get(name))
                for name in before.keys() | after.keys() if before.get(name) != after.get(name)}
-    assert changed == RUN_CONFIGURATION_UPGRADES
+    assert changed == {**RUN_CONFIGURATION_UPGRADES, **CLAUDE_UPGRADES}
     assert native_component_manifest(deployed_sources) == native_component_manifest(current)
-    assert execution_manifest(deployed_sources, historical=True) == after
+    assert execution_manifest(deployed_sources, historical=True, preserved_provider="baseline") == after
     receipt = compatibility.prepare_compatibility(
         {RUN_CONFIGURATION_SOURCE}, {"implementation_hash": RUN_CONFIGURATION_SOURCE},
         game_kind=game_kind,
@@ -58,7 +59,7 @@ def test_deployed_source_has_only_the_exact_reviewed_execution_delta(deployed_so
     compatibility.validate_compatibility(receipt)
 
 
-@pytest.mark.parametrize("path", list(RUN_CONFIGURATION_UPGRADES))
+@pytest.mark.parametrize("path", [*RUN_CONFIGURATION_UPGRADES, *CLAUDE_UPGRADES])
 @pytest.mark.parametrize("mutation", ["revert", "extra_statement"])
 def test_current_module_mutations_cannot_inherit_approval(deployed_sources, monkeypatch, path, mutation):
     current = source_files(ROOT)
@@ -67,7 +68,10 @@ def test_current_module_mutations_cannot_inherit_approval(deployed_sources, monk
     compatibility.prepare_compatibility({RUN_CONFIGURATION_SOURCE}, protocol, game_kind="native")
     name = PREFIX + path
     if mutation == "revert":
-        current[name] = deployed_sources[name]
+        if name in deployed_sources:
+            current[name] = deployed_sources[name]
+        else:
+            current.pop(name)
     else:
         current[name] += b"\nUNREVIEWED_CHANGE = True\n"
     with pytest.raises(ValueError, match="^RESTORE_SOURCE_INCOMPATIBLE$"):

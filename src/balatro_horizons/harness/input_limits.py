@@ -46,7 +46,7 @@ def count_payload(body, provider):
             "conversation",
         )
         if provider == "openai"
-        else ("model", "messages", "system", "tools", "tool_choice", "thinking")
+        else ("model", "messages", "system", "tools", "tool_choice", "thinking", "output_config")
     )
     return deepcopy({k: body[k] for k in fields if k in body})
 
