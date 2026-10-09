@@ -228,6 +228,7 @@ def test_bridge_processes_receive_only_registered_environment(registration, monk
     context.register_session({**registration, "OPENAI_API_KEY": "never-forward"})
     monkeypatch.setenv("OPENAI_API_KEY", "never-forward")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "never-forward")
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "never-forward")
     for name in (
         "HTTP_PROXY",
         "HTTPS_PROXY",
@@ -256,6 +257,7 @@ def test_bridge_processes_receive_only_registered_environment(registration, monk
     assert launch.call_args.kwargs["env"] == expected
     assert "OPENAI_API_KEY" not in launch.call_args.kwargs["env"]
     assert "ANTHROPIC_API_KEY" not in launch.call_args.kwargs["env"]
+    assert "ANTHROPIC_WORKSPACE_ID" not in launch.call_args.kwargs["env"]
     assert not any(name in launch.call_args.kwargs["env"] for name in (
         "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"
     ))

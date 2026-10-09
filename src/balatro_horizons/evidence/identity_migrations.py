@@ -142,6 +142,18 @@ CLAUDE_UPGRADES = {
 }
 
 
+# Authentication-only routing from deployed #73; provider inputs are unchanged.
+WORKSPACE_SOURCE = "3c0811d4644d0f9633e5bae536b325f380b4bb0c997079d0f726bad3493addb4"
+WORKSPACE_UPGRADES = {
+    "harness/input_limits.py": (
+        "9600c3580cc4c88a9eed0c02d8510a920ef7adfe8ee0785b047c4ec9897f41e4",
+        "3b03e84f28510d9902c6494ee930a1b4bd599e501fef4a6c54add80210746bac"),
+    "harness/transport/anthropic.py": (
+        "4ffb2af84fc13851d8fa0edef73a3a1bc25ab55655938bcd628d5c701c10969f",
+        "2e4bd69d8a6c647a44ae95e554f3a0ee1e8cf33ffd390dc934d0f57153f9f5e3"),
+}
+
+
 def upgrade_historical_manifest(manifest, source_hash, *, preserved_provider=None):
     result = dict(manifest)
     prefix = "src/balatro_horizons/"
@@ -153,11 +165,16 @@ def upgrade_historical_manifest(manifest, source_hash, *, preserved_provider=Non
         result.setdefault(prefix + path, accepted)
     upgrades = {FUNDING_SOURCE: FUNDING_UPGRADES,
                 RUN_CONFIGURATION_SOURCE: RUN_CONFIGURATION_UPGRADES}.get(source_hash, {})
-    if (preserved_provider in ("openai", "baseline")
-            and source_hash in (CLAUDE_SOURCE, RUN_CONFIGURATION_SOURCE)):
+    preserved_claude_upgrade = (preserved_provider in ("openai", "baseline")
+                               and source_hash in (CLAUDE_SOURCE, RUN_CONFIGURATION_SOURCE))
+    if preserved_claude_upgrade:
         upgrades = {**upgrades, **CLAUDE_UPGRADES}
-    for path, (previous, accepted) in upgrades.items():
-        name = prefix + path
-        if result.get(name) == previous:
-            result[name] = accepted
+    groups = [upgrades]
+    if source_hash == WORKSPACE_SOURCE or preserved_claude_upgrade:
+        groups.append(WORKSPACE_UPGRADES)
+    for group in groups:
+        for path, (previous, accepted) in group.items():
+            name = prefix + path
+            if result.get(name) == previous:
+                result[name] = accepted
     return result

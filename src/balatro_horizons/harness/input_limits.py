@@ -65,12 +65,12 @@ class InputCounter:
                 raise HarnessFailure("TOKEN_COUNT_UNAVAILABLE", stage="input_token_count")
             if policy.model.provider == "openai":
                 url = "https://api.openai.com/v1/responses/input_tokens"
-                headers = {"Authorization": "Bearer " + credential}
             else:
                 url = "https://api.anthropic.com/v1/messages/count_tokens"
-                headers = {"x-api-key": credential, "anthropic-version": "2023-06-01"}
             try:
-                response = policy.client.post(url, headers=headers, json=payload)
+                response = policy.client.post(
+                    url, headers=policy.spec.headers(credential), json=payload
+                )
             except httpx.TransportError:
                 raise HarnessFailure("TOKEN_COUNT_UNAVAILABLE", stage="input_token_count") from None
             if response.status_code != 200:

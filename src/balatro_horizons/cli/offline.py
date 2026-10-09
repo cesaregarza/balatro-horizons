@@ -27,7 +27,7 @@ def commands(root: Path, *, web: bool = False) -> list[list[str]]:
 
 def run_checks(root: Path, *, web: bool = False) -> None:
     env = os.environ.copy()
-    for credential in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+    for credential in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID"):
         env.pop(credential, None)
     for command in commands(root, web=web):
         print(f"+ {shlex.join(command)}", flush=True)

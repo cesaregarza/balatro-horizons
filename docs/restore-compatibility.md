@@ -151,6 +151,24 @@ can change provider behavior, even with the same V8 game tools. They need their
 retained executor or a separately reviewed compatibility proof. New Claude runs
 can Restore under their matching source and frozen configuration as usual.
 
+### Anthropic workspace routing
+
+The exact deployed Claude source `3f953d9` may adopt the two authentication-only
+changes in `harness/input_limits.py` and `harness/transport/anthropic.py`: reuse
+the provider's header builder for counting, and optionally send the configured
+workspace ID on both count and generation requests. Request bodies, model
+settings, prompts, tools, signed thinking, budgets and native execution are
+unchanged. This mapping applies to all providers from that exact source and
+composes with the previously allowed OpenAI/baseline migrations above; it does
+not newly admit pre-Claude Anthropic runs.
+
+Both old and accepted whole-module AST hashes are pinned. Unknown historical
+fingerprints, missing modules, reverts and further target edits refuse admission.
+The original protocol and journals remain immutable, and the existing receipt,
+operator consent, release/environment and single-replay gates still apply.
+Workspace routing is backend authentication like the API key, not frozen
+model-facing configuration; the value is never written into the protocol.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game
