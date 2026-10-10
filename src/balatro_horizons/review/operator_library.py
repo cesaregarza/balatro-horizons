@@ -3,7 +3,7 @@
 import math
 from threading import Lock
 
-from balatro_horizons.review.protocol_label import protocol_label
+from balatro_horizons.review.protocol_label import protocol_metadata
 
 
 class OperatorLibrary:
@@ -17,8 +17,7 @@ class OperatorLibrary:
         with self._lock:
             for row in self.store.list_episodes():
                 projection = project_episode(row)
-                if projection["recorded_interface"] is None:
-                    projection["recorded_interface"] = protocol_label(self.store, row["episode_id"])
+                projection.update(protocol_metadata(self.store, row["episode_id"]))
                 self._record_exposure(projection)
                 result.append(projection)
             present = {item["episode_id"] for item in result}
@@ -83,6 +82,8 @@ def project_episode(row):
         "model_name": identity,
         "reasoning_effort": effort if isinstance(effort, str) else None,
         "recorded_interface": interface if isinstance(interface, str) else None,
+        "context_policy": None,
+        "provider_wire_policy": None,
         "outcome": outcome if isinstance(outcome, str) else None,
         "reason": reason if isinstance(reason, str) else None,
         "cost_usd": _number(summary.get("cost_usd")),

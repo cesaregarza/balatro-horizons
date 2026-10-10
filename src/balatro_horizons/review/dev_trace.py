@@ -3,6 +3,7 @@
 import json
 
 from balatro_horizons.evaluation.reports import public_provider_payload, scan
+from balatro_horizons.review.provider_projection import response_projection
 from balatro_horizons.storage.journal import locked
 
 EVENTS = frozenset({
@@ -58,7 +59,8 @@ def delivered_results(body):
 
 
 def project(start, segment, transition=None, *, complete=False):
-    events = [public_provider_payload(event) for event in segment if event["type"] in EVENTS]
+    events = [public_provider_payload(response_projection(event))
+              for event in segment if event["type"] in EVENTS]
     calls, by_request, current, context = [], {}, None, None
     for event in events:
         kind, payload = event["type"], event["payload"]

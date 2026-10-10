@@ -217,7 +217,7 @@ def compare_branch(request: Request, branch_id: str):
 
 def _comparison_run(state, episode_id):
     from balatro_horizons.review.operator_library import project_episode
-    from balatro_horizons.review.protocol_label import protocol_label
+    from balatro_horizons.review.protocol_label import protocol_metadata
 
     events = state.store.events(episode_id)
     state.review.expose(
@@ -230,7 +230,7 @@ def _comparison_run(state, episode_id):
     summary = state.store.summary(episode_id)
     metadata = project_episode({"episode_id": episode_id,
                                 "manifest": state.store.manifest(episode_id), "summary": summary})
-    metadata["recorded_interface"] = metadata["recorded_interface"] or protocol_label(state.store, episode_id)
+    metadata.update(protocol_metadata(state.store, episode_id))
     return {
         "episode_id": episode_id,
         "summary": summary,

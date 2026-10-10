@@ -13,7 +13,7 @@ test("blinded library avoids enriched fetch; operator view searches and compares
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/bootstrap") return route.fulfill({ json: { operator_token: "mock", config: { workbench: true, models: {}, model_capabilities: {}, budgets: {} }, workbench: true, paid_credentials: {} } });
     if (path === "/api/episodes") return route.fulfill({ json: rows });
-    if (path === "/api/operator/episodes") { enrichedCalls++; return route.fulfill({ json: enriched }); }
+    if (path === "/api/operator/episodes") { enrichedCalls++; return route.fulfill({ json: enriched.map((row, index) => ({ ...row, context_policy: index === 0 ? "append_only_decision_v1" : null, provider_wire_policy: index === 0 ? "anthropic_messages_v1" : null })) }); }
     if (["/api/panels", "/api/batches"].includes(path)) return route.fulfill({ json: [] });
     if (path === "/api/operator/status") return route.fulfill({ json: { running: false, active_episode: null, episodes: [], error: null } });
     return route.fulfill({ json: {} });
@@ -39,6 +39,8 @@ test("blinded library avoids enriched fetch; operator view searches and compares
   await expect(page.getByRole("heading", { name: "Descriptive comparison" })).toBeVisible();
   await expect(page.getByText(/continuations may share earlier decisions/)).toBeVisible();
   await expect(page.getByRole("cell", { name: "$0.4200" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /Context policy/ })).toContainText("append_only_decision_v1");
+  await expect(page.getByRole("row", { name: /Provider wire policy/ })).toContainText("anthropic_messages_v1");
 });
 
 test("phone library keeps Explore decisions visible on compact run cards", async ({ page }) => {

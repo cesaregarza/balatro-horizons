@@ -14,8 +14,7 @@ export function ReasoningSummaries({
 }) {
   const responses = events
     .filter((event) => event.type === "provider_response")
-    .map((event) => record(record(event.payload).body))
-    .filter((body) => Array.isArray(body.output));
+    .map((event) => record(record(event.payload).returned_reasoning));
   if (!responses.length) return null;
   return (
     <details>
@@ -24,28 +23,24 @@ export function ReasoningSummaries({
         Model-generated summaries may omit reasoning. Missing text does not show
         that the model failed to consider an option.
       </p>
-      {responses.map((body, index) => {
-        const summaries = (body.output as unknown[])
-          .map(record)
-          .filter(
-            (item) => item.type === "reasoning" && Array.isArray(item.summary),
-          )
-          .flatMap((item) => item.summary as unknown[])
-          .map(record)
-          .filter(
-            (part) =>
-              part.type === "summary_text" && typeof part.text === "string",
-          );
+      {responses.map((result, index) => {
+        const summaries = (Array.isArray(result.texts) ? result.texts : [])
+          .filter((text): text is string => typeof text === "string" && Boolean(text.trim()));
+        const missing = result.status === "empty" ? "Returned summary text is empty."
+          : result.status === "redacted" ? "Returned reasoning was redacted; no public summary text is available."
+          : result.status === "unsupported" ? "Thinking text is not shown: the recorded model is older or its summary format is unverified."
+          : "No summary returned.";
         return (
           <div key={index}>
             <h4>Response {index + 1}</h4>
             {summaries.length ? (
-              summaries.map((part, i) => (
-                <pre key={i}>{part.text as string}</pre>
+              summaries.map((text, i) => (
+                <pre key={i}>{text}</pre>
               ))
             ) : (
-              <p>No summary returned.</p>
+              <p>{missing}</p>
             )}
+            {summaries.length > 0 && result.redacted === true && <p>Additional reasoning was redacted.</p>}
           </div>
         );
       })}

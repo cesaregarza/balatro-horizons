@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-09 — Provider reporting parity
+
+- Normalize Claude ordinary/cache-read/cache-write input as disjoint categories;
+  keep OpenAI input inclusive and output reasoning counted once. Missing usage
+  remains unknown and never replaces spending-ledger evidence.
+- Show supported returned Claude and OpenAI summaries consistently in ordinary,
+  compact and technical views, with explicit absent/empty/redacted labels.
+  Keep signatures, encrypted continuations and redacted blocks out of public
+  projections without changing raw journals or reveal gates.
+- Display recorded context and provider-wire policy metadata from hash-validated
+  frozen snapshots. Historical missing fields remain unknown. This reporting
+  change works independently of the provider-runtime implementation.
+
 ## 2026-10-09 — Anthropic organization-key workspace routing
 
 - Read optional backend `ANTHROPIC_WORKSPACE_ID` through the shared Anthropic

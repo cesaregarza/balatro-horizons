@@ -156,6 +156,8 @@ export type DecisionLedger = {
     evaluation_eligible: boolean;
     fixture?: string | null;
     recorded_interface?: string | null;
+    context_policy?: string | null;
+    provider_wire_policy?: string | null;
     current_harness?: boolean;
     config?: {
       deck?: string;
@@ -216,6 +218,8 @@ export type OperatorEpisode = Episode & {
   model_name: string;
   reasoning_effort: string | null;
   recorded_interface: string | null;
+  context_policy?: string | null;
+  provider_wire_policy?: string | null;
   outcome: string | null;
   reason: string | null;
   cost_usd: number | null;

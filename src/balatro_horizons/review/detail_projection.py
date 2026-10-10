@@ -1,20 +1,14 @@
 """Small ordinary explorer response; exact technical records remain opt-in."""
 
+from balatro_horizons.review.provider_projection import response_projection
+
 
 def reasoning_payload(event):
-    body = event.get("payload", {}).get("body", {})
-    output = body.get("output") if isinstance(body, dict) else None
-    summaries = []
-    for item in output if isinstance(output, list) else []:
-        if not isinstance(item, dict) or item.get("type") != "reasoning":
-            continue
-        parts = item.get("summary")
-        if isinstance(parts, list):
-            summaries.extend({"type": "summary_text", "text": part["text"]}
-                             for part in parts if isinstance(part, dict)
-                             and part.get("type") == "summary_text"
-                             and isinstance(part.get("text"), str))
-    return {"body": {"output": [{"type": "reasoning", "summary": summaries}]}}
+    payload = response_projection(event)["payload"]
+    reasoning = payload["returned_reasoning"]
+    summaries = [{"type": "summary_text", "text": text} for text in reasoning["texts"]]
+    return {"body": {"output": [{"type": "reasoning", "summary": summaries}]},
+            "reported_usage": payload["reported_usage"], "returned_reasoning": reasoning}
 
 
 def ordinary_events(records):
