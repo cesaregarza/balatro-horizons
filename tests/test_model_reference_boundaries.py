@@ -7,7 +7,6 @@ from copy import deepcopy
 import httpx
 import pytest
 from provider_transport import with_input_count
-from pydantic import ValidationError
 from runner_support import episode_spending
 from test_boundary import project
 from test_harness_tools import config_for
@@ -24,7 +23,7 @@ from balatro_horizons.harness.context.build import context
 from balatro_horizons.harness.contract import Operation
 from balatro_horizons.harness.helpers import helper
 from balatro_horizons.harness.loop import Runner
-from balatro_horizons.harness.transport import DirectProvider, context_payload
+from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure, context_payload
 from balatro_horizons.workbench.policies import HumanSequencePolicy
 
 
@@ -136,7 +135,8 @@ def test_feedback_exchange_ids_are_projected_for_both_provider_formats(store, pr
     with httpx.Client(transport=httpx.MockTransport(lambda _: pytest.fail("No HTTP expected"))) as client:
         policy = DirectProvider(model(provider), Limits(), client=client)
         policy.request(ctx, [])
-        raw = policy.parse(response(provider, "play_hand", {"observation_id": obs.observation_id, "card_ids": []}))
+        raw = policy.parse(response(provider, "play_hand", {"observation_id": obs.observation_id,
+            "card_ids": [], "decision_note": None, "note_update": None}))
         runner = Runner(store, config, FakeGame(), policy, episode_spending(store, config))
         error = InvalidAction("INVALID_CARD_SELECTION")
         feedback = runner._tool_feedback(error, error.code, obs)
@@ -167,8 +167,6 @@ def test_undeclared_ids_get_schema_errors_not_reference_errors(provider, field, 
     with httpx.Client(transport=httpx.MockTransport(lambda _: pytest.fail("No HTTP expected"))) as client:
         policy = DirectProvider(model(provider), Limits(), client=client)
         policy.request(ctx, [])
-        raw = policy.parse(response(provider, "inspect_state", {"section": "hand", "offset": 0, field: value}))
-    with pytest.raises(ValidationError) as caught:
-        Operation.validate_python(raw)
-    assert Runner._invalid_code(caught.value) == "INVALID_OPERATION_SCHEMA"
-    assert any(item["type"] == "extra_forbidden" and item["loc"][-1] == field for item in caught.value.errors())
+        with pytest.raises(ProtocolFailure, match="INVALID_TOOL_ARGUMENTS") as caught:
+            policy.parse(response(provider, "inspect_state", {"section": "hand", "offset": 0, field: value}))
+    assert caught.value.details == {"argument_path": "$", "constraint": "additionalProperties"}

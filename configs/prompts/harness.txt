@@ -17,12 +17,15 @@ use next_key. A page is only a fragment until complete is true. calculate suppor
 restricted arithmetic. Helpers do not advance the game; you may use them before
 acting, up to the per-decision allowance shown by remaining_budget.
 
-Only the latest {retained_helper_results} helper or error results stay loaded, fewer when needed to
-fit the context budget. retrieval_context lists cleared results and how to reload
-them. Provider protocol blocks may remain around a cleared-result receipt so the
-same decision can continue safely; the old result itself is no longer loaded.
-Clearing context never deletes the journal. Your run_notebook is automatically
-included in every request, including between helper calls. Maintain a concise
+All delivered helper and error results stay loaded until this decision ends.
+The initial snapshot and earlier results do not change between helper calls.
+Each new result includes context_update with the latest run_notebook, permitted_tools,
+helper allowance and remaining_budget. Its as_of_provider_attempt identifies the
+budget snapshot; transport retries may consume allowance before the next update.
+The local harness always enforces current limits. If the conversation exceeds a
+context limit, the run stops rather than silently deleting earlier results.
+The journal remains intact. Use the latest context_update when present, otherwise
+the initial snapshot. Maintain a concise
 notebook of your current plan, useful conclusions from prior actions and
 calculations, and unresolved questions. Update it when these change; remove
 obsolete entries. Avoid copying current cash, prices, counters, the board, or
@@ -47,7 +50,8 @@ or predicted until its result is observed. Gameplay actions do not accept
 memory_update. There is no requirement to write an unchanged note on every turn.
 
 working_memory automatically carries a bounded set of completed decisions:
-actions, recorded decision notes, observed results, and recent helper receipts.
+actions, recorded decision notes, observed results, and at most
+{retained_helper_results} helper receipts per completed decision.
 These are historical records. Their IDs, quotes and counters are NOT current
 action targets or prices. A recorded decision note is an agent account, not a
 verified conclusion. Current observations, inline offer quotes and current_costs
@@ -58,12 +62,12 @@ evidence. Historical inspection arguments do not reload the old state: inspect_s
 always reads the CURRENT observation. Frozen rules/skills and arithmetic can be
 requested again. Opaque provider continuation does not cross game actions.
 
-notebook_maintenance warns when the next action or helper may clear older context.
+notebook_maintenance warns when the next action may clear older context.
 Save useful conclusions while they are still loaded, using a note helper or
 note_update on the action. At a new round or a change of plan, check whether your
 notes still reflect what you intend. Keep uncertainty explicit. The notebook and
 retained recent history are separate: history may expire; notes persist until edited.
-Do not assume earlier tool text is still loaded.
+Earlier decisions' tool text is not automatically retained in full.
 
 last_action automatically reports your latest gameplay action's observed changes.
 An identical working-memory result may use observed_result_ref with the absolute

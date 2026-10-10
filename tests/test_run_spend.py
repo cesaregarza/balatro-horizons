@@ -41,6 +41,17 @@ def test_response_cost_may_itself_be_a_conservative_usage_fallback():
     }
 
 
+def test_complete_response_without_usage_keeps_its_reservation():
+    events = [
+        event("provider_request", "one", reserved_usd=0.2),
+        event("provider_response", "one", usage_known=False, reserved_usd=0.2, body={}),
+        event("provider_error", "one", code="PROVIDER_USAGE_UNKNOWN"),
+    ]
+    expected = {"accounted_usd": 0.2, "response_usd": 0, "reserved_usd": 0.2}
+    assert run_spend(events, None) == expected
+    assert run_spend(events, {"outcome": "PROVIDER_FAILURE", "cost_usd": 0.2}) == expected
+
+
 @pytest.mark.parametrize("cost", [None, -1, True, "0.2", float("nan"), float("inf")])
 def test_missing_or_invalid_journal_cost_is_not_displayed_as_zero(cost):
     events = [event("provider_request", "old", reserved_usd=cost)]

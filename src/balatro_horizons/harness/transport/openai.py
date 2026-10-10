@@ -1,15 +1,20 @@
-"""OpenAI Responses field spec, explicit-cache interlocks, and cost categories."""
+"""OpenAI Responses runtime, explicit-cache interlocks, and cost categories."""
 
-import json
 import re
 
-from balatro_horizons.harness.transport.base import (
+from balatro_horizons.harness.transport import openai_stream
+from balatro_horizons.harness.transport.base import Transport, response_items, single_call
+from balatro_horizons.harness.transport.conversation import (
+    canonical_messages,
+    encode,
+    exchange_result,
+    native_items,
+)
+from balatro_horizons.harness.transport.errors import (
     ProtocolFailure,
     ProviderFailure,
-    ProviderSpec,
-    encode,
-    tool_messages,
 )
+from balatro_horizons.harness.transport.sse import strict_json
 
 MODEL_VERSION = re.compile(r"^gpt-(\d+)(?:\.(\d+))?(?:-|$)")
 DISPLAY_MODEL = re.compile(r"^gpt-(5\.6|6)-(luna|terra|sol|astra)$")
@@ -82,34 +87,44 @@ def public_capabilities(model, settings):
     }
 
 
-def native_messages(items, result, spec):
+def native_messages(items, result):
     calls = [item for item in items if item.get("type") == "function_call"]
     if not calls:
         return items + [{"role": "user", "content": encode({"tool_error": result})}]
     output = encode(result)
     return items + [
-        {"type": spec.result_item_type, "call_id": call["call_id"], "output": output}
+        {"type": "function_call_output", "call_id": call["call_id"], "output": output}
         for call in calls
     ]
 
 
-def synthetic_messages(call, result, index, spec):
+def synthetic_messages(call, result, index):
     if not call:
-        return [{"role": "user", "content": json.dumps({"tool_error": result})}]
+        return [{"role": "user", "content": encode({"tool_error": result})}]
     call_id = f"harness_exchange_{index}"
     return [
         {
-            "type": spec.call_item_type,
-            spec.id_field: call_id,
+            "type": "function_call",
+            "call_id": call_id,
             "name": call["name"],
-            spec.args_field: encode(call["arguments"]),
+            "arguments": encode(call["arguments"]),
         },
         {
-            "type": spec.result_item_type,
-            spec.id_field: call_id,
+            "type": "function_call_output",
+            "call_id": call_id,
             "output": encode(result),
         },
     ]
+
+
+def tool_messages(ctx, exchanges):
+    messages = canonical_messages(ctx)
+    for index, exchange in enumerate(exchanges):
+        result = exchange_result(ctx, exchange)
+        items = native_items(exchange, "openai")
+        messages.extend(native_messages(items, result) if items is not None else
+                        synthetic_messages(exchange.get("tool_call"), result, index))
+    return messages
 
 
 def payload(ctx, exchanges):
@@ -127,7 +142,7 @@ def payload(ctx, exchanges):
                 ],
             }
         ]
-        + tool_messages(ctx, exchanges, SPEC),
+        + tool_messages(ctx, exchanges),
         "tools": [{"type": "function", **tool, "strict": True} for tool in ctx.tools],
         "tool_choice": "auto",
     }
@@ -143,12 +158,13 @@ def request_body(transport, ctx, exchanges):
         "service_tier": "default",
         "truncation": "disabled",
         "max_output_tokens": transport.limits.max_output_tokens_per_call,
+        "stream": True,
     }
-    reasoning = {
+    reasoning = {"summary": "auto", **{
         name: settings[key]
         for name, key in (("effort", "reasoning_effort"), ("summary", "reasoning_summary"))
         if key in settings
-    }
+    }}
     if reasoning:
         body["reasoning"] = reasoning
     body["prompt_cache_options"] = _cache_options(transport)
@@ -161,16 +177,20 @@ def request_body(transport, ctx, exchanges):
 
 
 def _cache_options(transport):
-    if not prompt_cache_diagnostics(transport.model.model):
-        raise ProviderFailure("EXPLICIT_CACHE_REQUIRES_GPT_5_6_OR_LATER")
-    if transport.model.cache_write_input_usd_per_million is None:
-        raise ProviderFailure("EXPLICIT_CACHE_PRICING_REQUIRED")
-    if transport.limits.max_input_tokens_per_call > 272_000:
-        raise ProviderFailure("CACHE_LONG_CONTEXT_PRICING_NOT_CONFIGURED")
-    result = dict(SPEC.cache_options)
+    validate_config(transport.model, transport.limits)
+    result = {"mode": "explicit"}
     if transport._last_completed_openai_response_id:
         result["comparison_response_id"] = transport._last_completed_openai_response_id
     return result
+
+
+def validate_config(model, limits):
+    if not prompt_cache_diagnostics(model.model):
+        raise ProviderFailure("EXPLICIT_CACHE_REQUIRES_GPT_5_6_OR_LATER")
+    if model.cache_write_input_usd_per_million is None:
+        raise ProviderFailure("EXPLICIT_CACHE_PRICING_REQUIRED")
+    if limits.max_input_tokens_per_call > 272_000:
+        raise ProviderFailure("CACHE_LONG_CONTEXT_PRICING_NOT_CONFIGURED")
 
 
 def usage_cost(model, response, reserved):
@@ -218,11 +238,8 @@ def _usage_totals(usage):
 def _uncategorized_cost(model, usage, input_tokens, output_tokens, reserved):
     if usage.get("cache_creation_input_tokens"):
         return reserved
-    cached = usage.get("cache_read_input_tokens", 0)
-    if type(cached) is not int or cached < 0:
-        return reserved
     return (
-        (input_tokens + cached) * model.input_usd_per_million
+        input_tokens * model.input_usd_per_million
         + output_tokens * model.output_usd_per_million
     ) / 1_000_000
 
@@ -243,37 +260,74 @@ def terminal_details(response, terminal):
     )
 
 
-SPEC = ProviderSpec(
-    name="openai",
-    terminal_field="status",
-    terminal_map={
-        "incomplete": "PROVIDER_RESPONSE_INCOMPLETE",
-        "failed": "PROVIDER_RESPONSE_FAILED",
-        "cancelled": "PROVIDER_RESPONSE_FAILED",
-        "in_progress": "PROVIDER_RESPONSE_UNRESOLVED",
-        "queued": "PROVIDER_RESPONSE_UNRESOLVED",
-    },
-    call_item_type="function_call",
-    id_field="call_id",
-    args_field="arguments",
-    result_item_type="function_call_output",
-    cache_options={"mode": "explicit"},
-    items_field="output",
-    default_terminal="completed",
-    success_terminals=frozenset({"completed"}),
-    terminal_detail="provider_status",
-    clear_terminals=frozenset({"incomplete", "failed", "cancelled", "in_progress", "queued"}),
-    endpoint="https://api.openai.com/v1/responses",
-    key_name="OPENAI_API_KEY",
-    headers=lambda key: {"Authorization": "Bearer " + key},
-    payload=payload,
-    request_body=request_body,
-    usage_cost=usage_cost,
-    decode_arguments=json.loads,
-    validate_call=validate_call,
-    terminal_details=terminal_details,
-    native_messages=native_messages,
-    synthetic_messages=synthetic_messages,
-    response_id_field="id",
-    completed_terminal="completed",
-)
+class OpenAIResponsesRuntime(Transport):
+    endpoint = "https://api.openai.com/v1/responses"
+    count_endpoint = endpoint + "/input_tokens"
+    key_name = "OPENAI_API_KEY"
+
+    def __init__(self, model, limits, client=None):
+        super().__init__(model, limits, client)
+        self._last_completed_openai_response_id = None
+
+    @staticmethod
+    def headers(key):
+        return {"Authorization": "Bearer " + key}
+
+    request_body = request_body
+    tool_messages = staticmethod(tool_messages)
+    assemble = staticmethod(openai_stream.assemble)
+
+    @staticmethod
+    def count_payload(body):
+        from copy import deepcopy
+
+        fields = ("model", "input", "instructions", "tools", "tool_choice", "parallel_tool_calls",
+                  "text", "truncation", "previous_response_id", "conversation")
+        return deepcopy({key: body[key] for key in fields if key in body})
+
+    def usage_cost(self, response, reserved):
+        return usage_cost(self.model, response, reserved)
+
+    def usage_known(self, response):
+        return usage_cost(self.model, response, -1) >= 0
+
+    def remember_response(self, response):
+        if response.get("status") == "completed" and response.get("id"):
+            self._last_completed_openai_response_id = response["id"]
+
+    def parse(self, response):
+        self.last_tool_call = self.last_provider_turn = None
+        items = response_items(response, "output")
+        self._terminal(response)
+        calls = self.capture_turn(items, "function_call", "call_id")
+        if any(block.get("type") == "refusal" for item in items
+               if item.get("type") == "message" and isinstance(item.get("content"), list)
+               for block in item["content"] if isinstance(block, dict)):
+            raise ProtocolFailure("PROVIDER_REFUSAL")
+        call = single_call(calls)
+        try:
+            validate_call(call)
+        except ProtocolFailure:
+            self.last_provider_turn = None
+            raise
+        if not isinstance(call.get("name"), str) or call["name"] not in self.available_tools:
+            raise ProtocolFailure("UNAVAILABLE_TOOL", attempted_tool=str(call.get("name")))
+        try:
+            arguments = strict_json(call.get("arguments"))
+        except (TypeError, ValueError, RecursionError):
+            raise ProtocolFailure("INVALID_OPERATION_JSON") from None
+        return self.decode_call(call.get("name"), arguments)
+
+    def _terminal(self, response):
+        status = response.get("status")
+        if status == "completed":
+            return
+        if status == "incomplete":
+            code = "PROVIDER_RESPONSE_INCOMPLETE"
+        elif status in ("failed", "cancelled"):
+            code = "PROVIDER_RESPONSE_FAILED"
+        elif status in ("in_progress", "queued"):
+            code = "PROVIDER_RESPONSE_UNRESOLVED"
+        else:
+            raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
+        raise ProtocolFailure(code, provider_status=status, **terminal_details(response, status))

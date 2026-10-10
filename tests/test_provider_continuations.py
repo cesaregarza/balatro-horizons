@@ -85,7 +85,7 @@ def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly():
 def test_anthropic_thinking_redaction_text_and_call_are_round_tripped_exactly():
     observation, ctx, policy, first = initial("anthropic")
     assert first["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
-    assert all(tool["strict"] is True for tool in first["tools"])
+    assert all(tool["strict"] is False for tool in first["tools"])
     blocks = [
         {"type": "thinking", "thinking": "inspect first", "signature": "opaque-signature"},
         {"type": "redacted_thinking", "data": "opaque-redacted-state"},
@@ -323,7 +323,7 @@ def test_provider_continuation_resets_after_committed_game_action(store, monkeyp
     assert "decision-one-reasoning" not in json.dumps(requests[2])
 
 
-def test_context_clears_results_but_retains_provider_protocol_shells():
+def test_context_retains_all_results_and_provider_protocol_shells():
     observation = project(FakeGame().observe_private())
     exchanges = []
     for index in range(5):
@@ -351,8 +351,8 @@ def test_context_clears_results_but_retains_provider_protocol_shells():
     ctx, delivered = decision_context(observation, exchanges)
     assert len(delivered) == 5
     assert [item["result"].get("context_cleared", False) for item in delivered] == [
-        True,
-        True,
+        False,
+        False,
         False,
         False,
         False,
@@ -360,7 +360,7 @@ def test_context_clears_results_but_retains_provider_protocol_shells():
     assert all(
         item["provider_turn"] == exchanges[i]["provider_turn"] for i, item in enumerate(delivered)
     )
-    assert ctx["context_delivery"]["loaded_exchange_indices"] == [2, 3, 4]
+    assert ctx["context_delivery"]["loaded_exchange_indices"] == [0, 1, 2, 3, 4]
 
 
 def test_public_export_omits_opaque_provider_continuation(store):

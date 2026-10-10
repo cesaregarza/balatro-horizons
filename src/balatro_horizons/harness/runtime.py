@@ -369,6 +369,9 @@ class Runner(RuntimeDiagnosticsMixin, DecisionRuntimeMixin):
                 ),
             },
         )
+        # Failure/stop paths may never reach the normal post-commit callback.
+        # This clears only provider memory; native intent/apply/commit order is unchanged.
+        self._clear_policy_continuation()
         try:
             self.game.close()
         except (NativeFailure, OSError) as error:

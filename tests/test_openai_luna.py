@@ -5,7 +5,7 @@ import json
 
 import httpx
 import pytest
-from provider_transport import model_choice, with_input_count
+from provider_transport import model_choice, stream_response, with_input_count
 from pydantic import ValidationError
 from test_boundary import project
 
@@ -48,6 +48,7 @@ def response(operation):
     else:
         name, arguments = "calculate", {"expression": "0"}
     return {
+        "id": "mock-response",
         "model": "gpt-5.6-luna",
         "status": "completed",
         "service_tier": "default",
@@ -180,7 +181,7 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
     helper_output = next(
         item for item in received[1]["input"] if item.get("type") == "function_call_output"
     )
-    assert json.loads(helper_output["output"])["result"] == "4"
+    assert json.loads(helper_output["output"])["result"] == {"result": "4"}
     assert "MOCK_MEMORY" in json.dumps(received[2])
     assert "MOCK_SUMMARY" in json.dumps(received[1])
     assert "MOCK_SUMMARY" not in json.dumps(received[2])
@@ -205,7 +206,7 @@ def test_retryable_unknown_http_attempts_consume_budget_before_retry(store, monk
 
     def receive(request):
         calls.append(request)
-        raise httpx.WriteTimeout("mock timeout")
+        raise httpx.ConnectTimeout("mock timeout")
 
     policy = DirectProvider(
         config.models["luna"],
@@ -288,7 +289,13 @@ def test_prompt_cache_comparison_uses_only_last_explicitly_completed_response(mo
     )
 
     def receive(_request):
-        return httpx.Response(200, json=next(replies))
+        reply = next(replies)
+        if "status" not in reply:
+            # A malformed terminal must not replace the comparison baseline.
+            return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                                  content='data: {"type":"response.completed","response":'
+                                  + json.dumps(reply) + '}\n\n')
+        return stream_response(reply, "openai")
 
     config = luna()
     policy = DirectProvider(
@@ -309,8 +316,12 @@ def test_prompt_cache_comparison_uses_only_last_explicitly_completed_response(mo
     }
     assert "previous_response_id" not in second
 
-    for _ in range(3):
-        policy.send(second)
+    for index in range(3):
+        if index == 0:
+            policy.send(second)
+        else:
+            with pytest.raises(ProviderFailure, match="PROVIDER_STREAM_INVALID"):
+                policy.send(second)
         assert policy.request(ctx, [])["prompt_cache_options"]["comparison_response_id"] == (
             "resp_completed_1"
         )

@@ -1,4 +1,4 @@
-"""Characterize the existing request-shrink order before the context move."""
+"""Only unsent initial context may shrink; follow-ups never rewrite history."""
 
 import pytest
 
@@ -17,7 +17,7 @@ def context_with(frames, events):
     )
 
 
-def test_shrink_precedence_is_memory_then_helper_then_public_event(monkeypatch):
+def test_initial_shrink_precedence_is_memory_then_public_event(monkeypatch):
     seen = []
 
     def bound(ctx, exchanges):
@@ -33,19 +33,29 @@ def test_shrink_precedence_is_memory_then_helper_then_public_event(monkeypatch):
     context = context_with(
         [{"episode_id": "parent", "decision_id": 1}], [{"event_id": "event-1"}]
     )
-    exchanges = [{"operation": {"kind": "rules", "key": "index"},
-                  "result": {"reference": "frozen_rules"}}]
-    delivered, retained = focused.working_context(context, exchanges, 1)
+    delivered, retained = focused.working_context(context, [], 1)
 
-    assert seen[:4] == [(1, 1, 1), (0, 1, 1), (0, 0, 1), (0, 0, 0)]
+    assert seen[:3] == [(1, 0, 1), (0, 0, 1), (0, 0, 0)]
     assert delivered["working_memory"]["request_pruned_decisions"] == 1
     assert delivered["omitted_event_ids"] == ["event-1"]
     assert retained == []
 
 
-def test_shrink_fails_only_after_all_four_fallbacks_are_exhausted(monkeypatch):
+def test_shrink_fails_after_initial_fallbacks_are_exhausted(monkeypatch):
     monkeypatch.setattr(focused, "context_bound", lambda _ctx, _exchanges: 100)
     context = context_with([], [])
     with pytest.raises(HarnessFailure) as error:
         focused.working_context(context, [], 1)
     assert error.value.code == "LOCAL_CONTEXT_LIMIT"
+
+
+def test_followup_limit_preserves_memory_results_and_events(monkeypatch):
+    monkeypatch.setattr(focused, "context_bound", lambda _ctx, _exchanges: 100)
+    context = context_with([{"episode_id": "parent", "decision_id": 1}],
+                           [{"event_id": "event-1"}])
+    exchanges = [{"operation": {"kind": "rules", "key": "index"}, "result": {"text": "kept"}}]
+    with pytest.raises(HarnessFailure, match="LOCAL_CONTEXT_LIMIT"):
+        focused.working_context(context, exchanges, 1)
+    assert len(context.working_memory["frames"]) == 1
+    assert context.observation["recent_public_events"] == [{"event_id": "event-1"}]
+    assert exchanges[0]["result"] == {"text": "kept"}

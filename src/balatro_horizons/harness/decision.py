@@ -1,10 +1,13 @@
 """Decision dispatch, helper feedback, and action validation for the harness."""
 
+from copy import deepcopy
+
 from pydantic import ValidationError
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.evidence.provenance import implementation_fingerprint
 from balatro_horizons.harness.context.build import HELPER_EXHAUSTED_MESSAGE, decision_context
+from balatro_horizons.harness.context.conversation import DecisionConversation
 from balatro_horizons.harness.contract import Operation, Policy, ProviderPolicy
 from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.harness.helpers import helper
@@ -60,11 +63,42 @@ class DecisionRuntimeMixin(ProviderRuntimeMixin):
 
     def _decision(self, observation):
         self._check_protocol_integrity()
+        try:
+            envelope, failure = self._decision_turns(observation)
+        except BaseException:
+            self._clear_policy_continuation()
+            raise
+        if failure:
+            self._clear_policy_continuation()
+        return envelope, failure
+
+    def _clear_policy_continuation(self):
+        if (isinstance(self.active_policy, ProviderPolicy)
+                and (self.active_policy.last_tool_call is not None
+                     or self.active_policy.last_provider_turn is not None
+                     or getattr(self.active_policy, "model_references", None) is not None)):
+            self.active_policy.on_decision_end()
+
+    def _decision_turns(self, observation):
         exchanges = []
+        conversation = previous_policy = None
         helper_count = invalid = 0
         while True:
             self._check_decision_stop()
-            ctx, delivered = self._decision_context(observation, exchanges, helper_count)
+            self.active_policy = self._policy_for_decision()
+            if previous_policy is not None and previous_policy is not self.active_policy:
+                if isinstance(previous_policy, Policy):
+                    previous_policy.on_decision_end()
+                # A new actor gets a fresh public snapshot, never another actor's
+                # opaque continuation. Shared helper/invalid allowances do not reset.
+                conversation, exchanges = None, []
+            previous_policy = self.active_policy
+            ctx, delivered = self._decision_context(
+                observation, exchanges, helper_count, conversation=conversation,
+            )
+            if conversation is None:
+                conversation = DecisionConversation(ctx)
+                ctx.provider_initial_content = conversation.initial.provider_initial_content
             raw = None
             try:
                 raw = self._dispatch_operation(ctx, delivered, observation)
@@ -100,7 +134,25 @@ class DecisionRuntimeMixin(ProviderRuntimeMixin):
         if self.stop.is_set():
             raise OperatorAbort
 
-    def _decision_context(self, observation, exchanges, helper_count):
+    def _decision_context(self, observation, exchanges, helper_count, *, conversation=None):
+        if conversation is not None:
+            ctx, delivered = conversation.deliver(
+                exchanges, notebook=self.notebook.view(),
+                helper_remaining=max(0, self.limits.max_helper_calls_per_decision - helper_count),
+                helper_count=helper_count, provider_calls=self.limits.max_provider_calls - self.calls,
+                provider_attempts=self.calls, byte_limit=self.limits.max_request_bytes,
+            )
+        else:
+            ctx, delivered = self._initial_decision_context(observation, exchanges, helper_count)
+        self.log(
+            "agent_context",
+            {"context": dict(ctx), "exchanges": delivered},
+            actor="agent",
+            observation_id=observation.observation_id,
+        )
+        return ctx, delivered
+
+    def _initial_decision_context(self, observation, exchanges, helper_count):
         ctx, delivered = decision_context(
             observation,
             exchanges,
@@ -121,17 +173,11 @@ class DecisionRuntimeMixin(ProviderRuntimeMixin):
         ctx.observation["remaining_budget"]["helper_calls_remaining"] = max(
             0, self.limits.max_helper_calls_per_decision - helper_count
         )
-        self.log(
-            "agent_context",
-            {"context": dict(ctx), "exchanges": delivered},
-            actor="agent",
-            observation_id=observation.observation_id,
-        )
+        ctx.observation["remaining_budget"]["as_of_provider_attempt"] = self.calls
         return ctx, delivered
 
     def _dispatch_operation(self, ctx, delivered, observation):
         raw = None
-        self.active_policy = self._policy_for_decision()
         self.action_actor = self.policy.actor if isinstance(self.policy, Policy) else "agent"
         raw = (
             self._provider(self.active_policy, ctx, delivered)
@@ -246,7 +292,7 @@ class DecisionRuntimeMixin(ProviderRuntimeMixin):
         turn = provider.last_provider_turn if provider is not None else None
         if turn is not None:
             exchange["provider_turn"] = turn
-        return exchange
+        return deepcopy(exchange)
 
     def _tool_feedback(self, error, code, observation):
         feedback = {

@@ -51,8 +51,6 @@ MAX_ARITHMETIC_NODES = 64
 
 # Provider transport is independent of the Windows game bridge's timeout below.
 PROVIDER_TIMEOUT_SECONDS = 90
-# Sizing assumption for non-streaming generation, not a provider throughput guarantee.
-PROVIDER_MIN_OUTPUT_TOKENS_PER_SECOND = 36
 
 
 class Options(BaseModel):

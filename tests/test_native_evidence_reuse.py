@@ -209,6 +209,7 @@ def test_native_gate_requires_both_native_identity_and_explicit_harness_acceptan
 
 
 def test_old_checkpoint_source_identity_still_fails_closed(migration, monkeypatch):
+    from balatro_horizons.harness.context.conversation import CONTEXT_POLICY
     from balatro_horizons.harness.context.freeze import FROZEN_INTERFACE, restore_protocol
     from balatro_horizons.storage.journal import Store
 
@@ -219,6 +220,8 @@ def test_old_checkpoint_source_identity_still_fails_closed(migration, monkeypatc
     bundle = {
         'version': 'agent-protocol-v1',
         'interface': FROZEN_INTERFACE,
+        'context_policy': CONTEXT_POLICY,
+        'provider_wire_policy': None,
         'implementation_hash': old['implementation_hash'],
     }
     store.private_json(eid, 'agent-protocol.json', bundle)

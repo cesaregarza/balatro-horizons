@@ -23,9 +23,9 @@ from balatro_horizons.harness.transport import DirectProvider, ProviderFailure
         (httpx.ReadTimeout, "PROVIDER_READ_TIMEOUT", False),
         (httpx.ConnectTimeout, "PROVIDER_TRANSPORT_UNKNOWN", True),
         (httpx.PoolTimeout, "PROVIDER_TRANSPORT_UNKNOWN", True),
-        (httpx.WriteTimeout, "PROVIDER_TRANSPORT_UNKNOWN", True),
+        (httpx.WriteTimeout, "PROVIDER_TRANSPORT_UNKNOWN", False),
         (httpx.ConnectError, "PROVIDER_TRANSPORT_UNKNOWN", True),
-        (httpx.WriteError, "PROVIDER_TRANSPORT_UNKNOWN", True),
+        (httpx.WriteError, "PROVIDER_TRANSPORT_UNKNOWN", False),
         (httpx.ReadError, "PROVIDER_RESPONSE_LOST", False),
         (httpx.RemoteProtocolError, "PROVIDER_RESPONSE_LOST", False),
         (httpx.TransportError, "PROVIDER_TRANSPORT_UNKNOWN", False),
@@ -54,6 +54,8 @@ def test_transport_error_classification(provider, failure, code, retryable, monk
         (httpx.ReadTimeout, "PROVIDER_READ_TIMEOUT"),
         (httpx.ReadError, "PROVIDER_RESPONSE_LOST"),
         (httpx.RemoteProtocolError, "PROVIDER_RESPONSE_LOST"),
+        (httpx.WriteError, "PROVIDER_TRANSPORT_UNKNOWN"),
+        (httpx.WriteTimeout, "PROVIDER_TRANSPORT_UNKNOWN"),
     ],
 )
 def test_response_failure_never_retries_and_retains_one_reservation(
