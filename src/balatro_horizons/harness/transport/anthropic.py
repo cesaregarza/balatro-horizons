@@ -250,6 +250,8 @@ class ClaudeMessagesRuntime(Transport):
         if calls and reason != "tool_use":
             raise ProtocolFailure("UNEXPECTED_PROVIDER_STOP", provider_stop_reason=reason)
         call = single_call(calls)
+        if error := response.get(anthropic_stream.TOOL_INPUT_ERROR):
+            raise ProtocolFailure(error)
         return self.decode_call(call.get("name"), call.get("input"))
 
     def _terminal(self, reason):

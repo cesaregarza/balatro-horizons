@@ -251,7 +251,6 @@ def maintenance(context):
         "oldest_decision_leaves_after_action": (
             {k: imminent[0][k] for k in ("episode_id", "decision_id")} if imminent else None
         ),
-        "next_helper_may_clear_older_results": False,
         "message": (
             "Preserve useful conclusions before acting clears this decision's tool results. "
             "Update changed notes; unchanged notes need no write. note_update can accompany your action."

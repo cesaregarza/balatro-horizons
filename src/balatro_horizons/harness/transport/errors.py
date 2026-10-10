@@ -90,7 +90,9 @@ def check_status(response, provider):
         code = native_code(response.json(), provider)
     except ValueError:
         code = None
-    statuses = {408, 409, 429, 500, 502, 503, 504}
+    # An explicit HTTP 408 rejects this request; a lost read/write is ambiguous
+    # and never retried. Unclassified 409 conflicts require operator diagnosis.
+    statuses = {408, 429, 500, 502, 503, 504}
     permanent = OPENAI_BILLING_CODES | {
         "model_not_found", "invalid_api_key", "invalid_request_error", "unsupported_parameter",
         "unsupported_value", "permission_denied",

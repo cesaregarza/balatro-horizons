@@ -506,9 +506,12 @@ def test_provider_parity_dynamic_notes_and_bounded_helper_feedback(store, monkey
             latest = (messages[-1]["output"] if provider == "openai"
                       else messages[-1]["content"][0]["content"])
             update = json.loads(latest)["context_update"]
-            assert update["run_notebook"]["entries"] == {"plan": expected}
-            assert "calculate" not in update["permitted_tools"]
-            assert update["helper_status"]["remaining"] == 0
+            if index == 1:
+                assert update["run_notebook"]["entries"] == {"plan": expected}
+                assert "calculate" not in update["permitted_tools"]
+                assert update["helper_status"]["remaining"] == 0
+            else:
+                assert set(update) == {"as_of_provider_attempt", "remaining_budget"}
     assert "Helper allowance exhausted" in json.dumps(requests[2])
 
 
@@ -535,7 +538,7 @@ def test_context_budget_prunes_history_before_live_helpers_and_notebook(store, c
     assert memory["frames"][0]["decision_id"] == 2  # Source never mutated.
     helpers = [{"operation": {"kind": "arithmetic", "expression": "1+1"}, "result": {"result": "2"}}] * 3
     ctx, _ = decision_context(observation, helpers, working_memory=memory)
-    assert ctx["notebook_maintenance"]["next_helper_may_clear_older_results"] is False
+    assert "next_helper_may_clear_older_results" not in ctx["notebook_maintenance"]
 
 
 def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, config):

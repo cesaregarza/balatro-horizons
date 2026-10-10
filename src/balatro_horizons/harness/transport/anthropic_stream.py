@@ -8,6 +8,8 @@ from copy import deepcopy
 from balatro_horizons.harness.transport.errors import ProviderFailure, native_code
 from balatro_horizons.harness.transport.sse import strict_json
 
+TOOL_INPUT_ERROR = "_harness_tool_input_error"
+
 
 class MessageStream:
     def __init__(self):
@@ -58,6 +60,7 @@ class MessageStream:
                 or message.get("type") != "message"):
             raise ProviderFailure("PROVIDER_STREAM_INVALID")
         self.message = deepcopy(message)
+        self.message.pop(TOOL_INPUT_ERROR, None)
         if not isinstance(self.message.get("usage"), dict):
             self.message["usage"] = {}
 
@@ -104,12 +107,10 @@ class MessageStream:
     def _block_stop(self, event):
         index, block = self._block(event)
         if index in self.json_fragments:
-            try:
-                block["input"] = strict_json("".join(self.json_fragments.pop(index)))
-            except (ValueError, RecursionError):
-                raise ProviderFailure("PROVIDER_STREAM_INVALID") from None
-            if not isinstance(block["input"], dict):
-                raise ProviderFailure("PROVIDER_STREAM_INVALID")
+            raw = "".join(self.json_fragments.pop(index))
+            block["input"], error = _tool_input(raw)
+            if error:
+                self.message[TOOL_INPUT_ERROR] = error
         if block["type"] == "thinking" and (
             not isinstance(block.get("signature"), str) or not block["signature"]
         ):
@@ -119,7 +120,7 @@ class MessageStream:
     def _message_delta(self, event):
         delta, usage = event.get("delta"), event.get("usage")
         if (self.open_blocks or not isinstance(delta, dict)
-                or set(delta) & {"content", "usage", "id", "type", "role"}):
+                or set(delta) & {"content", "usage", "id", "type", "role", TOOL_INPUT_ERROR}):
             raise ProviderFailure("PROVIDER_STREAM_INVALID")
         self.message.update(deepcopy(delta))
         if isinstance(usage, dict):
@@ -129,3 +130,18 @@ class MessageStream:
 
 def assemble(stream):
     return MessageStream().assemble(stream)
+
+
+def _tool_input(raw):
+    try:
+        value = strict_json(raw)
+    except (ValueError, RecursionError):
+        error = "INVALID_OPERATION_JSON"
+    else:
+        if isinstance(value, dict):
+            return value, None
+        error = "TOOL_ARGUMENTS_MUST_BE_OBJECT"
+    # Claude requires an object in replayed tool_use blocks. Explicitly wrap
+    # the original bad input, never substitute executable arguments. Parsing
+    # reports the error only after complete terminal/usage evidence is metered.
+    return {"INVALID_JSON": raw}, error

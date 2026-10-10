@@ -69,8 +69,8 @@ def validate_arguments(value, schema, path="$", *, root=True):
     if root and not isinstance(value, dict):
         raise ProtocolFailure("TOOL_ARGUMENTS_MUST_BE_OBJECT")
     alternatives = schema.get("anyOf")
-    if alternatives is not None and not any(_matches(value, child) for child in alternatives):
-        _invalid(path, "anyOf")
+    if alternatives is not None:
+        _alternatives(value, alternatives, path)
     expected = schema.get("type")
     types = expected if isinstance(expected, list) else [expected]
     if expected is not None and not any(_is_type(value, kind) for kind in types):
@@ -95,12 +95,22 @@ def validate_arguments(value, schema, path="$", *, root=True):
                 _invalid(path, key)
 
 
-def _matches(value, schema):
-    try:
-        validate_arguments(value, schema, root=False)
-        return True
-    except ProtocolFailure:
-        return False
+def _alternatives(value, alternatives, path):
+    typed_errors = []
+    for child in alternatives:
+        try:
+            validate_arguments(value, child, path, root=False)
+            return
+        except ProtocolFailure as error:
+            types = child.get("type", [])
+            types = [types] if isinstance(types, str) else types
+            if any(_is_type(value, kind) for kind in types):
+                typed_errors.append(error)
+    # A nullable object has one applicable branch: retain its actionable error
+    # rather than hiding a missing property behind a generic anyOf failure.
+    if len(typed_errors) == 1:
+        raise typed_errors[0]
+    _invalid(path, "anyOf")
 
 
 def _is_type(value, kind):
@@ -117,10 +127,11 @@ def _equal(left, right):
 
 def _object(value, schema, path):
     props = schema.get("properties", {})
-    if set(schema.get("required", [])) - value.keys():
-        _invalid(path, "required")
-    if schema.get("additionalProperties") is False and value.keys() - props.keys():
-        _invalid(path, "additionalProperties")
+    missing = sorted(set(schema.get("required", [])) - value.keys())
+    unexpected = sorted(value.keys() - props.keys()) if schema.get("additionalProperties") is False else []
+    if missing or unexpected:
+        _invalid(path, "required" if missing else "additionalProperties",
+                 missing_keys=missing, unexpected_keys=unexpected)
     for name, child in props.items():
         if name in value:
             validate_arguments(value[name], child, f"{path}.{name}", root=False)
@@ -142,5 +153,5 @@ def _bounds(value, schema, path, lower, upper):
         _invalid(path, upper)
 
 
-def _invalid(path, constraint):
-    raise ProtocolFailure("INVALID_TOOL_ARGUMENTS", argument_path=path, constraint=constraint)
+def _invalid(path, constraint, **details):
+    raise ProtocolFailure("INVALID_TOOL_ARGUMENTS", argument_path=path, constraint=constraint, **details)

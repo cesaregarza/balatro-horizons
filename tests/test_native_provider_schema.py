@@ -137,3 +137,27 @@ def test_current_availability_is_used_even_with_frozen_initial_context(provider)
     policy.request(ctx, [])
     with pytest.raises(ProtocolFailure, match="UNAVAILABLE_TOOL"):
         policy.parse(native_call(provider, "calculate", {"expression": "1+1"}))
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+@pytest.mark.parametrize("nested", [False, True])
+def test_schema_feedback_names_missing_and_unexpected_keys_including_nullable_objects(provider, nested):
+    ctx = context()
+    ctx.tools, ctx.allowed_tools = deepcopy(TOOLS), [tool["name"] for tool in TOOLS]
+    policy = DirectProvider(model(provider), Limits())
+    args = {"observation_id": 0, "blind_id": 1, "decision_note": None,
+            "note_update": {"key": "plan", "surprise": "not echoed"}} if nested else {
+        "observation_id": 0, "blind_id": 1, "surprise": "not echoed",
+    }
+    try:
+        policy.request(ctx, [])
+        with pytest.raises(ProtocolFailure, match="INVALID_TOOL_ARGUMENTS") as caught:
+            policy.parse(native_call(provider, "select_blind", args))
+        assert caught.value.details == {
+            "argument_path": "$.note_update" if nested else "$", "constraint": "required",
+            "missing_keys": ["text"] if nested else ["decision_note", "note_update"],
+            "unexpected_keys": ["surprise"],
+        }
+        assert "not echoed" not in json.dumps(caught.value.details)
+    finally:
+        policy.client.close()

@@ -4,6 +4,7 @@ import json
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
+from unittest.mock import Mock
 
 import httpx
 import pytest
@@ -15,11 +16,14 @@ from balatro_horizons.config import Config, Limits
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.money import Spending, reservation_usd
+from balatro_horizons.harness.provider import OperatorAbort, ProviderRuntimeMixin
 from balatro_horizons.harness.transport import DirectProvider, ProviderFailure
-from balatro_horizons.harness.transport.errors import check_status, retry_after
+from balatro_horizons.harness.transport.errors import InputCountFailure, check_status, retry_after
 
 
 @pytest.mark.parametrize("provider,status,code,retryable", [
+    ("openai", 408, None, True),
+    ("openai", 409, None, False),
     ("openai", 429, "rate_limit_exceeded", True),
     ("openai", 429, "slow_down", True),
     ("openai", 429, "insufficient_quota", False),
@@ -37,6 +41,8 @@ from balatro_horizons.harness.transport.errors import check_status, retry_after
     ("anthropic", 401, "authentication_error", False),
     ("anthropic", 403, "permission_error", False),
     ("anthropic", 500, "api_error", True),
+    ("anthropic", 408, None, True),
+    ("anthropic", 409, None, False),
 ])
 def test_native_http_taxonomy(provider, status, code, retryable):
     error = {"code": code, "message": "PRIVATE-ERROR-TEXT"} if provider == "openai" else {"type": code}
@@ -60,6 +66,24 @@ def test_retry_after_is_bounded_and_finite(value, expected):
 def test_retry_after_http_date():
     date = format_datetime(datetime.now(UTC) + timedelta(seconds=20), usegmt=True)
     assert 18 <= retry_after({"retry-after": date}) <= 20
+
+
+@pytest.mark.parametrize("delay,expected", [(99999, 60), (-20, 0)])
+@pytest.mark.parametrize("stopped", [False, True])
+@pytest.mark.parametrize("stage", ["count", "generation"])
+def test_runner_clamps_untrusted_retry_delay_and_remains_stop_aware(delay, expected, stopped, stage):
+    runner = ProviderRuntimeMixin()
+    runner.stop = Mock()
+    runner.stop.wait.return_value = stopped
+    # Deliberately bypass retry_after(headers): the runner is the second bound.
+    error = (InputCountFailure(retryable=True, retry_after=delay) if stage == "count"
+             else ProviderFailure("PROVIDER_HTTP_429", retryable=True, retry_after=delay))
+    if stopped:
+        with pytest.raises(OperatorAbort):
+            runner._wait_provider_retry(error, 0)
+    else:
+        runner._wait_provider_retry(error, 0)
+    runner.stop.wait.assert_called_once_with(expected)
 
 
 def abort_response(provider):

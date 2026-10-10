@@ -36,10 +36,15 @@ function applyContextUpdate(context: Data, content: unknown) {
   let envelope: Data;
   try { envelope = record(JSON.parse(content)); } catch { return; }
   const update = record(envelope.context_update ?? record(envelope.tool_error).context_update);
-  for (const key of ["run_notebook", "permitted_tools", "helper_status", "notebook_maintenance"]) {
+  for (const key of ["run_notebook", "permitted_tools"]) {
     if (key in update) context[key] = update[key];
   }
-  for (const key of ["remaining_budget", "retrieval_context"]) {
-    if (key in update) context.observation[key] = update[key];
+  for (const key of ["helper_status", "notebook_maintenance"]) {
+    if (key in update) context[key] = { ...record(context[key]), ...record(update[key]) };
   }
+  if ("remaining_budget" in update) context.observation.remaining_budget = {
+    ...record(context.observation.remaining_budget), ...record(update.remaining_budget),
+  };
+  // Historical full-envelope records remain readable; new requests omit this metadata.
+  if ("retrieval_context" in update) context.observation.retrieval_context = update.retrieval_context;
 }

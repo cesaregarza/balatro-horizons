@@ -96,13 +96,23 @@ when carried by HTTP 429; bounded transient retries honor Retry-After. Free toke
 counting retries do not consume generation allowance. Missing final usage, stream
 errors and interrupted responses retain uncertain spending. No SDK retry or hidden
 continuation request is permitted. Saved settings and historical limits stay intact.
+An explicit HTTP 408 is retryable because it reports request timeout/rejection,
+unlike an ambiguous client read or write timeout. HTTP 409 is not automatically
+retried: an unclassified conflict needs diagnosis. Other transient statuses are
+429, 500, 502, 503 and 504, plus Claude's 529; permanent billing/configuration codes
+override this list. Both the header parser and the stop-aware runner cap delays
+at 60 seconds.
 
 Fit an unsent initial request by trimming the oldest working-memory frame, then
 public events; never trim the current observation, notebook or action constraints.
 After transmission, freeze the initial message and preserve every delivered result
 and native continuation block unchanged. New tool results append a shared
-`{result, context_update}` envelope with notebook state, permitted tools, delivery
-metadata and an as-of provider-attempt budget. A transport retry reuses the exact
+`{result, context_update}` envelope containing only values changed since their last
+delivery (the initial snapshot counts). Notebook state and permitted tools replace
+their previous values; status, maintenance and remaining-budget objects merge by
+field. Unchanged notebook text and guidance are not repeated. The model input omits
+internal retrieval metadata and obsolete helper-eviction warnings. An as-of
+provider-attempt counter accompanies every update. A transport retry reuses the exact
 prepared request; the next distinct update includes all intervening attempts.
 No-call feedback invents no tool ID; multiple calls receive error results and
 execute nothing. Overflow fails with `LOCAL_CONTEXT_LIMIT` or `INPUT_TOKEN_LIMIT`,
@@ -121,6 +131,19 @@ OpenAI uses strict tool schemas; Claude uses the same canonical catalog non-stri
 because its strict grammar has different bounds and aggregate limits. Both apply
 the full local schema before decoding an operation. Pure catalog/settings preflight
 runs before game creation. Automatic selection never forces an extra model call.
+Schema feedback identifies missing and unexpected keys, including nullable note
+fields and nested note objects. Complete, metered responses containing malformed or
+duplicate-key tool JSON consume the same bounded invalid-response allowance for
+both providers, rather than becoming transport failures. For Claude, only the bad
+tool input is wrapped as `{"INVALID_JSON": raw_input}` to keep the replayed `tool_use`
+object legal; its ID and opaque reasoning blocks remain unchanged, and the matching
+`tool_result` reports the error with `is_error: true`. The private assembled response
+marks the parse error so wrapped input can never execute; this marker is not sent.
+This follows Claude's [invalid tool JSON error-return guidance](https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming#handling-invalid-json-in-tool-responses);
+fine-grained streaming is not enabled. Broken SSE/event envelopes, interrupted
+streams and missing final usage still fail closed without executing a tool or
+resending an uncertain generation. A capped live canary remains separately gated;
+it should measure required-field omission and maximum inter-chunk silence by model/effort.
 Provider-native reasoning/tool blocks continue within one decision, resetting after the action. Every request,
 including retries, reserves configured ceilings/prices. Unknown usage stays reserved; record overage and stop
 the next request at the applicable episode/campaign cap. Paid calls require operator enablement, settings,

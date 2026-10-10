@@ -140,13 +140,21 @@ def test_partial_stream_disconnect_is_nonretryable(provider, failure, monkeypatc
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
 def test_cancel_between_chunks_never_exposes_a_tool(provider, monkeypatch):
-    stopped = [False]
+    stopped, consumed = [False], []
+
+    def before(index):
+        consumed.append(index)
+        stopped[0] = index > 20
+
     policy, body = connected(provider, monkeypatch, stream_events(provider),
-                             before=lambda index: stopped.__setitem__(0, index > 20))
+                             before=before)
     policy.bind_stop(lambda: stopped[0])
     with pytest.raises(ProviderFailure, match="PROVIDER_CANCELLED"):
         policy.send(body)
     assert policy.last_tool_call is None
+    # A post-loop stop check is insufficient: abandon the stream at the next
+    # chunk, before buffering the remaining response or reaching its terminal.
+    assert consumed == [0, 7, 14, 21]
 
 
 @pytest.mark.parametrize("provider,code", [("openai", "server_error"), ("anthropic", "overloaded_error")])

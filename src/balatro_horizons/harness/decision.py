@@ -30,6 +30,10 @@ _PROTOCOL_MESSAGES = {
     "TOOL_ARGUMENTS_MUST_BE_OBJECT": (
         "Tool arguments must be one JSON object matching the selected tool schema."
     ),
+    "INVALID_TOOL_ARGUMENTS": (
+        "Match the tool schema: include every required field (use null where allowed) "
+        "and remove unexpected keys."
+    ),
     "PROVIDER_RESPONSE_INCOMPLETE": (
         "The provider response ended before one complete operation. Return one concise tool call."
     ),

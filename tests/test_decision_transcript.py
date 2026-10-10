@@ -64,7 +64,8 @@ def test_five_helper_prefix_is_immutable_with_notebook_budget_and_reference_upda
                 assert latest["run_notebook"]["entries"] == {"plan": f"updated {index}"}
                 assert latest["remaining_budget"]["provider_calls"] == 100 - index * 2
                 assert latest["as_of_provider_attempt"] == index * 2
-                assert latest["retrieval_context"]["loaded_exchange_indices"] == list(range(index))
+                assert "retrieval_context" not in latest
+                assert "message" not in latest["helper_status"]
             assert "provider_initial_content" not in dict(current)
             snapshots.append(deepcopy(body))
             raw = policy.parse(response(provider, index))
@@ -74,8 +75,62 @@ def test_five_helper_prefix_is_immutable_with_notebook_budget_and_reference_upda
         wire = json.dumps(snapshots[-1])
         assert all(f"answer {index}" in wire for index in range(5))
         assert "context_cleared" not in wire
+        assert "retrieval_context" not in wire
+        assert "next_helper_may_clear_older_results" not in wire
     finally:
         policy.client.close()
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+@pytest.mark.parametrize("edit_once", [False, True])
+def test_context_deltas_compare_to_last_delivery_including_initial_notebook(provider, edit_once):
+    book = RunNotebook()
+    mutation, _ = book.propose("set_run_note", "plan", "INITIAL-NOTE")
+    book.apply(mutation)
+    ctx, _ = decision_context(project(FakeGame().observe_private()), [],
+                              helper_remaining=8, notebook=book.view())
+    conversation, exchanges = DecisionConversation(ctx), []
+    policy = DirectProvider(model(provider), Limits())
+    field = "input" if provider == "openai" else "messages"
+    previous = None
+    try:
+        for index in range(5):
+            if edit_once and index == 1:
+                mutation, _ = book.propose("set_run_note", "plan", "UPDATED-NOTE")
+                book.apply(mutation)
+            current, delivered = delivery(conversation, exchanges, attempts=index,
+                                          notebook=book.view())
+            body = policy.request(current, delivered)
+            if previous is not None:
+                assert body[field][:len(previous[field])] == previous[field]
+                update = delivered[-1]["model_result"]["context_update"]
+                assert update["as_of_provider_attempt"] == index
+                assert update["remaining_budget"]["provider_calls"] == 100 - index
+                assert update["helper_status"] == {"remaining": 8 - index}
+                assert "permitted_tools" not in update
+                assert "notebook_maintenance" not in update
+                assert ("run_notebook" in update) is (edit_once and index == 1)
+                if index > 1 or not edit_once:
+                    assert "-NOTE" not in json.dumps(update)
+            previous = deepcopy(body)
+            raw = policy.parse(response(provider, index))
+            exchanges.append({"operation": raw, "result": {"result": "2"},
+                              "provider_turn": deepcopy(policy.last_provider_turn)})
+    finally:
+        policy.client.close()
+
+
+def test_notebook_delta_is_a_replacement_and_can_return_to_initial_contents():
+    book = RunNotebook()
+    ctx, _ = decision_context(project(FakeGame().observe_private()), [], notebook=book.view())
+    conversation, exchanges = DecisionConversation(ctx), []
+    for kind in ("set_run_note", "delete_run_note"):
+        mutation, result = book.propose(kind, "plan", "new note")
+        book.apply(mutation)
+        exchanges.append({"operation": {"kind": kind}, "result": result})
+        _, delivered = delivery(conversation, exchanges, notebook=book.view())
+        update = delivered[-1]["model_result"]["context_update"]
+        assert update["run_notebook"]["entries"] == book.view()["entries"]
 
 
 @pytest.mark.parametrize("field", ["result", "provider_turn", "operation"])

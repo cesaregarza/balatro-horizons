@@ -169,4 +169,7 @@ def test_undeclared_ids_get_schema_errors_not_reference_errors(provider, field, 
         policy.request(ctx, [])
         with pytest.raises(ProtocolFailure, match="INVALID_TOOL_ARGUMENTS") as caught:
             policy.parse(response(provider, "inspect_state", {"section": "hand", "offset": 0, field: value}))
-    assert caught.value.details == {"argument_path": "$", "constraint": "additionalProperties"}
+    assert caught.value.details == {
+        "argument_path": "$", "constraint": "additionalProperties",
+        "missing_keys": [], "unexpected_keys": [field],
+    }

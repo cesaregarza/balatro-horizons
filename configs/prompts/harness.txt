@@ -19,13 +19,15 @@ acting, up to the per-decision allowance shown by remaining_budget.
 
 All delivered helper and error results stay loaded until this decision ends.
 The initial snapshot and earlier results do not change between helper calls.
-Each new result includes context_update with the latest run_notebook, permitted_tools,
-helper allowance and remaining_budget. Its as_of_provider_attempt identifies the
+Each new result includes context_update with only changed fields. A changed
+run_notebook or permitted_tools replaces its previous value; helper_status,
+notebook_maintenance and remaining_budget merge by field. Absent fields keep
+their last delivered value, starting with the initial snapshot.
+Its as_of_provider_attempt identifies the
 budget snapshot; transport retries may consume allowance before the next update.
 The local harness always enforces current limits. If the conversation exceeds a
 context limit, the run stops rather than silently deleting earlier results.
-The journal remains intact. Use the latest context_update when present, otherwise
-the initial snapshot. Maintain a concise
+The journal remains intact. Maintain a concise
 notebook of your current plan, useful conclusions from prior actions and
 calculations, and unresolved questions. Update it when these change; remove
 obsolete entries. Avoid copying current cash, prices, counters, the board, or

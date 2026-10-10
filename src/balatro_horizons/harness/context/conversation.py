@@ -1,5 +1,6 @@
 """One immutable provider prefix and append-only results per game decision."""
 
+import json
 from copy import deepcopy
 from dataclasses import replace
 
@@ -9,6 +10,7 @@ from balatro_horizons.harness.context.build import (
     context_bound,
 )
 from balatro_horizons.harness.context.memory import maintenance
+from balatro_horizons.harness.context.model_view import same_value
 from balatro_horizons.harness.failures import HarnessFailure
 
 CONTEXT_POLICY = "append_only_decision_v1"
@@ -16,6 +18,7 @@ WIRE_POLICIES = {
     "openai": "openai_responses_v1",
     "anthropic": "anthropic_messages_v1",
 }
+PARTIAL_UPDATE_FIELDS = ("remaining_budget", "helper_status", "notebook_maintenance")
 
 
 class DecisionConversation:
@@ -31,6 +34,11 @@ class DecisionConversation:
         self.initial = deepcopy(context)
         self.initial.model_references = context.model_references
         self.initial.provider_initial_content = canonical_messages(context)[0]["content"]
+        view = json.loads(self.initial.provider_initial_content)
+        self.last_delivered = {key: view[key] for key in (
+            "run_notebook", "permitted_tools", "helper_status", "notebook_maintenance",
+        )}
+        self.last_delivered["remaining_budget"] = view["observation"]["remaining_budget"]
         self.exchanges = []
 
     def deliver(self, exchanges, *, notebook, helper_remaining, helper_count,
@@ -76,14 +84,25 @@ class DecisionConversation:
             sealed = deepcopy(exchange)
             sealed["model_result"] = ctx.model_references.project({
                 "result": exchange["result"],
-                "context_update": {
-                    "as_of_provider_attempt": provider_attempts,
-                    "remaining_budget": ctx.observation["remaining_budget"],
-                    "permitted_tools": ctx.allowed_tools,
-                    "helper_status": ctx.helper_status,
-                    "run_notebook": ctx.run_notebook,
-                    "notebook_maintenance": ctx.notebook_maintenance,
-                    "retrieval_context": ctx.context_delivery,
-                },
             })
+            sealed["model_result"]["context_update"] = self._update(ctx, provider_attempts)
             self.exchanges.append(sealed)
+
+    def _update(self, ctx, provider_attempts):
+        current = ctx.model_references.project({
+            "remaining_budget": ctx.observation["remaining_budget"],
+            "permitted_tools": ctx.allowed_tools, "helper_status": ctx.helper_status,
+            "run_notebook": ctx.run_notebook, "notebook_maintenance": ctx.notebook_maintenance,
+        })
+        update = {"as_of_provider_attempt": provider_attempts}
+        for key, value in current.items():
+            previous = self.last_delivered[key]
+            if same_value(value, previous):
+                continue
+            # Fixed-shape status objects merge by field; a changed notebook is
+            # a replacement, so deleted note keys cannot survive in the viewer.
+            update[key] = ({name: item for name, item in value.items()
+                            if name not in previous or not same_value(item, previous[name])}
+                           if key in PARTIAL_UPDATE_FIELDS else value)
+        self.last_delivered = deepcopy(current)
+        return update
