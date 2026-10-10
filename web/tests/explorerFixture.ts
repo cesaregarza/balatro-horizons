@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import type { DecisionLedger, Observation, RestorePreview, View } from "../src/api/client";
 
 export const explorerEpisode = "e".repeat(32);
-export async function mockExplorer(page: Page, options: { live?: boolean; outcome?: string; restore?: RestorePreview } = {}) {
+export async function mockExplorer(page: Page, options: { live?: boolean; outcome?: string; restore?: RestorePreview; providerReporting?: boolean } = {}) {
   const writes: { path: string; body: any }[] = [];
   let polls = 0;
   let previews = 0;
@@ -21,6 +21,10 @@ export async function mockExplorer(page: Page, options: { live?: boolean; outcom
     available_action_types: [], action_constraints: {}, remaining_budget: {},
     state: { progress: { ante: 1, blind: "Small" }, resources: { money: decision + (after ? 1 : 0), hands: 4, discards: 3, chips: 0, target: 300 }, hand: [], jokers: [], consumables: [], offers: [], revealed_blinds: [], hand_levels: {}, persistent_effects: [] },
   });
+  if (options.providerReporting) Object.assign(ledger.manifest, {
+    recorded_interface: "tools_v8", context_policy: "append_only_decision_v1",
+    provider_wire_policy: "anthropic_messages_v1",
+  });
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -33,6 +37,14 @@ export async function mockExplorer(page: Page, options: { live?: boolean; outcom
     if (/\/api\/explore\/decisions\/\d+$/.test(path)) {
       const decision = Number(path.split("/").at(-1));
       const view: View = { episode_id: explorerEpisode, decision, stage: "transition", observation: observation(decision), transition: decision < 30 ? observation(decision, true) : undefined, evidence_kind: "SYNTHETIC_TEST", evaluation_eligible: false, fixture: null, action_events: [], review_mode: "retrospective", exposure: {}, trajectory: [] };
+      if (options.providerReporting) view.action_events = [
+        { texts: ["Claude returned public summary."], status: "returned", redacted: true },
+        { texts: ["OpenAI returned public summary."], status: "returned", redacted: false },
+        { texts: [], status: "empty", redacted: false },
+        { texts: [], status: "redacted", redacted: true },
+        { texts: [], status: "absent", redacted: false },
+        { texts: [], status: "unsupported", redacted: false },
+      ].map((returned_reasoning, index) => ({ type: "provider_response", event_id: `response-${index}`, payload: { returned_reasoning } }));
       return route.fulfill({ json: view });
     }
     if (path === "/api/explore/annotations") {

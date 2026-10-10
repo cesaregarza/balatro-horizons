@@ -1,6 +1,7 @@
 """Minimal public inputs for the episode-only review ledger."""
 
 from balatro_horizons.contracts import ActionEnvelope, Observation
+from balatro_horizons.review.provider_projection import reported_usage
 
 MANIFEST_FIELDS = (
     "schema_version", "episode_id", "created_at", "evidence_kind", "agent", "config",
@@ -26,12 +27,8 @@ def payload_projection(kind, payload):
             {"name": tool.get("name")} for tool in payload["body"].get("tools", [])
         ]}}
     if kind == "provider_response":
-        body = payload.get("body")
-        usage = body.get("usage") if isinstance(body, dict) else None
-        usage = usage if isinstance(usage, dict) else {}
-        return {"body": {"usage": {
-            key: usage[key] for key in ("input_tokens", "output_tokens") if key in usage
-        }}}
+        usage = reported_usage(payload.get("body"))
+        return {"body": {"usage": {key: usage[key] for key in ("input_tokens", "output_tokens")}}}
     if kind == "helper_result":
         return {"operation": payload["operation"]}
     if kind == "action_rejected":

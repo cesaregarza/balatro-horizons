@@ -113,6 +113,7 @@ function trace(decision: number, complete = true): Trace {
         }),
         response_event: event("provider_response", {
           cost_usd: 0.001,
+          reported_usage: { input_tokens: 1300, output_tokens: 50, cache_read_tokens: 1000, cache_write_tokens: 200 },
           body: { usage: { input_tokens: 2000 }, output: [] },
         }),
         error_event: null,
@@ -177,6 +178,10 @@ test("dev mode lazily reveals full calls on helper-only decisions, including mob
     panel.getByText("Tool call ID: call-67", { exact: false }),
   ).toBeVisible();
   await expect(panel.getByText("Level 2").first()).toBeVisible();
+  await expect(panel.locator(".dev-call > .dev-meta")).toContainText("Input tokens: 1,300");
+  await expect(panel.locator(".dev-call > .dev-meta")).toContainText("Output tokens: 50");
+  await expect(panel.locator(".dev-call > .dev-meta")).toContainText("Cache read: 1,000");
+  await expect(panel.locator(".dev-call > .dev-meta")).toContainText("Cache write: 200");
   await expect(panel.locator("pre")).toHaveCount(0);
   await panel
     .getByText("What the model was given · costs, offers, notebook and recent memory", {

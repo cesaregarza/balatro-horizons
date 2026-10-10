@@ -4,7 +4,6 @@
 No game or provider is contacted. Reading a whole run records review exposure.
 """
 
-import json
 from collections import Counter
 from datetime import datetime
 from decimal import Decimal
@@ -12,31 +11,22 @@ from decimal import Decimal
 from balatro_horizons.evaluation.reports import scan
 from balatro_horizons.harness.context.freeze import FROZEN_INTERFACE
 from balatro_horizons.review import action_accounting as action_totals
+from balatro_horizons.review.protocol_label import referenced_protocol_metadata
+from balatro_horizons.review.provider_projection import reported_usage
 from balatro_horizons.review.service import ReviewService
 from balatro_horizons.review.spend import run_spend
 from balatro_horizons.review.summary_projection import event_projection, manifest_projection
-from balatro_horizons.storage.journal import digest, locked
+from balatro_horizons.storage.journal import locked
 
 
-def recorded_protocol_interface(store, records):
+def recorded_protocol_metadata(store, records):
     """Read only the immutable recorded label, never an executable old protocol."""
     reference = next(
         (event["payload"].get("agent_protocol") for event in records
          if event["type"] == "episode_start"),
         None,
     )
-    if not isinstance(reference, dict):
-        return None
-    try:
-        path = store.episode_path(reference["episode_id"], True) / "agent-protocol.json"
-        bundle = json.loads(path.read_text())
-        interface = bundle.get("interface")
-        if (digest(bundle) == reference.get("hash") and isinstance(interface, str)
-                and 0 < len(interface) <= 64 and interface.isprintable()):
-            return interface
-    except (KeyError, OSError, TypeError, ValueError):
-        pass
-    return None
+    return referenced_protocol_metadata(store, reference)
 
 
 def summary_input(store, eid, *, verified_reader=None):
@@ -74,9 +64,8 @@ def summary_input(store, eid, *, verified_reader=None):
             "annotations",
         ],
     }
-    recorded_interface = recorded_protocol_interface(store, records)
-    public["manifest"]["recorded_interface"] = recorded_interface
-    public["manifest"]["current_harness"] = recorded_interface == FROZEN_INTERFACE
+    public["manifest"].update(recorded_protocol_metadata(store, records))
+    public["manifest"]["current_harness"] = public["manifest"]["recorded_interface"] == FROZEN_INTERFACE
     scan(public, [store.manifest(eid, True).get("seed")])
     ReviewService(store).expose(
         eid,
@@ -254,14 +243,19 @@ def aggregate_purchase(purchases, kind, row):
 def token_cost_accounting(events):
     requests = [event for event in events if event["type"] == "provider_request"]
     responses = [event for event in events if event["type"] == "provider_response"]
-    usages = [event["payload"]["body"].get("usage", {}) for event in responses]
+    usages = [reported_usage(event["payload"].get("body")) for event in responses]
     return {
-        "provider_input_tokens": sum(usage.get("input_tokens", 0) for usage in usages),
-        "provider_output_tokens": sum(usage.get("output_tokens", 0) for usage in usages),
+        "provider_input_tokens": _token_total(usages, "input_tokens"),
+        "provider_output_tokens": _token_total(usages, "output_tokens"),
         "offered_tools": [tool.get("name") for tool in requests[0]["payload"]["body"].get("tools", [])]
         if requests else [],
         "memory_updates": sum(bool(event["payload"].get("memory_update")) for event in events if event["type"] == "action_commit"),
     }
+
+
+def _token_total(usages, key):
+    values = [usage[key] for usage in usages]
+    return sum(values) if all(value is not None for value in values) else None
 
 
 def reconcile_uncommitted(events, observations, settling, live):

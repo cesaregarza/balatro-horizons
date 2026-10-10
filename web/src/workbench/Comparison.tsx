@@ -4,7 +4,7 @@ import "./comparison.css";
 
 type Run = { episode_id: string; summary: Record<string, unknown> | null; metadata?: Record<string, unknown>; trajectory: TimelinePoint[] };
 type Data = { interpretation: string; assistance?: string; branch_decision?: number; runs: Run[] };
-const FIELDS: [string, string][] = [["Model", "model_name"], ["Reasoning effort", "reasoning_effort"], ["Harness", "recorded_interface"], ["Deck", "deck"], ["Stake", "stake"], ["Outcome", "outcome"], ["Reason", "reason"], ["Attempt spend", "cost_usd"], ["Committed actions", "committed_actions"]];
+const FIELDS: [string, string][] = [["Model", "model_name"], ["Reasoning effort", "reasoning_effort"], ["Harness", "recorded_interface"], ["Context policy", "context_policy"], ["Provider wire policy", "provider_wire_policy"], ["Deck", "deck"], ["Stake", "stake"], ["Outcome", "outcome"], ["Reason", "reason"], ["Attempt spend", "cost_usd"], ["Committed actions", "committed_actions"]];
 
 function readable(run: Run, key: string) {
   const value = run.metadata && key in run.metadata ? run.metadata[key] : run.summary?.[key] ?? (key === "model_name" ? run.summary?.agent : undefined);

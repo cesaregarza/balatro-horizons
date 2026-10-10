@@ -10,6 +10,8 @@ import os
 import uuid
 
 from balatro_horizons.contracts import AnnotationInput
+from balatro_horizons.evaluation.privacy import public_provider_payload
+from balatro_horizons.review.provider_projection import response_projection
 from balatro_horizons.review.read_cache import VerifiedReadCache
 from balatro_horizons.storage.journal import atomic_json, identifier, locked, now
 
@@ -118,7 +120,8 @@ class ReviewService:
         return {**session, "decision_index": index, "stage": "transition"}
 
     def _action_events(self, segment):
-        return [event for event in segment if event["type"] in ACTION_EVENT_TYPES]
+        return [public_provider_payload(response_projection(event))
+                for event in segment if event["type"] in ACTION_EVENT_TYPES]
 
     def _trajectory(self, observations, max_seen):
         return [

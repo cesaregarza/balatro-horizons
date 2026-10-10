@@ -1,6 +1,27 @@
 import { test, expect } from "@playwright/test";
 import { explorerEpisode, mockExplorer } from "./explorerFixture";
 
+test("returned provider summaries and frozen policies have honest display labels", async ({ page }) => {
+  await mockExplorer(page, { providerReporting: true });
+  await page.goto(`/#explore/${explorerEpisode}/20`);
+  await expect(page.locator(".explorer-identity")).toContainText("Context policy: append_only_decision_v1");
+  await expect(page.locator(".explorer-identity")).toContainText("Provider wire policy: anthropic_messages_v1");
+  await page.getByText("Returned reasoning summaries", { exact: true }).click();
+  for (const text of ["Claude returned public summary.", "OpenAI returned public summary.",
+    "Returned summary text is empty.", "Returned reasoning was redacted; no public summary text is available.",
+    "No summary returned.", "Thinking text is not shown: the recorded model is older or its summary format is unverified.",
+    "Additional reasoning was redacted."]) {
+    await expect(page.getByText(text, { exact: true })).toBeVisible();
+  }
+});
+
+test("old runs do not invent context or wire policies", async ({ page }) => {
+  await mockExplorer(page);
+  await page.goto(`/#explore/${explorerEpisode}/20`);
+  await expect(page.locator(".explorer-identity")).toContainText("Context policy: unknown");
+  await expect(page.locator(".explorer-identity")).toContainText("Provider wire policy: unknown");
+});
+
 test("ordinary detail is compact and technical records load only when opened", async ({ page }) => {
   await mockExplorer(page);
   const detailRequests: string[] = [];

@@ -77,6 +77,33 @@ def test_anthropic_call_ids_and_opaque_material(recording, store):
     assert "secret-signature" not in json.dumps(trace) and "secret-redacted" not in json.dumps(trace)
 
 
+def test_reporting_parity_and_opaque_privacy_across_details(recording, store):
+    eid, review, token, _ = recording
+    request(store, eid, "summary")
+    response(store, eid, "summary", {
+        "model": "claude-haiku-5-5", "type": "message", "content": [
+            {"type": "thinking", "thinking": "Save interest.", "signature": "OPAQUE_SIGNATURE"},
+            {"type": "redacted_thinking", "data": "OPAQUE_REDACTED"}],
+        "usage": {"input_tokens": 100, "cache_read_input_tokens": 1000,
+                  "cache_creation_input_tokens": 200, "output_tokens": 50}})
+    original = (store.episode_path(eid) / "events.jsonl").read_bytes()
+    trace = decision_trace(review, token, 67)
+    payloads = [trace["calls"][0]["response_event"]["payload"]]
+    for technical in (True, False):
+        detail = review.decision(token, 67, technical=technical)
+        assert "OPAQUE" not in json.dumps(detail)
+        payloads.append(next(event["payload"] for event in detail["action_events"]
+                             if event["type"] == "provider_response"))
+    for payload in payloads:
+        assert payload["reported_usage"]["input_tokens"] == 1300
+        assert payload["reported_usage"]["output_tokens"] == 50
+        assert payload["returned_reasoning"] == {
+            "texts": ["Save interest."], "status": "returned", "redacted": True}
+    assert trace["calls"][0]["response_event"]["payload"]["body"]["usage"]["input_tokens"] == 100
+    assert "OPAQUE" not in json.dumps(trace)
+    assert (store.episode_path(eid) / "events.jsonl").read_bytes() == original
+
+
 def test_retries_invalid_multiple_calls_and_future_decision_isolation(recording, store):
     eid, review, token, observation = recording
     request(store, eid, "failed")
