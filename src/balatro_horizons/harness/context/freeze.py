@@ -4,9 +4,10 @@ import hashlib
 import json
 from copy import deepcopy
 
-from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, RETAINED_HELPER_RESULTS, ROOT
+from balatro_horizons.config import RECENT_PUBLIC_EVENT_LIMIT, ROOT
 from balatro_horizons.cost_limits import binding_cap, increases_cap
 from balatro_horizons.evidence.provenance import implementation_fingerprint
+from balatro_horizons.harness.context.conversation import CONTEXT_POLICY, WIRE_POLICIES
 from balatro_horizons.harness.context.memory import working_memory_policy
 from balatro_horizons.harness.context.present import PAGE_BYTES
 from balatro_horizons.harness.context.render import (
@@ -54,6 +55,8 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
     return {
         "version": "agent-protocol-v1",
         "interface": FROZEN_INTERFACE,
+        "context_policy": CONTEXT_POLICY,
+        "provider_wire_policy": WIRE_POLICIES.get(model.provider) if model is not None else None,
         "prompt_utf8": raw.decode("utf-8"),
         "prompt_sha256": hashlib.sha256(raw).hexdigest(),
         "rules_kernel": (rules_kernel(skills) + "\n\nRun configuration: "
@@ -72,10 +75,10 @@ def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
         "memory_policy": {
             "across_actions": "run-notebook-v1-and-" + working_memory_policy()["version"],
             "recent_public_events": RECENT_PUBLIC_EVENT_LIMIT,
-            "retained_results": RETAINED_HELPER_RESULTS,
+            "retained_results": "all_within_decision",
             "page_bytes": PAGE_BYTES,
             "provider_continuation": "within_decision_only",
-            "context_bound": "request_bytes_and_provider_tokens_v2",
+            "context_bound": "immutable_prefix_request_bytes_and_provider_tokens_v3",
             "notebook_characters": "sum_unicode_key_and_text_lengths",
             "branch_boundary": "pre_decision",
             "helper_exhaustion": "bounded_invalid_feedback",
@@ -109,6 +112,12 @@ def read_protocol(store, checkpoint):
 
 def restore_protocol(store, checkpoint):
     bundle = read_protocol(store, checkpoint)
+    if bundle.get("context_policy") != CONTEXT_POLICY:
+        raise ValueError("AGENT_PROTOCOL_CONTEXT_POLICY_CHANGED")
+    model = bundle.get("model")
+    provider = model.get("provider") if isinstance(model, dict) else None
+    if bundle.get("provider_wire_policy") != WIRE_POLICIES.get(provider):
+        raise ValueError("AGENT_PROTOCOL_WIRE_POLICY_CHANGED")
     reference = checkpoint["agent_protocol"]
     extension = checkpoint.get("budget_extension")
     current_implementation = implementation_fingerprint()

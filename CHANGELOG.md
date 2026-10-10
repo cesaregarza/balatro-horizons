@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-10-10 — Provider-runtime review corrections (CES-1222)
+
+- Send only changed follow-up context fields, comparing with the last delivered
+  snapshot. Stop repeating unchanged notebook text and constant guidance; remove
+  retrieval metadata and obsolete eviction warnings from model input. Fold deltas
+  in the inspector without rewriting raw evidence or retaining deleted notes.
+- Name missing/unexpected schema keys for both providers. Route complete, metered
+  malformed Claude tool JSON through the shared bounded correction loop; explicitly
+  wrap only bad tool input for legal native continuation, preserving opaque blocks.
+  Broken event envelopes, unknown usage and interrupted responses still fail closed.
+- Pin early stream abandonment and runner-side delay clamping independently of
+  the header parser. Keep explicit HTTP 408 rejection retryable, but drop automatic
+  409 retries because unclassified conflicts need diagnosis. No paid call or native
+  launch is included; native evidence is reused without activation.
+
+## 2026-10-09 — Shared decision transcripts and native provider runtimes
+
+- Keep one `tools_v8` game interface with explicit OpenAI Responses and Claude
+  Messages runtimes. Use the same canonical tools and full local validation;
+  Claude's wire catalog is non-strict, while OpenAI retains strict tools.
+- Freeze `append_only_decision_v1`: keep every delivered result and native
+  continuation unchanged within a decision, append notebook/budget updates,
+  and refuse overflow without eviction. Across-action memory and limits stay
+  unchanged. This is a recorded behavioral revision, not old-run compatibility.
+- Buffer native streams until complete terminal/usage evidence, classify each
+  provider's billing and transient errors, honor bounded retry delays, and
+  retain unknown spend. Free counting retries make no generation reservation.
+- Explicitly request supported public reasoning summaries; opaque reasoning
+  stays within the private decision transcript and never becomes tool input.
+- Add offline conformance, privacy, restoration-refusal and failure fixtures.
+  No paid canary, native launch, deployment or historical journal rewrite is
+  included; older contexts keep their retained executor.
 ## 2026-10-09 — Provider reporting parity
 
 - Normalize Claude ordinary/cache-read/cache-write input as disjoint categories;

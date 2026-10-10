@@ -61,6 +61,13 @@ class RunService:
             raise ValueError("UNKNOWN_AGENT_CONFIGURATION")
         model = config.models[agent]
         amount = validate_paid_configuration(model, config.budgets)
+        from balatro_horizons.harness.context.render import tool_catalog
+        from balatro_horizons.harness.skills import prepare_rules
+        from balatro_horizons.harness.transport import validate_runtime
+
+        # Pure schema/settings checks happen before session or game creation.
+        skills = prepare_rules({}, config.skills).get("skills", [])
+        validate_runtime(model, config.budgets, tool_catalog(skills))
         key = "OPENAI_API_KEY" if model.provider == "openai" else "ANTHROPIC_API_KEY"
         if not os.environ.get(key):
             raise ValueError("MISSING_PROVIDER_CREDENTIAL")

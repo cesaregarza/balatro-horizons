@@ -335,7 +335,7 @@ def test_native_rules_and_index_are_paged_without_mutation():
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
-def test_bounded_working_set_clears_with_receipts_and_preserves_source(provider):
+def test_bounded_working_set_preserves_all_results_or_refuses_followup(provider):
     obs = project(FakeGame().observe_private())
     cfg = config_for(provider)
     skills = load_guide()[1]
@@ -351,11 +351,9 @@ def test_bounded_working_set_clears_with_receipts_and_preserves_source(provider)
         )
     before = deepcopy(exchanges)
     ctx, delivered = decision_context(obs, exchanges, skills=skills)
-    assert len(delivered) == 3
-    assert [
-        r["exchange_index"] for r in ctx["observation"]["retrieval_context"]["cleared"]
-    ] == list(range(5))
-    assert ctx["observation"]["retrieval_context"]["loaded_exchange_indices"] == [5, 6, 7]
+    assert len(delivered) == 8
+    assert ctx["observation"]["retrieval_context"]["cleared"] == []
+    assert ctx["observation"]["retrieval_context"]["loaded_exchange_indices"] == list(range(8))
     with DirectProvider(cfg.models["luna"], cfg.budgets).client as client:
         body = DirectProvider(cfg.models["luna"], cfg.budgets, client).request(ctx, delivered)
     assert (
@@ -364,16 +362,8 @@ def test_bounded_working_set_clears_with_receipts_and_preserves_source(provider)
     )
     initial, _ = decision_context(obs, [], skills=skills)
     byte_limit = initial["context_bytes_upper_bound"] + 1500
-    smaller, retained = decision_context(
-        obs, exchanges, skills=skills, byte_limit=byte_limit
-    )
-    assert len(retained) < 3
-    cfg.budgets.max_request_bytes = byte_limit
-    policy = DirectProvider(cfg.models["luna"], cfg.budgets)
-    try:
-        policy.request(smaller, retained)
-    finally:
-        policy.client.close()
+    with pytest.raises(ValueError, match="LOCAL_CONTEXT_LIMIT"):
+        decision_context(obs, exchanges, skills=skills, byte_limit=byte_limit)
     assert exchanges == before
 
 
@@ -402,8 +392,8 @@ def test_hidden_state_noninterference_and_tool_schema_parity():
         policy = DirectProvider(cfg.models["luna"], cfg.budgets)
         try:
             bodies.append(policy.request(context(a), []))
-            with pytest.raises(ProtocolFailure, match="EXPECTED_PAGED_INSPECTION"):
-                policy._decode("inspect_state", {"sections": ["hand"]})
+            with pytest.raises(ProtocolFailure, match="INVALID_TOOL_ARGUMENTS"):
+                policy.decode_call("inspect_state", {"sections": ["hand"]})
         finally:
             policy.client.close()
     assert bodies[0]["input"][1:] == bodies[1]["messages"]

@@ -3,6 +3,7 @@
 import json
 from copy import deepcopy
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -12,11 +13,13 @@ from test_boundary import project
 from balatro_horizons.config import Limits, ModelConfig
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.contract import ProviderPolicy
 from balatro_horizons.harness.transport import (
+    ClaudeMessagesRuntime,
     DirectProvider,
+    OpenAIResponsesRuntime,
     ProtocolFailure,
     context_payload,
-    provider_spec,
 )
 
 
@@ -47,18 +50,23 @@ def test_specs_share_prompt_messages_and_tool_catalog():
     }
 
 
-def test_specs_declare_the_table_driven_parse_fields():
-    required = {
-        "terminal_field",
-        "terminal_map",
-        "call_item_type",
-        "id_field",
-        "args_field",
-        "result_item_type",
-        "cache_options",
-    }
-    for provider in ("openai", "anthropic"):
-        assert required <= vars(provider_spec(provider)).keys()
+@pytest.mark.parametrize("provider,kind", [
+    ("openai", OpenAIResponsesRuntime), ("anthropic", ClaudeMessagesRuntime),
+])
+def test_factory_selects_explicit_metered_runtime(provider, kind):
+    runtime = DirectProvider(configured(provider), Limits())
+    assert isinstance(runtime, kind)
+    assert isinstance(runtime, ProviderPolicy)
+    assert not hasattr(runtime, "spec")
+    runtime.client.close()
+
+
+def fixture_fields(provider):
+    if provider == "openai":
+        return SimpleNamespace(items_field="output", terminal_field="status",
+                               call_item_type="function_call", id_field="call_id", args_field="arguments")
+    return SimpleNamespace(items_field="content", terminal_field="stop_reason",
+                           call_item_type="tool_use", id_field="id", args_field="input")
 
 
 def test_request_preserves_a_valid_turn_until_decision_end():
@@ -108,11 +116,13 @@ class ParseCase:
 
 
 def parse_case(name, provider, code=None, last_call=VALID_CALL, retains_turn=True, **values):
+    if not name.endswith("terminal-missing"):
+        values.setdefault("terminal", "completed" if provider == "openai" else "tool_use")
     return ParseCase(name, provider, code, last_call, retains_turn, **values)
 
 
 PARSE_CASES = [
-    parse_case("openai-terminal-missing", "openai"),
+    parse_case("openai-terminal-missing", "openai", "INVALID_PROVIDER_RESPONSE", None, False),
     parse_case("openai-terminal-completed", "openai", terminal="completed"),
     parse_case(
         "openai-terminal-incomplete",
@@ -162,7 +172,7 @@ PARSE_CASES = [
         False,
         terminal="future_status",
     ),
-    parse_case("anthropic-terminal-missing", "anthropic"),
+    parse_case("anthropic-terminal-missing", "anthropic", "INVALID_PROVIDER_RESPONSE", None, False),
     parse_case("anthropic-terminal-tool-use", "anthropic", terminal="tool_use"),
     parse_case(
         "anthropic-terminal-max-tokens",
@@ -418,7 +428,7 @@ PARSE_CASES = [
 
 
 def provider_response(case):
-    spec = provider_spec(case.provider)
+    spec = fixture_fields(case.provider)
     items = [_native_item(case.provider)] if case.native_item else []
     items.extend(_call(case, index) for index in range(case.call_count))
     response = {spec.items_field: items}
@@ -434,7 +444,7 @@ def _native_item(provider):
 
 
 def _call(case, index):
-    spec = provider_spec(case.provider)
+    spec = fixture_fields(case.provider)
     call = {
         "type": spec.call_item_type,
         spec.id_field: f"call_{index}",

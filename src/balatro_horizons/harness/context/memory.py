@@ -243,7 +243,7 @@ def trim_oldest(context):
     return True
 
 
-def maintenance(context, loaded_results):
+def maintenance(context):
     """Warn while retained information remains available to save."""
     frames = context.working_memory["frames"]
     imminent = frames[:1] if len(frames) >= WORKING_MEMORY_DECISIONS else []
@@ -251,9 +251,8 @@ def maintenance(context, loaded_results):
         "oldest_decision_leaves_after_action": (
             {k: imminent[0][k] for k in ("episode_id", "decision_id")} if imminent else None
         ),
-        "next_helper_may_clear_older_results": loaded_results >= RETAINED_HELPER_RESULTS,
         "message": (
-            "Preserve useful conclusions before acting or loading more information clears older context. "
+            "Preserve useful conclusions before acting clears this decision's tool results. "
             "Update changed notes; unchanged notes need no write. note_update can accompany your action."
         ),
     }

@@ -7,7 +7,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from provider_transport import model_choice
+from provider_transport import model_choice, stream_response
 from pydantic import ValidationError
 from test_boundary import project
 from test_openai_luna import response as openai_response
@@ -44,11 +44,11 @@ def test_adaptive_request_preserves_v8_tools_and_caches_only_stable_prefix(name,
     body = policy.request(ctx, [])
     assert policy.interface == "tools_v8"
     assert body["model"] == claude(name).model
-    assert body["thinking"] == {"type": "adaptive"}
+    assert body["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert body["output_config"] == {"effort": effort}
     assert body["service_tier"] == "standard_only" and body["max_tokens"] == 32_768
     assert body["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
-    assert all(tool["strict"] is True for tool in body["tools"])
+    assert all(tool["strict"] is False for tool in body["tools"])
     assert body["system"] == [{"type": "text", "text": ctx.prompt + "\n\n" + ctx.rules_kernel,
                                "cache_control": {"type": "ephemeral", "ttl": "5m"}}]
     assert json.dumps(body).count('"cache_control"') == 1
@@ -167,11 +167,11 @@ def test_claude_runner_uses_compact_actions_bills_cache_and_freezes_defaults(sto
         view = json.loads(body["messages"][0]["content"])
         operation = {"kind": "arithmetic", "expression": "2+2"} if len(received) == 1 else model_choice(view)
         tool = openai_response(operation)["output"][-1]
-        return httpx.Response(200, json={"stop_reason": "tool_use", "content": [
+        return stream_response({"stop_reason": "tool_use", "content": [
             {"type": "thinking", "thinking": "test", "signature": "opaque-signature"},
             {"type": "tool_use", "id": "toolu_current", "name": tool["name"], "input": json.loads(tool["arguments"])},
         ], "usage": {"input_tokens": 100, "output_tokens": 50,
-                     "cache_read_input_tokens": 1000, "cache_creation_input_tokens": 200}})
+                     "cache_read_input_tokens": 1000, "cache_creation_input_tokens": 200}}, "anthropic")
 
     policy = DirectProvider(config.models["claude"], config.budgets,
                             httpx.Client(transport=httpx.MockTransport(receive)))

@@ -1,5 +1,6 @@
 import { cardLabel } from "./cardPresentation";
 import { humanize } from "./decisionPresentation";
+export { recordedModelContext } from "./modelContext";
 
 export type Data = Record<string, any>;
 export type ObjectNames = Map<string | number, string>;
@@ -61,19 +62,6 @@ export function gameMoney(value: unknown) {
 function objectId(value: unknown): value is string | number {
   return typeof value === "string" ||
     (typeof value === "number" && Number.isSafeInteger(value) && value > 0);
-}
-export function recordedModelContext(body: unknown): Data | null {
-  const request = record(body);
-  const messages = request.input ?? request.messages;
-  if (!Array.isArray(messages)) return null;
-  const content = messages.find((item) => record(item).role === "user")?.content;
-  if (typeof content !== "string") return null;
-  try {
-    const context = record(JSON.parse(content));
-    return Object.keys(record(context.observation)).length ? context : null;
-  } catch {
-    return null;
-  }
 }
 export function objectNames(observation: unknown): ObjectNames {
   const state = record(record(observation).state);

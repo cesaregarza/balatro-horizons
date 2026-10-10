@@ -10,6 +10,12 @@ may accept older source through an explicit immutable compatibility receipt: the
 the accepted executor separately, preserving historical source identity, model, knowledge and limits.
 Prior calls and retained reservations count across every restoration attempt.
 
+New runs record `context_policy: append_only_decision_v1` and a provider-native
+wire policy (`openai_responses_v1` or `anthropic_messages_v1`). This changes
+within-decision retention, not the `tools_v8` game interface. Older context
+policies require their retained executor; native evidence reuse does not make
+their model conversation compatible with this release.
+
 ## What the model receives
 
 Each decision contains the current public observation, bounded public history and explicit working memory.
@@ -51,7 +57,7 @@ units. Overrides are recorded and cannot silently widen a frozen episode.
 | `INPUT_TOKEN_SAFETY_MARGIN` | 512 tokens |
 | `CONTEXT_FRAMING_BYTES` | 4,096 bytes |
 | `HELPER_PAGE_BYTES` | 2,048 bytes |
-| `RETAINED_HELPER_RESULTS` | 3 results |
+| `RETAINED_HELPER_RESULTS` | 3 receipts per completed decision in working memory |
 | `WORKING_MEMORY_DECISIONS` | 3 completed decisions |
 | `WORKING_MEMORY_BYTES` | 24,576 bytes |
 | `ALWAYS_LOADED_MAX_BYTES` | 1,024 bytes |
@@ -67,14 +73,12 @@ usage still settles at the reported charge. Explicit YAML/saved limits override 
 default. Update saved operator limits separately for future runs; existing frozen runs
 retain their recorded allowance, including 8,192-token runs.
 
-Provider requests are non-streaming: no output arrives until generation finishes, so
-the read-inactivity timeout must accommodate the full output allowance. It is
-`max(90, ceil(max_output_tokens_per_call / PROVIDER_MIN_OUTPUT_TOKENS_PER_SECOND))`
-seconds, using a conservative sizing assumption of 36 output tokens/second. That is
-911 seconds for 32,768 tokens (228 seconds for an explicit 8,192-token allowance).
-This is not a throughput guarantee; slower generation or queueing can still time out.
-Connect, write and pool timeouts remain 90 seconds; native game timeouts are separate
-and unchanged. Injected transport clients retain their own timeout settings.
+Provider requests use buffered streaming. Both native runtimes assemble a complete
+response before any operation is decoded or executed; a tool fragment is never an
+action. The 90-second timeout bounds each stalled read, not total reasoning time.
+Stop is checked between chunks and before calls/retries; a stalled connection can
+still wait for its read timeout. Native game timeouts are unchanged. Injected
+transport clients retain their own timeout settings.
 
 A read timeout ends the current episode with `INFRASTRUCTURE_FAILURE` / `PROVIDER_READ_TIMEOUT`.
 A broken response (`ReadError` or `RemoteProtocolError`, including a server disconnect)
@@ -83,17 +87,37 @@ is unknown, so the failed request's single reservation stays retained; there is
 **no in-episode retry**. Provider exception text is never copied into the journal.
 Campaign scheduling is unchanged: infrastructure failures may get a separate episode
 attempt, up to the existing two-attempt limit, under the shared ledger and campaign cap.
-Only `ConnectError`, `ConnectTimeout`, `PoolTimeout`, `WriteError` and `WriteTimeout`
-are retryable transport exceptions, with the existing bounds and a separate reservation
-for each attempt. Other transport exceptions stop as non-retryable
-`PROVIDER_TRANSPORT_UNKNOWN`; HTTP status retry handling is unchanged. Stop is checked before
-calls and between retries, not during an in-flight request: a pending Stop can wait
-for the read timeout (about 15 minutes at the default ceiling). Streaming with chunk-gap
-timeouts and cancelling in-flight calls on Stop are separate follow-ups, not part of
-this change. Neither saved settings nor historical run limits are rewritten.
+Only `ConnectError`, `ConnectTimeout` and `PoolTimeout` are retryable transport
+exceptions, with the existing bounds and a separate reservation for each attempt.
+`WriteError` and `WriteTimeout` can occur after request bytes were sent; their
+reservation stays retained and they are not retried. Other transport exceptions stop as non-retryable
+`PROVIDER_TRANSPORT_UNKNOWN`. Provider-specific billing errors are permanent even
+when carried by HTTP 429; bounded transient retries honor Retry-After. Free token
+counting retries do not consume generation allowance. Missing final usage, stream
+errors and interrupted responses retain uncertain spending. No SDK retry or hidden
+continuation request is permitted. Saved settings and historical limits stay intact.
+An explicit HTTP 408 is retryable because it reports request timeout/rejection,
+unlike an ambiguous client read or write timeout. HTTP 409 is not automatically
+retried: an unclassified conflict needs diagnosis. Other transient statuses are
+429, 500, 502, 503 and 504, plus Claude's 529; permanent billing/configuration codes
+override this list. Both the header parser and the stop-aware runner cap delays
+at 60 seconds.
 
-Trim the oldest working-memory frame, then a loaded helper result, then a public event; if none remains,
-fail with `LOCAL_CONTEXT_LIMIT`. Never trim the current observation, notebook or action constraints.
+Fit an unsent initial request by trimming the oldest working-memory frame, then
+public events; never trim the current observation, notebook or action constraints.
+After transmission, freeze the initial message and preserve every delivered result
+and native continuation block unchanged. New tool results append a shared
+`{result, context_update}` envelope containing only values changed since their last
+delivery (the initial snapshot counts). Notebook state and permitted tools replace
+their previous values; status, maintenance and remaining-budget objects merge by
+field. Unchanged notebook text and guidance are not repeated. The model input omits
+internal retrieval metadata and obsolete helper-eviction warnings. An as-of
+provider-attempt counter accompanies every update. A transport retry reuses the exact
+prepared request; the next distinct update includes all intervening attempts.
+No-call feedback invents no tool ID; multiple calls receive error results and
+execute nothing. Overflow fails with `LOCAL_CONTEXT_LIMIT` or `INPUT_TOKEN_LIMIT`,
+without silent eviction, summarization or a wider allowance. The transcript ends
+at the game action or actor handoff. Across-action working memory is unchanged.
 Frozen `knowledge.json` retains rules/skills; `uv run bh guide package` regenerates the guide for future episodes.
 `ActionEnvelope` pairs the current observation ID with one typed action and may carry a memory replacement
 and decision note. Validate phase, handles, counts and order before dispatch. Never send raw RPC, seeds,
@@ -101,7 +125,25 @@ saves, endpoint text or private provider credentials to the model.
 
 ## Providers
 
-OpenAI Responses and Anthropic Messages share a capability contract; transport doubles use the session seam.
+OpenAI Responses and Anthropic Messages have separate native runtimes behind one
+metered policy contract. Observations, local legality, helpers and spending stay shared.
+OpenAI uses strict tool schemas; Claude uses the same canonical catalog non-strict
+because its strict grammar has different bounds and aggregate limits. Both apply
+the full local schema before decoding an operation. Pure catalog/settings preflight
+runs before game creation. Automatic selection never forces an extra model call.
+Schema feedback identifies missing and unexpected keys, including nullable note
+fields and nested note objects. Complete, metered responses containing malformed or
+duplicate-key tool JSON consume the same bounded invalid-response allowance for
+both providers, rather than becoming transport failures. For Claude, only the bad
+tool input is wrapped as `{"INVALID_JSON": raw_input}` to keep the replayed `tool_use`
+object legal; its ID and opaque reasoning blocks remain unchanged, and the matching
+`tool_result` reports the error with `is_error: true`. The private assembled response
+marks the parse error so wrapped input can never execute; this marker is not sent.
+This follows Claude's [invalid tool JSON error-return guidance](https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming#handling-invalid-json-in-tool-responses);
+fine-grained streaming is not enabled. Broken SSE/event envelopes, interrupted
+streams and missing final usage still fail closed without executing a tool or
+resending an uncertain generation. A capped live canary remains separately gated;
+it should measure required-field omission and maximum inter-chunk silence by model/effort.
 Provider-native reasoning/tool blocks continue within one decision, resetting after the action. Every request,
 including retries, reserves configured ceilings/prices. Unknown usage stays reserved; record overage and stop
 the next request at the applicable episode/campaign cap. Paid calls require operator enablement, settings,

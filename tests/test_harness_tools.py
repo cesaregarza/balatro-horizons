@@ -18,6 +18,7 @@ from balatro_horizons.harness.baselines import Baseline, baseline_observation, c
 from balatro_horizons.harness.context.build import context, decision_context
 from balatro_horizons.harness.context.present import PAGE_BYTES
 from balatro_horizons.harness.contract import Operation
+from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.harness.helpers import helper
 from balatro_horizons.harness.input_limits import request_size
 from balatro_horizons.harness.loop import Runner
@@ -126,21 +127,21 @@ def test_repeated_large_inspection_is_paged_retained_and_within_request_bytes(pr
     original = deepcopy(exchanges)
     initial, _ = decision_context(observation, [])
     byte_limit = initial["context_bytes_upper_bound"] + 6000
-    compact, delivered = decision_context(observation, exchanges, byte_limit=byte_limit)
-    assert len(delivered) == 1
-    assert compact["observation"]["retrieval_context"]["loaded_exchange_indices"] == [7]
-    assert [row["exchange_index"] for row in compact["context_delivery"]["cleared"]] == list(
-        range(7)
-    )
+    with pytest.raises(HarnessFailure, match="LOCAL_CONTEXT_LIMIT"):
+        decision_context(observation, exchanges, byte_limit=byte_limit)
+    assert exchanges == original
+    compact, delivered = decision_context(observation, exchanges)
+    assert len(delivered) == 8
+    assert compact["observation"]["retrieval_context"]["loaded_exchange_indices"] == list(range(8))
+    assert compact["context_delivery"]["cleared"] == []
     assert "RETRIEVED_EVENT_0_" not in json.dumps(compact["observation"])
-    assert delivered[0]["result"]["content"] == page["content"]
+    assert all(item["result"]["content"] == page["content"] for item in delivered)
     assert exchanges == original
     config = config_for(provider)
-    config.budgets.max_request_bytes = byte_limit
     policy = DirectProvider(config.models["luna"], config.budgets)
     try:
         body = policy.request(compact, delivered)
-        assert request_size(body) <= byte_limit
+        assert request_size(body) <= config.budgets.max_request_bytes
     finally:
         policy.client.close()
 
@@ -438,7 +439,8 @@ def test_oversized_named_note_write_exhausts_helpers_then_allows_model_game_acti
             )
         else:
             name, args = "abort_run", {"reason": "capacity checked"}
-        usage = {"input_tokens": 100, "output_tokens": 20}
+        usage = {"input_tokens": 100, "output_tokens": 20,
+                 "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0}}
         if provider == "openai":
             response = {
                 "status": "completed",

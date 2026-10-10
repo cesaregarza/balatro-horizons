@@ -23,7 +23,7 @@ def run_spend(events, summary, *, restoration=None):
         kind, payload, request_id = event["type"], event["payload"], event.get("request_id")
         if kind in ("provider_reservation", "provider_request"):
             reserved[request_id] = _amount(payload.get("reserved_usd"))
-        elif kind == "provider_response":
+        elif kind == "provider_response" and payload.get("usage_known") is not False:
             responses[request_id] = _amount(payload.get("cost_usd"))
     recorded = _total(responses.values())
     pending = _total(cost for key, cost in reserved.items() if key not in responses)

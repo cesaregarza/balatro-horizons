@@ -51,6 +51,29 @@ def test_native_preflight_and_constructor_order(monkeypatch, tmp_path):
     assert calls.index("game-constructor") < calls.index("run")
 
 
+def test_provider_catalog_preflight_refuses_before_any_native_or_episode_work(store, monkeypatch):
+    from test_harness_tools import config_for
+
+    config = config_for("anthropic")
+    config.budgets.paid_calls_enabled = True
+    calls = []
+    service = RunService(store, SimpleNamespace(expose=lambda *_a, **_k: calls.append("expose")))
+
+    def refuse(model, limits, tools):
+        calls.append("catalog")
+        assert model.provider == "anthropic" and len(tools) == 24
+        raise ValueError("PROVIDER_TOOL_SCHEMA_UNSUPPORTED")
+
+    monkeypatch.setattr("balatro_horizons.harness.transport.validate_runtime", refuse)
+    monkeypatch.setattr(service_module, "load_session", lambda: calls.append("native-session"))
+    monkeypatch.setattr(service, "create_game", lambda *_a, **_k: calls.append("game"))
+    before = store.list_episodes()
+    with pytest.raises(ValueError, match="PROVIDER_TOOL_SCHEMA_UNSUPPORTED"):
+        service.execute(config, "luna", "synthetic-preflight", offline=False)
+    assert calls == ["catalog"]
+    assert store.list_episodes() == before
+
+
 @pytest.mark.parametrize("offline", [False, True])
 def test_frozen_rules_path_does_not_follow_worker_lock(store, config, tmp_path, offline):
     request = ExecutionRequest(config, "heuristic", "fixture", offline, None, None, None, None)
