@@ -11,6 +11,7 @@ from balatro_horizons.game.contract import (
 from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.harness.money import BudgetExhausted
 from balatro_horizons.harness.provider import OperatorAbort
+from balatro_horizons.harness.terminals import UNEXPECTED_ERROR_REASON
 from balatro_horizons.harness.transport import ProviderFailure
 
 
@@ -79,6 +80,6 @@ class RuntimeDiagnosticsMixin:
             self.log("harness_failure", error.public())
             self._record_failure(error)
             return "INFRASTRUCTURE_FAILURE", error.code, None
-        # Exception text may contain private native state; only the type crosses.
+        # Exception text may contain private native state; the type stays private too.
         self._record_failure(error)
-        return "INFRASTRUCTURE_FAILURE", type(error).__name__, None
+        return "INFRASTRUCTURE_FAILURE", UNEXPECTED_ERROR_REASON, None
