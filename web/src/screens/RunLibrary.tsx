@@ -10,7 +10,7 @@ import { LibraryTable } from "./run-library/LibraryTable";
 import { RunConfiguration, gameChoiceLabel } from "./run-library/RunConfiguration";
 import "./run-library/library.css";
 
-export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes, busy, run, openExplorer, openReview, onCompare, priorSeedExposure, setPriorSeedExposure, watch, setWatch, status, setNotice, onHumanStart, onRunStarted }: any) {
+export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes, busy, run, openExplorer, openReview, onCompare, priorSeedExposure, setPriorSeedExposure, watch, setWatch, status, setNotice, onHumanStart }: any) {
   const [agent, setAgent] = useState("heuristic");
   const [offline, setOffline] = useState(true);
   const [deck, setDeck] = useState(config.deck ?? "RED");
@@ -88,10 +88,10 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
               setCostOverride(null);
               setNotice("Run created: " + result.episode_id.slice(0, 10));
               await refreshEpisodes();
-              if (agent === "human") onHumanStart(); else onRunStarted?.(result.episode_id);
+              if (agent === "human") onHumanStart();
             }).finally(() => { startPending.current = false; });
           }}>Start {offline ? "test episode" : "native run"} <span>↗</span></button>
-          <button disabled={!status?.running} aria-label={status?.running ? "Stop active worker" : "Stop worker (idle)"} onClick={() => action(async () => { await stopRun(); setNotice("Stop requested. Any in-flight action will be recorded."); })}>Stop {status?.running ? "active worker" : "worker (idle)"}</button>
+          <button disabled={busy} onClick={() => action(async () => { await stopRun(); setNotice("Stop requested. Any in-flight action will be recorded."); })}>Stop worker</button>
         </div>
         {!offline && <RuntimeConnection connection={connection} onRefresh={refreshConnection} />}
       </section>
