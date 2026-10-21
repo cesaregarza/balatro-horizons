@@ -77,7 +77,8 @@ history navigation. Seed drafts remain only in memory, never local storage.
 model/effort, real versus synthetic mode, deck/stake and both effective dollar
 ceilings. Per-run model settings are validated against the configured model and
 applied to a copy; only **Save model defaults** writes persistent defaults. A new
-run or continuation opens its explorer. Worker status is explicitly revealed;
+run stays in the library until opened, so launching exposes nothing beyond it; a
+continuation opens its explorer. Worker status is explicitly revealed;
 active/recent cards open runs, and idle Stop controls are disabled.
 
 Deck and **Stake (difficulty)** are independent selectors covering the 15 standard

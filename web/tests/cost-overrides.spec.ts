@@ -131,8 +131,7 @@ test("successful start resets Uncapped so the next run uses current limits", asy
   await page.getByRole("button", { name: "Uncapped" }).click();
   const start = page.getByRole("button", { name: /Start test episode/ });
   await start.click();
-  await expect(page).toHaveURL(/#explore/);
-  await page.getByRole("button", { name: "Runs", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Run created" })).toBeVisible();
   await expect(start).toBeEnabled();
   await expect(page.getByRole("button", { name: "Current limits" })).toHaveAttribute("aria-pressed", "true");
   await start.click();
@@ -152,8 +151,7 @@ test("busy state disables overrides and rapid duplicate clicks submit once", asy
   await start.click({ force: true });
   expect(runs).toHaveLength(1);
   releaseStart();
-  await expect(page).toHaveURL(/#explore/);
-  await page.getByRole("button", { name: "Runs", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Run created" })).toBeVisible();
   await expect(start).toBeEnabled();
   expect(runs).toHaveLength(1);
 });
