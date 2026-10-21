@@ -38,6 +38,8 @@ def report_batch(store, bid, output):
         "attempts",
         "valid",
         "wins",
+        "game_losses",
+        "non_game_endings",
         "unresolved",
         "win_rate",
         "coverage",
@@ -47,7 +49,9 @@ def report_batch(store, bid, output):
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
         for agent, data in report["agents"].items():
-            writer.writerow({k: agent if k == "agent" else data[k] for k in fields})
+            row = {k: agent if k == "agent" else data[k] for k in fields}
+            row["non_game_endings"] = sum(data["non_game_endings"].values())
+            writer.writerow(row)
     body = "<h1>Balatro Horizons</h1><p>Autonomous outcomes with coverage and complete attempt costs. Human-assisted branches are excluded.</p>"
     body += "<pre>" + html.escape(json.dumps(report, indent=2)) + "</pre>"
     (output / "index.html").write_text(

@@ -6,6 +6,7 @@ import uuid
 from collections import Counter, defaultdict
 
 from balatro_horizons.cost_limits import require_capped_defaults
+from balatro_horizons.harness.terminals import GAME_TERMINAL_OUTCOMES
 from balatro_horizons.storage.journal import atomic_json, digest
 
 VALID = {"WIN", "GAME_LOSS", "AGENT_PROTOCOL_FAILURE", "AGENT_ABORT", "BUDGET_EXHAUSTED"}
@@ -78,6 +79,8 @@ def summarize(plan, attempts):
         costs = 0.0
         status = Counter()
         clusters = defaultdict(list)
+        # Valid outcomes that are not engine terminals; they count in the denominator, labelled.
+        non_game = Counter()
         for slot in slots:
             runs = sorted(by_slot[slot["slot_id"]], key=lambda r: r["manifest"]["created_at"])
             all_attempts.extend(runs)
@@ -87,15 +90,21 @@ def summarize(plan, attempts):
                 (r for r in runs if r["summary"] and r["summary"]["outcome"] in VALID), None
             )
             if valid:
-                win = int(valid["summary"]["outcome"] == "WIN")
+                outcome = valid["summary"]["outcome"]
+                if outcome not in GAME_TERMINAL_OUTCOMES:
+                    non_game[outcome] += 1
+                win = int(outcome == "WIN")
                 selected.append({**slot, "win": win, "episode_id": valid["episode_id"]})
                 clusters[slot["seed_group"]].append(win)
         n, v, w = len(slots), len(selected), sum(s["win"] for s in selected)
+        ended = sum(non_game.values())
         result[agent] = {
             "planned": n,
             "attempts": len(all_attempts),
             "valid": v,
             "wins": w,
+            "game_losses": v - w - ended,
+            "non_game_endings": dict(non_game),
             "unresolved": n - v,
             "win_rate": w / v if v else None,
             "coverage": v / n if n else None,
