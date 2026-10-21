@@ -1,3 +1,4 @@
+import csv
 import json
 import uuid
 
@@ -5,11 +6,13 @@ import pytest
 from test_boundary import project
 
 from balatro_horizons.config import Limits, ModelConfig
-from balatro_horizons.evaluation.batches import cluster_interval, summarize
-from balatro_horizons.evaluation.reports import scan
+from balatro_horizons.evaluation.batches import cluster_interval, plan_batch, summarize
+from balatro_horizons.evaluation.reports import report_batch, scan
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.context.build import context
 from balatro_horizons.harness.transport import DirectProvider, ProtocolFailure
+from balatro_horizons.review.service import ReviewService
+from balatro_horizons.service import RunService
 
 
 def model(provider):
@@ -117,6 +120,38 @@ def test_AT19_mixed_status_coverage_and_all_attempt_cost():
     assert r["missing_outcome_bounds"] == [0.2, 0.6] and r["win_rate"] == pytest.approx(1 / 3)
     assert r["all_attempt_cost_usd"] == 6
     assert summarize(plan, [])["agents"]["a"]["win_rate"] is None
+
+
+def test_game_losses_and_non_game_endings_are_separate_in_the_denominator():
+    outcomes = ["WIN", "GAME_LOSS", "BUDGET_EXHAUSTED", "AGENT_PROTOCOL_FAILURE", "AGENT_ABORT"]
+    plan = {
+        "batch_id": "batch",
+        "slots": [
+            {"slot_id": str(i), "seed_group": str(i), "agent": "a", "replicate": 0}
+            for i in range(len(outcomes) + 1)
+        ],
+    }
+    attempts = [attempt(str(i), outcome, str(i)) for i, outcome in enumerate(outcomes)]
+    attempts.append(attempt(str(len(outcomes)), "INFRASTRUCTURE_FAILURE", "9"))
+    r = summarize(plan, attempts)["agents"]["a"]
+    assert (r["valid"], r["wins"], r["game_losses"], r["unresolved"]) == (5, 1, 1, 1)
+    assert r["non_game_endings"] == {
+        "BUDGET_EXHAUSTED": 1, "AGENT_PROTOCOL_FAILURE": 1, "AGENT_ABORT": 1,
+    }
+    assert r["wins"] + r["game_losses"] + sum(r["non_game_endings"].values()) == r["valid"]
+    # The binary outcome definition is unchanged; the denominator is now labelled.
+    assert r["win_rate"] == pytest.approx(1 / 5)
+
+
+def test_report_table_has_game_loss_and_non_game_ending_columns(store, config, tmp_path):
+    plan = plan_batch(store, config, {"seeds": ["S0", "S1"]}, ["heuristic"], replicates=1)
+    RunService(store, ReviewService(store)).run_batch(config, plan["batch_id"], offline=True)
+    report = report_batch(store, plan["batch_id"], tmp_path / "report")["agents"]["heuristic"]
+    with (tmp_path / "report" / "report.csv").open() as stream:
+        (row,) = csv.DictReader(stream)
+    assert int(row["game_losses"]) == report["game_losses"]
+    assert int(row["non_game_endings"]) == sum(report["non_game_endings"].values())
+    assert int(row["wins"]) + int(row["game_losses"]) + int(row["non_game_endings"]) == int(row["valid"])
 
 
 def test_AT20_bootstrap_uses_seed_clusters():
