@@ -132,7 +132,7 @@ export default function App() {
     if (window.location.hash !== hash) window.history.pushState(null, "", hash);
   }
   async function restored(episodeId: string) {
-    setWatch(true); setNotice("Continuation created. Watching its replay and progress.");
+    setNotice("Continuation created.");
     navigate({ tab: "explore", episodeId });
     try { setEpisodes(await listEpisodes()); } catch (caught) { setError(String(caught)); }
   }
