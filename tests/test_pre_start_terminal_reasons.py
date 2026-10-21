@@ -39,7 +39,8 @@ def test_unnamed_pre_start_failure_is_harness_unexpected_error(store, config, mo
     diagnostic = json.loads((store.episode_path(eid, True) / "failure-diagnostic.json").read_text())
     assert diagnostic["exception_type"] == type(error).__name__
     exported = json.dumps(episode_export(store, eid))
-    assert type(error).__name__ not in exported and str(error) not in exported
+    assert type(error).__name__ not in exported
+    assert not str(error) or str(error) not in exported
 
 
 def test_named_pre_start_code_is_kept(store, config, monkeypatch):

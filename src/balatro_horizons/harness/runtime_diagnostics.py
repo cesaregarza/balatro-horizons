@@ -15,28 +15,32 @@ from balatro_horizons.harness.terminals import UNEXPECTED_ERROR_REASON
 from balatro_horizons.harness.transport import ProviderFailure
 
 
+def record_failure(store, eid, error):
+    """Keep failure diagnostics to the type, allowlisted details, and stack locations."""
+    frames = traceback.extract_tb(error.__traceback__)
+    try:
+        store.private_json(
+            eid,
+            "failure-diagnostic.json",
+            {
+                "exception_type": type(error).__name__,
+                "diagnostic": error.public() if isinstance(error, HarnessFailure) else None,
+                "frames": [
+                    {"file": frame.filename, "line": frame.lineno, "function": frame.name}
+                    for frame in frames
+                ],
+            },
+        )
+    except OSError:
+        # A diagnostic write must not mask the original runtime failure.
+        pass
+
+
 class RuntimeDiagnosticsMixin:
     """Keep private engine details out of the public episode journal."""
 
     def _record_failure(self, error):
-        # Keep failure diagnostics to the type, allowlisted details, and stack locations.
-        frames = traceback.extract_tb(error.__traceback__)
-        try:
-            self.store.private_json(
-                self.eid,
-                "failure-diagnostic.json",
-                {
-                    "exception_type": type(error).__name__,
-                    "diagnostic": error.public() if isinstance(error, HarnessFailure) else None,
-                    "frames": [
-                        {"file": frame.filename, "line": frame.lineno, "function": frame.name}
-                        for frame in frames
-                    ],
-                },
-            )
-        except OSError:
-            # A diagnostic write must not mask the original runtime failure.
-            pass
+        record_failure(self.store, self.eid, error)
 
     @staticmethod
     def _native_code(error, fallback):

@@ -47,6 +47,8 @@ and stored summaries remain unchanged; parent rows are never silently duplicated
 If execution has started but the runner cannot write its terminal, the service
 records `EXECUTION_TERMINAL_INCOMPLETE`. Decision exports refuse that same code
 before review exposure: fallback zeroes are not reconstructed accounting totals.
+An unclassified exception, before or during play, ends as `HARNESS_UNEXPECTED_ERROR`;
+its class and stack stay in the private failure diagnostic.
 A download reads the current server snapshot, which may be newer than the last
 browser poll; its source journal head identifies the exported snapshot.
 Action labels come from the single packaged `review/action_descriptors.json`,

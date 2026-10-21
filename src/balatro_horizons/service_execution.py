@@ -12,7 +12,12 @@ from balatro_horizons.config import Config
 from balatro_horizons.game.contract import GameSession
 from balatro_horizons.harness.contract import Policy, ProviderPolicy
 from balatro_horizons.harness.money import Spending
-from balatro_horizons.harness.terminals import INCOMPLETE_TERMINAL_REASON
+from balatro_horizons.harness.runtime_diagnostics import record_failure
+from balatro_horizons.harness.terminals import (
+    INCOMPLETE_TERMINAL_REASON,
+    TERMINAL_CODE,
+    UNEXPECTED_ERROR_REASON,
+)
 from balatro_horizons.storage.journal import Store, digest
 
 
@@ -154,7 +159,10 @@ def _finish_failed_execution(
             owner.error = "NATIVE_CLEANUP_FAILED"
     if owner.store.summary(plan.eid):
         return
-    reason = str(error) if str(error).isupper() else type(error).__name__
+    reason = str(error)
+    if not TERMINAL_CODE.fullmatch(reason):
+        record_failure(owner.store, plan.eid, error)
+        reason = UNEXPECTED_ERROR_REASON
     if any(event["type"] == "episode_start" for event in owner.store.events(plan.eid)):
         # Zeroes are placeholders, not reconstructed action or spend totals.
         reason = INCOMPLETE_TERMINAL_REASON
