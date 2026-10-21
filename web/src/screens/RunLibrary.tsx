@@ -91,7 +91,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
               if (agent === "human") onHumanStart();
             }).finally(() => { startPending.current = false; });
           }}>Start {offline ? "test episode" : "native run"} <span>↗</span></button>
-          <button disabled={!status?.running} aria-label={status?.running ? "Stop active worker" : "Stop worker (idle)"} onClick={() => action(async () => { await stopRun(); setNotice("Stop requested. Any in-flight action will be recorded."); })}>Stop {status?.running ? "active worker" : "worker (idle)"}</button>
+          <button disabled={busy} onClick={() => action(async () => { await stopRun(); setNotice("Stop requested. Any in-flight action will be recorded."); })}>Stop worker</button>
         </div>
         {!offline && <RuntimeConnection connection={connection} onRefresh={refreshConnection} />}
       </section>

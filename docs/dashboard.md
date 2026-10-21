@@ -79,7 +79,8 @@ ceilings. Per-run model settings are validated against the configured model and
 applied to a copy; only **Save model defaults** writes persistent defaults. A new
 run stays in the library until opened, so launching exposes nothing beyond it; a
 continuation opens its explorer. Worker status is explicitly revealed;
-active/recent cards open runs, and idle Stop controls are disabled.
+active/recent cards open runs. Stop stays enabled without worker status: stopping
+while idle is harmless, records no exposure, and every launch clears it.
 
 Deck and **Stake (difficulty)** are independent selectors covering the 15 standard
 decks and eight cumulative stakes. They start from the configured defaults, stay
