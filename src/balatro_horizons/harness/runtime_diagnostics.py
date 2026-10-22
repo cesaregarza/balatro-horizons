@@ -11,31 +11,36 @@ from balatro_horizons.game.contract import (
 from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.harness.money import BudgetExhausted
 from balatro_horizons.harness.provider import OperatorAbort
+from balatro_horizons.harness.terminals import UNEXPECTED_ERROR_REASON
 from balatro_horizons.harness.transport import ProviderFailure
+
+
+def record_failure(store, eid, error):
+    """Keep failure diagnostics to the type, allowlisted details, and stack locations."""
+    frames = traceback.extract_tb(error.__traceback__)
+    try:
+        store.private_json(
+            eid,
+            "failure-diagnostic.json",
+            {
+                "exception_type": type(error).__name__,
+                "diagnostic": error.public() if isinstance(error, HarnessFailure) else None,
+                "frames": [
+                    {"file": frame.filename, "line": frame.lineno, "function": frame.name}
+                    for frame in frames
+                ],
+            },
+        )
+    except OSError:
+        # A diagnostic write must not mask the original runtime failure.
+        pass
 
 
 class RuntimeDiagnosticsMixin:
     """Keep private engine details out of the public episode journal."""
 
     def _record_failure(self, error):
-        # Keep failure diagnostics to the type, allowlisted details, and stack locations.
-        frames = traceback.extract_tb(error.__traceback__)
-        try:
-            self.store.private_json(
-                self.eid,
-                "failure-diagnostic.json",
-                {
-                    "exception_type": type(error).__name__,
-                    "diagnostic": error.public() if isinstance(error, HarnessFailure) else None,
-                    "frames": [
-                        {"file": frame.filename, "line": frame.lineno, "function": frame.name}
-                        for frame in frames
-                    ],
-                },
-            )
-        except OSError:
-            # A diagnostic write must not mask the original runtime failure.
-            pass
+        record_failure(self.store, self.eid, error)
 
     @staticmethod
     def _native_code(error, fallback):
@@ -79,6 +84,6 @@ class RuntimeDiagnosticsMixin:
             self.log("harness_failure", error.public())
             self._record_failure(error)
             return "INFRASTRUCTURE_FAILURE", error.code, None
-        # Exception text may contain private native state; only the type crosses.
+        # Exception text may contain private native state; the type stays private too.
         self._record_failure(error)
-        return "INFRASTRUCTURE_FAILURE", type(error).__name__, None
+        return "INFRASTRUCTURE_FAILURE", UNEXPECTED_ERROR_REASON, None

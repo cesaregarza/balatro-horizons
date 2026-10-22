@@ -22,6 +22,8 @@ from balatro_horizons.evidence.reuse import revision_sources
 from balatro_horizons.storage.journal import digest
 
 PREFIX = "src/balatro_horizons/"
+# A reviewed source whose service_execution.py is the #57 accepted version.
+CALIBRATION_TARGET = "27d96f060be84dc77e1ca2d3900fb5887106463f"
 
 
 def test_every_fingerprinted_file_has_an_explicit_comparison_or_exclusion():
@@ -60,15 +62,20 @@ def test_original_catalogue_targets_are_exact_restore_release_module_asts():
 
 
 def test_calibration_migration_is_one_way_and_never_normalizes_current_regression():
-    current = source_files(ROOT)
-    older = deepcopy(current)
+    # The #57 upgrade targets one reviewed module version, not whatever is current.
+    commit, target = revision_sources(ROOT, CALIBRATION_TARGET)
     path = PREFIX + "service_execution.py"
+    assert commit == CALIBRATION_TARGET
+    assert execution_manifest(target)[path] == MODULE_UPGRADES["service_execution.py"][1]
+    older = deepcopy(target)
     assert b"calibration=calibration," in older[path]
     older[path] = older[path].replace(
         b"calibration=calibration,", b"calibration=calibration or bool(request.resume),",
     )
-    assert execution_manifest(older, historical=True) == execution_manifest(current)
-    assert execution_manifest(older) != execution_manifest(current, historical=True)
+    assert execution_manifest(older, historical=True) == execution_manifest(target)
+    assert execution_manifest(older) != execution_manifest(target, historical=True)
+    # Later edits are never inherited: #57-era sources do not reach the current runtime.
+    assert execution_manifest(older, historical=True) != execution_manifest(source_files(ROOT))
 
 
 def test_synthetic_identity_includes_fake_game_without_changing_native_contract():

@@ -169,6 +169,23 @@ operator consent, release/environment and single-replay gates still apply.
 Workspace routing is backend authentication like the API key, not frozen
 model-facing configuration; the value is never written into the protocol.
 
+### Named unexpected terminals: no migration
+
+The named-terminal change edits three execution modules:
+`harness/runtime_diagnostics.py`, `harness/terminals.py` and
+`service_execution.py`. Unclassified exceptions now end as
+`HARNESS_UNEXPECTED_ERROR` instead of a bare class name. No upgrade group admits
+older sources across it. Checkpoints from `0aec480`, the first `tools_v8.5`
+source, are refused with `RESTORE_SOURCE_INCOMPATIBLE`. Their recorded
+`implementation_hash` is `3af9c75c…`: `implementation_fingerprint()`, equal to
+`fingerprint_sources()` over the implementation files of that commit's Git
+(LF) bytes. A CRLF working tree computes `25b6055c…` over the same files, so
+a deployment must run from LF source to match.
+Every earlier deployed source uses `tools_v7` or `tools_v8`, which
+`read_protocol` already rejects as retired, so a migration would have no
+consumer. If a run was started on a deployment of `0aec480`, add a source-gated
+upgrade group from that exact fingerprint before relying on its Restore.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game
