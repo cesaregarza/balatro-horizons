@@ -14,6 +14,12 @@
   the header parser. Keep explicit HTTP 408 rejection retryable, but drop automatic
   409 retries because unclassified conflicts need diagnosis. No paid call or native
   launch is included; native evidence is reused without activation.
+- Freeze `tools_v8.5` and retire `tools_v8`. The runtime changes transcript
+  retention, summary requests, provider strictness and retries, so `tools_v8`
+  runs form a separate cohort: they are refused for execution like v7 and are
+  no longer reported as the current harness.
+- Reject Claude content blocks that start after the final `message_delta`; a
+  late tool block no longer assembles as a well-formed response.
 
 ## 2026-10-09 — Shared decision transcripts and native provider runtimes
 
@@ -1127,7 +1133,12 @@ deployment instructions for selecting this retired interface were removed.
 V7 used `configs/prompts/harness.txt`; its 2026-09-20 source is preserved at
 `5ca5f6e` (PR #34). Existing runs keep their frozen template and protocol.
 
-### tools_v8 — current
+### tools_v8 — retired
+
+V8 runs recorded before the immutable-transcript provider runtimes keep their
+frozen template and protocol; they need their retained executor.
+
+### tools_v8.5 — current
 
 The authoritative current prompt is [`configs/prompts/harness.txt`](configs/prompts/harness.txt).
 It uses integer references, co-located current offer quotes and an exact duplicate

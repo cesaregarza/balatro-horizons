@@ -1,6 +1,6 @@
 # Harness
 
-`tools_v8` is the single active interface. Before its first decision, a run freezes the prompt,
+`tools_v8.5` is the single active interface. Before its first decision, a run freezes the prompt,
 selected deck/stake, rules guide, skills catalog, provider capability, memory policy,
 model/pricing settings and limits.
 Immutable `agent-protocol.json` binds checkpoints and ordinary branches to that snapshot.
@@ -11,10 +11,12 @@ the accepted executor separately, preserving historical source identity, model, 
 Prior calls and retained reservations count across every restoration attempt.
 
 New runs record `context_policy: append_only_decision_v1` and a provider-native
-wire policy (`openai_responses_v1` or `anthropic_messages_v1`). This changes
-within-decision retention, not the `tools_v8` game interface. Older context
-policies require their retained executor; native evidence reuse does not make
-their model conversation compatible with this release.
+wire policy (`openai_responses_v1` or `anthropic_messages_v1`). Because this
+changes within-decision retention and the provider runtimes, the interface is
+`tools_v8.5`. `tools_v8` runs are retired for execution, as v7 was: they fail
+with `AGENT_PROTOCOL_INTERFACE_RETIRED`, need their retained executor, and are
+never shown as the current harness. Native evidence reuse does not make their
+model conversation compatible with this release.
 
 ## What the model receives
 
@@ -225,7 +227,7 @@ The presets use the direct Messages API, standard global capacity
 `medium`. These exact model IDs reject `temperature` and manual `thinking_budget`
 settings locally. Older/custom identifiers retain manual thinking, whose budget
 must be smaller than the output ceiling; undeclared adaptive effort is refused.
-The shared output ceiling stays 32,768 and the harness stays `tools_v8`.
+The shared output ceiling stays 32,768 and the harness stays `tools_v8.5`.
 
 Standard global API USD/million, verified 2026-10-08:
 
