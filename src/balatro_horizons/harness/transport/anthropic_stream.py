@@ -17,6 +17,8 @@ class MessageStream:
         self.open_blocks = set()
         self.json_fragments = {}
         self.final_usage = False
+        # The first message_delta ends the content phase; blocks precede it on the wire.
+        self.content_closed = False
         self.stopped = False
 
     def assemble(self, stream):
@@ -66,7 +68,7 @@ class MessageStream:
 
     def _block_start(self, event):
         index, block = event.get("index"), event.get("content_block")
-        if (type(index) is not int or index != len(self.message["content"])
+        if (self.content_closed or type(index) is not int or index != len(self.message["content"])
                 or not isinstance(block, dict) or not isinstance(block.get("type"), str)):
             raise ProviderFailure("PROVIDER_STREAM_INVALID")
         self.message["content"].append(deepcopy(block))
@@ -122,6 +124,7 @@ class MessageStream:
         if (self.open_blocks or not isinstance(delta, dict)
                 or set(delta) & {"content", "usage", "id", "type", "role", TOOL_INPUT_ERROR}):
             raise ProviderFailure("PROVIDER_STREAM_INVALID")
+        self.content_closed = True
         self.message.update(deepcopy(delta))
         if isinstance(usage, dict):
             self.message["usage"].update(deepcopy(usage))
