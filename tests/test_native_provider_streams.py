@@ -240,3 +240,54 @@ def test_empty_claude_response_feedback_uses_a_legal_user_message():
                                                   "context_update": {}}}])
     assert all(message["role"] == "user" for message in body["messages"])
     assert "tool_use_id" not in json.dumps(body["messages"])
+
+
+def _claude_events_with_late_tool(*, fragmented):
+    """Move the final message_delta before the tool block; the docs order it after."""
+    events = stream_events("anthropic")
+    final = events.pop(-2)
+    tool = next(i for i, e in enumerate(events) if e["type"] == "content_block_start"
+                and e["content_block"]["type"] == "tool_use")
+    if not fragmented:
+        events[tool + 1:tool + 3] = [{"type": "content_block_delta", "index": events[tool]["index"],
+                                      "delta": {"type": "input_json_delta",
+                                                "partial_json": '{"expression":"1+1"}'}}]
+    events.insert(tool, final)
+    return events
+
+
+@pytest.mark.parametrize("fragmented", [False, True])
+def test_claude_tool_block_after_final_message_delta_is_rejected(fragmented, monkeypatch):
+    policy, body = connected("anthropic", monkeypatch, _claude_events_with_late_tool(fragmented=fragmented))
+    with pytest.raises(ProviderFailure, match="PROVIDER_STREAM_INVALID") as failure:
+        policy.send(body)
+    assert failure.value.retryable is False
+    assert policy.last_tool_call is None and policy.last_provider_turn is None
+
+
+def _claude_stream_controls():
+    events = stream_events("anthropic")
+    stop = max(i for i, e in enumerate(events) if e["type"] == "content_block_stop")
+    open_at_final = [*events[:stop], events[-2], *events[stop:-2], events[-1]]
+    text = next(e["index"] for e in events if e["type"] == "content_block_start"
+                and e["content_block"]["type"] == "text")
+    text_stop = next(i for i, e in enumerate(events)
+                     if e["type"] == "content_block_stop" and e["index"] == text)
+    late_delta = [*events[:text_stop + 1],
+                  {"type": "content_block_delta", "index": text, "delta": {"type": "text_delta", "text": "!"}},
+                  *events[text_stop + 1:]]
+    return [
+        (events[:-1], "PROVIDER_STREAM_INCOMPLETE"),
+        (open_at_final, "PROVIDER_STREAM_INVALID"),
+        (late_delta, "PROVIDER_STREAM_INVALID"),
+    ]
+
+
+@pytest.mark.parametrize("case", range(3), ids=["missing_terminal", "open_block_at_final_delta",
+                                                 "delta_after_block_closure"])
+def test_claude_stream_order_controls_stay_rejected(case, monkeypatch):
+    events, code = _claude_stream_controls()[case]
+    policy, body = connected("anthropic", monkeypatch, events)
+    with pytest.raises(ProviderFailure, match=code):
+        policy.send(body)
+    assert policy.last_tool_call is None
