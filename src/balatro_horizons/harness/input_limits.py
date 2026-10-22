@@ -2,7 +2,6 @@
 
 import json
 import os
-from copy import deepcopy
 
 import httpx
 
@@ -31,24 +30,9 @@ def check_request_bytes(body, limits):
 
 
 def count_payload(body, provider):
-    # Only counting-endpoint fields; input items/tools are passed unchanged.
-    fields = (
-        (
-            "model",
-            "input",
-            "instructions",
-            "tools",
-            "tool_choice",
-            "parallel_tool_calls",
-            "text",
-            "truncation",
-            "previous_response_id",
-            "conversation",
-        )
-        if provider == "openai"
-        else ("model", "messages", "system", "tools", "tool_choice", "thinking", "output_config")
-    )
-    return deepcopy({k: body[k] for k in fields if k in body})
+    from balatro_horizons.harness.transport import runtime_type
+
+    return runtime_type(provider).count_payload(body)
 
 
 class InputCounter:
@@ -57,28 +41,13 @@ class InputCounter:
 
     def check(self, policy, body):
         size = check_request_bytes(body, policy.limits)
-        payload = count_payload(body, policy.model.provider)
+        payload = policy.count_payload(body)
         key = digest(payload)
         if key != self._key:
             credential = os.environ.get(policy.key_name)
             if not credential:
                 raise HarnessFailure("TOKEN_COUNT_UNAVAILABLE", stage="input_token_count")
-            if policy.model.provider == "openai":
-                url = "https://api.openai.com/v1/responses/input_tokens"
-            else:
-                url = "https://api.anthropic.com/v1/messages/count_tokens"
-            try:
-                response = policy.client.post(
-                    url, headers=policy.spec.headers(credential), json=payload
-                )
-            except httpx.TransportError:
-                raise HarnessFailure("TOKEN_COUNT_UNAVAILABLE", stage="input_token_count") from None
-            if response.status_code != 200:
-                raise HarnessFailure(
-                    "TOKEN_COUNT_UNAVAILABLE",
-                    stage="input_token_count",
-                    http_status=response.status_code,
-                )
+            response = _count_response(policy, credential, payload)
             try:
                 result = response.json()
                 tokens = result.get("input_tokens") if isinstance(result, dict) else None
@@ -105,3 +74,31 @@ class InputCounter:
             "request_bytes": size,
             "byte_limit": policy.limits.max_request_bytes,
         }
+
+
+def _count_response(policy, credential, payload):
+    from balatro_horizons.harness.transport.errors import (
+        InputCountFailure,
+        ProviderFailure,
+        check_status,
+    )
+
+    policy._check_stop()
+    try:
+        response = policy.client.post(
+            policy.count_endpoint, headers=policy.headers(credential), json=payload
+        )
+    except httpx.TransportError:
+        # Counting is free and has no generation side effect, including a lost response.
+        raise InputCountFailure(retryable=True) from None
+    policy._check_stop()
+    try:
+        check_status(response, policy.model.provider)
+    except ProviderFailure as error:
+        raise InputCountFailure(
+            retryable=error.retryable, retry_after=error.retry_after,
+            http_status=response.status_code,
+        ) from None
+    if response.status_code != 200:
+        raise InputCountFailure(http_status=response.status_code)
+    return response

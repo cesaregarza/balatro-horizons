@@ -70,6 +70,7 @@ def compact_context(content):
     """
     view = deepcopy(content)
     observation = view["observation"]
+    observation.pop("retrieval_context", None)
     _inline_quotes(observation, view.get("current_costs", {}))
     _deduplicate_receipt(observation, view.get("working_memory") or {})
     return view

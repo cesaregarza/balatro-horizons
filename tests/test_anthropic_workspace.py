@@ -4,6 +4,7 @@ import json
 
 import httpx
 import pytest
+from provider_transport import stream_response
 from test_claude_support import claude, context
 from test_provider_continuations import model
 
@@ -30,7 +31,7 @@ def test_count_and_generation_share_provider_headers_without_body_leaks(
         requests.append(request)
         if request.url.path.endswith(("/count_tokens", "/input_tokens")):
             return httpx.Response(200, json={"input_tokens": 42})
-        return httpx.Response(200, json={"status": "completed", "content": [], "output": []})
+        return stream_response({"status": "completed", "content": [], "output": []}, provider)
 
     policy = DirectProvider(selected, Limits(), httpx.Client(transport=httpx.MockTransport(receive)))
     body = policy.request(context(), [])

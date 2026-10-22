@@ -129,7 +129,7 @@ def test_notebook_replay_rejects_missing_revisions_and_malformed_mutations():
         book.apply(change)
 
 
-def test_helper_write_is_visible_immediately_and_survives_pruning_and_actions(store, config):
+def test_helper_write_is_visible_immediately_and_survives_helpers_and_actions(store, config):
     policy = WorkingScript(
         note("scoring/pair", "one observed result"),
         *[{"kind": "arithmetic", "expression": "1+1"}] * 4,
@@ -142,9 +142,8 @@ def test_helper_write_is_visible_immediately_and_survives_pruning_and_actions(st
     for ctx in policy.contexts[1:]:
         assert ctx["run_notebook"]["entries"] == {"scoring/pair": "one observed result"}
         assert "memory" not in ctx["observation"]
-    assert policy.contexts[5]["observation"]["retrieval_context"]["cleared"][0]["reload"] == {
-        "source": "run_notebook", "mutation_already_recorded": True,
-    }
+    assert policy.contexts[5]["observation"]["retrieval_context"]["cleared"] == []
+    assert len(policy.exchanges[5]) == 5
     events = store.events(result["episode_id"])
     observations = [event for event in events if event["type"] == "observation"]
     assert observations[0]["payload"]["memory"] == ""
@@ -490,18 +489,29 @@ def test_provider_parity_dynamic_notes_and_bounded_helper_feedback(store, monkey
 
     assert all(stable_prefix(body) == stable_prefix(requests[0]) for body in requests)
     for index, body in enumerate(requests[1:], start=1):
+        messages = body.get("input", body.get("messages", []))
         user = next(
-            message for message in body.get("input", body.get("messages", []))
+            message for message in messages
             if message.get("role") == "user"
         )
         view = json.loads(user["content"])
         expected = "updated with action" if index == 3 else "keep visible"
-        assert view["run_notebook"]["entries"] == {"plan": expected}
         if index == 3:
+            assert view["run_notebook"]["entries"] == {"plan": expected}
             assert view["working_memory"]["frames"][0]["action"]["type"] == "select_blind"
-    second = requests[1].get("input", requests[1].get("messages"))
-    view = json.loads(next(message for message in second if message.get("role") == "user")["content"])
-    assert "calculate" not in view["permitted_tools"]
+        else:
+            previous = requests[index - 1].get("input", requests[index - 1].get("messages"))
+            assert messages[:len(previous)] == previous
+            assert view["run_notebook"]["entries"] == {}  # The initial snapshot never changes.
+            latest = (messages[-1]["output"] if provider == "openai"
+                      else messages[-1]["content"][0]["content"])
+            update = json.loads(latest)["context_update"]
+            if index == 1:
+                assert update["run_notebook"]["entries"] == {"plan": expected}
+                assert "calculate" not in update["permitted_tools"]
+                assert update["helper_status"]["remaining"] == 0
+            else:
+                assert set(update) == {"as_of_provider_attempt", "remaining_budget"}
     assert "Helper allowance exhausted" in json.dumps(requests[2])
 
 
@@ -528,7 +538,7 @@ def test_context_budget_prunes_history_before_live_helpers_and_notebook(store, c
     assert memory["frames"][0]["decision_id"] == 2  # Source never mutated.
     helpers = [{"operation": {"kind": "arithmetic", "expression": "1+1"}, "result": {"result": "2"}}] * 3
     ctx, _ = decision_context(observation, helpers, working_memory=memory)
-    assert ctx["notebook_maintenance"]["next_helper_may_clear_older_results"]
+    assert "next_helper_may_clear_older_results" not in ctx["notebook_maintenance"]
 
 
 def test_branch_restores_exact_predecision_context_and_rejects_tampering(store, config):

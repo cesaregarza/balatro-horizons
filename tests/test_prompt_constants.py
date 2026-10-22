@@ -18,7 +18,7 @@ def test_prompt_constants_are_rendered_from_config():
     template = (ROOT / "configs/prompts/harness.txt").read_text()
     validate_prompt_template(template)
     rendered = render_prompt(template.encode()).decode()
-    assert f"latest {RETAINED_HELPER_RESULTS} helper" in rendered
+    assert f"{RETAINED_HELPER_RESULTS} helper receipts per completed decision" in rendered
     assert f"({NOTEBOOK_KEY_MIN}-{NOTEBOOK_KEY_MAX} characters" in rendered
     assert "{retained_helper_results}" not in rendered
 

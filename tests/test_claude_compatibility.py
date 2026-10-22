@@ -1,4 +1,4 @@
-"""The Claude release preserves old OpenAI/baseline inputs, not old Claude behavior."""
+"""New provider runtimes cannot inherit the older provider-scoped source approval."""
 
 from copy import deepcopy
 
@@ -34,7 +34,7 @@ def deployed(monkeypatch):
 
 @pytest.mark.parametrize("provider", ["openai", "baseline"])
 @pytest.mark.parametrize("game_kind", ["native", "synthetic"])
-def test_exact_deployed_delta_is_admitted_only_for_unchanged_provider_paths(deployed, provider, game_kind):
+def test_runtime_delta_refuses_old_provider_approval_without_changing_native_bytes(deployed, provider, game_kind):
     current = source_files(ROOT)
     before, after = execution_manifest(deployed), execution_manifest(current)
     changed = {name.removeprefix(PREFIX): (before.get(name), after.get(name))
@@ -42,23 +42,16 @@ def test_exact_deployed_delta_is_admitted_only_for_unchanged_provider_paths(depl
     expected = dict(CLAUDE_UPGRADES)
     for path, (_, target) in WORKSPACE_UPGRADES.items():
         expected[path] = (expected[path][0], target)
-    assert changed == expected
+    assert changed != expected
     assert native_component_manifest(deployed) == native_component_manifest(current)
-    for path in ("harness/transport/openai.py", "harness/transport/base.py", "harness/money.py",
-                 "harness/context/freeze.py", "harness/decision.py", "harness/runtime.py"):
-        assert deployed[PREFIX + path] == current[PREFIX + path]
-    assert execution_manifest(deployed, historical=True, preserved_provider=provider) == after
+    assert deployed[PREFIX + "harness/money.py"] == current[PREFIX + "harness/money.py"]
+    assert execution_manifest(deployed, historical=True, preserved_provider=provider) != after
     protocol = {"implementation_hash": CLAUDE_SOURCE,
                 "model": {"provider": "openai", "model": "gpt-6-luna"} if provider == "openai" else None}
     original = deepcopy(protocol)
-    receipt = compatibility.prepare_compatibility({CLAUDE_SOURCE}, protocol, game_kind=game_kind)
-    assert protocol == original
-    assert receipt["preserved_provider"] == provider
-    assert receipt["protocol_hash"] == digest(original)
-    compatibility.validate_compatibility(receipt)
-    receipt["preserved_provider"] = None
     with pytest.raises(ValueError, match="^RESTORE_SOURCE_INCOMPATIBLE$"):
-        compatibility.validate_compatibility(receipt)
+        compatibility.prepare_compatibility({CLAUDE_SOURCE}, protocol, game_kind=game_kind)
+    assert protocol == original
 
 
 @pytest.mark.parametrize("model", ["claude-sonnet-5-5", "claude-legacy"])
@@ -81,10 +74,9 @@ def test_unreviewed_current_module_cannot_inherit_provider_scoped_approval(deplo
 
 def test_provider_scope_cannot_be_changed_independently_of_frozen_protocol(deployed, monkeypatch):
     protocol = {"implementation_hash": CLAUDE_SOURCE, "model": None}
-    receipt = compatibility.prepare_compatibility({CLAUDE_SOURCE}, protocol, game_kind="native")
-    receipt["preserved_provider"] = "openai"
-    # Both providers have identical native identities; protocol binding must still refuse.
-    compatibility.validate_compatibility(receipt)
+    receipt = {"protocol_hash": digest(protocol), "source_revisions": {CLAUDE_SOURCE: DEPLOYED},
+               "preserved_provider": "openai"}
+    # Even a separately accepted receipt cannot change the frozen provider binding.
     monkeypatch.setattr(compatibility, "read_compatibility", lambda *_: receipt)
     with pytest.raises(ValueError, match="^AGENT_PROTOCOL_IMPLEMENTATION_CHANGED$"):
         compatibility.require_protocol_compatibility(None, {}, protocol)

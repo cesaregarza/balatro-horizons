@@ -1,5 +1,8 @@
 """Counting response for tests whose subject is the generation transport."""
 
+import json
+from copy import deepcopy
+
 import httpx
 
 from balatro_horizons.harness.baselines import Baseline
@@ -44,6 +47,42 @@ def with_input_count(receive):
     def wrapped(request):
         if request.url.path.endswith(("/input_tokens", "/count_tokens")):
             return httpx.Response(200, json={"input_tokens": 100})
-        return receive(request)
+        response = receive(request)
+        if response.status_code >= 400 or response.headers.get("content-type") == "text/event-stream":
+            return response
+        body = json.loads(request.content)
+        if body.get("stream"):
+            provider = "anthropic" if request.url.path == "/v1/messages" else "openai"
+            return stream_response(response.json(), provider)
+        return response
 
     return wrapped
+
+
+def stream_response(message, provider):
+    """Represent a mock native response with the provider's actual SSE envelope."""
+    message = deepcopy(message)
+    message.setdefault("id", "mock-response")
+    if provider == "openai":
+        message.setdefault("status", "completed")
+        message.setdefault("output", [])
+        events = [{"type": "response." + message["status"], "response": message}]
+    else:
+        blocks = message.pop("content", [])
+        reason = message.pop("stop_reason", "tool_use" if any(
+            block.get("type") == "tool_use" for block in blocks) else "end_turn")
+        usage = message.pop("usage", {})
+        message.update(type="message", role="assistant", content=[], stop_reason=None,
+                       usage={key: value for key, value in usage.items() if key != "output_tokens"})
+        events = [{"type": "message_start", "message": message}]
+        for index, block in enumerate(blocks):
+            events.extend([
+                {"type": "content_block_start", "index": index, "content_block": block},
+                {"type": "content_block_stop", "index": index},
+            ])
+        events.extend([
+            {"type": "message_delta", "delta": {"stop_reason": reason}, "usage": usage},
+            {"type": "message_stop"},
+        ])
+    content = "".join(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events)
+    return httpx.Response(200, content=content, headers={"content-type": "text/event-stream"})

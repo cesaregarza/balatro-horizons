@@ -3,6 +3,7 @@ from copy import deepcopy
 
 import httpx
 import pytest
+from provider_transport import stream_response
 from test_boundary import project
 from test_provider_continuations import model
 
@@ -25,7 +26,7 @@ def test_complete_helper_input_is_counted_unchanged_and_retry_reuses_count(provi
         calls.append((request.url.path, json.loads(request.content)))
         if request.url.path.endswith(("/input_tokens", "/count_tokens")):
             return httpx.Response(200, json={"input_tokens": 6000})
-        return httpx.Response(200, json={"status": "completed", "output": [], "content": []})
+        return stream_response({"status": "completed", "output": [], "content": []}, provider)
 
     limits = Limits()
     policy = DirectProvider(
@@ -94,7 +95,7 @@ def test_complete_helper_input_is_counted_unchanged_and_retry_reuses_count(provi
     assert measurement["input_tokens"] == 6000
     assert exchanges == before
     assert len(delivered) == 5
-    assert sum(e["result"].get("context_cleared") is True for e in delivered) == 2
+    assert not any(e["result"].get("context_cleared") is True for e in delivered)
     changed = deepcopy(body)
     changed["model"] += "-changed"
     policy.check_input(changed)

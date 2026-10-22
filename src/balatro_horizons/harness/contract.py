@@ -120,10 +120,15 @@ class Context(Mapping[str, Any]):
     # A current outcome is delivered even when it is null; older frozen bundles omit it.
     deliver_previous_action_outcome: bool = field(default=False, repr=False, compare=False)
     model_references: ModelReferences = field(default_factory=ModelReferences, repr=False, compare=False)
+    # The first provider-facing snapshot is immutable within a decision. Dynamic
+    # fields still serve local validation; follow-up updates travel in tool results.
+    provider_initial_content: str | None = field(default=None, repr=False, compare=False)
 
     def __iter__(self) -> Iterator[str]:
         for item in fields(self):
-            if item.name in ("deliver_previous_action_outcome", "model_references"):
+            if item.name in (
+                "deliver_previous_action_outcome", "model_references", "provider_initial_content",
+            ):
                 continue
             if item.name == "previous_action_outcome":
                 if not self.deliver_previous_action_outcome:
@@ -179,7 +184,7 @@ class ProviderPolicy(Policy, Protocol):
         ...
 
     def check_input(self, body: dict[str, Any]) -> dict[str, Any] | None:
-        """Measure the request without contacting a provider."""
+        """Admit the exact request, using a free provider token-count call if needed."""
         ...
 
     def send(self, body: dict[str, Any]) -> dict[str, Any]:
