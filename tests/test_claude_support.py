@@ -42,7 +42,7 @@ def test_adaptive_request_preserves_v8_tools_and_caches_only_stable_prefix(name,
     policy = DirectProvider(claude(name, reasoning_effort=effort), Limits())
     ctx = context()
     body = policy.request(ctx, [])
-    assert policy.interface == "tools_v8"
+    assert policy.interface == "tools_v8.5"
     assert body["model"] == claude(name).model
     assert body["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert body["output_config"] == {"effort": effort}

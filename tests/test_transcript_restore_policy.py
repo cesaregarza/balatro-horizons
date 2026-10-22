@@ -36,7 +36,7 @@ def test_hash_valid_old_or_wrong_policy_is_not_executable(store, config, monkeyp
 
 def test_new_frozen_policy_declares_all_results_but_same_completed_decision_memory(config):
     bundle = freeze_protocol(config, Baseline("heuristic"), {})
-    assert bundle["interface"] == "tools_v8"
+    assert bundle["interface"] == "tools_v8.5"
     assert bundle["context_policy"] == "append_only_decision_v1"
     assert bundle["memory_policy"]["retained_results"] == "all_within_decision"
     assert bundle["memory_policy"]["working_memory"]["helpers_per_decision"] == 3

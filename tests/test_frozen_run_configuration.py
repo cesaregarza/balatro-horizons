@@ -80,7 +80,7 @@ def test_request_prefix_stays_stable_across_actions_helpers_and_default_changes(
     assert fresh["rules_kernel"] != frozen["rules_kernel"]
     assert fresh["tool_catalog"] == frozen["tool_catalog"]
     assert fresh["prompt_utf8"] == frozen["prompt_utf8"]
-    assert fresh["interface"] == frozen["interface"] == "tools_v8"
+    assert fresh["interface"] == frozen["interface"] == "tools_v8.5"
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
