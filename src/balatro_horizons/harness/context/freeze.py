@@ -21,7 +21,7 @@ from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.harness.instructions import load_prompt
 from balatro_horizons.storage.journal import digest
 
-FROZEN_INTERFACE = "tools_v8"
+FROZEN_INTERFACE = "tools_v8.5"
 
 
 def episode_limits(config):

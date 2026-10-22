@@ -92,7 +92,7 @@ def baseline_observation(presented):
 
 
 class Baseline:
-    interface = "tools_v8"
+    interface = "tools_v8.5"
     actor = "agent"
     model = None
 
@@ -159,7 +159,7 @@ class Baseline:
 
 
 class ScriptedPolicy:
-    interface = "tools_v8"
+    interface = "tools_v8.5"
     name = "model"
     actor = "agent"
     model = None

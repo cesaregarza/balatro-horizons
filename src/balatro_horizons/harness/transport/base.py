@@ -18,7 +18,7 @@ from balatro_horizons.harness.transport.sse import events
 class Transport(ABC):
     """Common implementation of the runner's metered ProviderPolicy boundary."""
 
-    interface = "tools_v8"
+    interface = "tools_v8.5"
     name = "model"
     actor = "agent"
 
