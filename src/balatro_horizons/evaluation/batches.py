@@ -71,50 +71,28 @@ def summarize(plan, attempts):
             continue
         if manifest.get("batch_id") == plan["batch_id"]:
             by_slot[manifest["slot_id"]].append(attempt)
-    result = {}
-    for agent in sorted({s["agent"] for s in plan["slots"]}):
-        slots = [s for s in plan["slots"] if s["agent"] == agent]
-        selected = []
-        all_attempts = []
-        costs = 0.0
-        status = Counter()
-        clusters = defaultdict(list)
-        # Valid outcomes that are not engine terminals; they count in the denominator, labelled.
-        non_game = Counter()
-        for slot in slots:
-            runs = sorted(by_slot[slot["slot_id"]], key=lambda r: r["manifest"]["created_at"])
-            all_attempts.extend(runs)
-            costs += sum((r["summary"] or {}).get("cost_usd", 0) for r in runs)
-            status.update((r["summary"] or {}).get("outcome", "RUNNING") for r in runs)
-            valid = next(
-                (r for r in runs if r["summary"] and r["summary"]["outcome"] in VALID), None
-            )
-            if valid:
-                outcome = valid["summary"]["outcome"]
-                if outcome not in GAME_TERMINAL_OUTCOMES:
-                    non_game[outcome] += 1
-                win = int(outcome == "WIN")
-                selected.append({**slot, "win": win, "episode_id": valid["episode_id"]})
-                clusters[slot["seed_group"]].append(win)
-        n, v, w = len(slots), len(selected), sum(s["win"] for s in selected)
-        ended = sum(non_game.values())
-        result[agent] = {
-            "planned": n,
-            "attempts": len(all_attempts),
-            "valid": v,
-            "wins": w,
-            "game_losses": v - w - ended,
-            "non_game_endings": dict(non_game),
-            "unresolved": n - v,
-            "win_rate": w / v if v else None,
-            "coverage": v / n if n else None,
-            "missing_outcome_bounds": [w / n, (w + n - v) / n] if n else None,
-            "attempt_outcomes": dict(status),
-            "all_attempt_cost_usd": costs,
-            "seed_bootstrap_ci": cluster_interval(clusters),
-            "seed_bootstrap_diagnostic": cluster_diagnostic(clusters),
-            "selected_slots": selected,
-        }
+    result = {
+        agent: _agent_accounting([s for s in plan["slots"] if s["agent"] == agent], by_slot)
+        for agent in sorted({s["agent"] for s in plan["slots"]})
+    }
+    return {
+        "batch_id": plan["batch_id"],
+        "evidence_kinds": sorted(
+            {
+                r["manifest"].get("evidence_kind", "UNSPECIFIED")
+                for r in attempts
+                if r["manifest"].get("batch_id") == plan["batch_id"]
+            }
+        ),
+        "agents": result,
+        "paired_comparisons": _paired_comparisons(plan, result),
+        "bootstrap": {"unit": "seed", "draws": 10000, "analysis_rng": 0},
+        "branches_excluded": True,
+    }
+
+
+def _paired_comparisons(plan, result):
+    """Seed-paired win differences between every pair of agents."""
     comparisons = []
     agents = list(result)
     for i, left in enumerate(agents):
@@ -147,21 +125,56 @@ def summarize(plan, attempts):
                     "seed_bootstrap_diagnostic": cluster_diagnostic(differences),
                 }
             )
-    return {
-        "batch_id": plan["batch_id"],
-        "evidence_kinds": sorted(
-            {
-                r["manifest"].get("evidence_kind", "UNSPECIFIED")
-                for r in attempts
-                if r["manifest"].get("batch_id") == plan["batch_id"]
-            }
-        ),
-        "agents": result,
-        "paired_comparisons": comparisons,
-        "bootstrap": {"unit": "seed", "draws": 10000, "analysis_rng": 0},
-        "branches_excluded": True,
-    }
+    return comparisons
 
+
+def _agent_accounting(slots, by_slot):
+    """W/V over each slot's first valid outcome, beside complete attempt accounting."""
+    selected = []
+    all_attempts = []
+    costs = 0.0
+    status = Counter()
+    clusters = defaultdict(list)
+    # Valid outcomes that are not engine terminals; they count in the denominator, labelled.
+    non_game = Counter()
+    for slot in slots:
+        runs = sorted(by_slot[slot["slot_id"]], key=lambda r: r["manifest"]["created_at"])
+        all_attempts.extend(runs)
+        costs += sum((r["summary"] or {}).get("cost_usd", 0) for r in runs)
+        status.update((r["summary"] or {}).get("outcome", "RUNNING") for r in runs)
+        valid = next(
+            (r for r in runs if r["summary"] and r["summary"]["outcome"] in VALID), None
+        )
+        if valid:
+            outcome = valid["summary"]["outcome"]
+            if outcome not in GAME_TERMINAL_OUTCOMES:
+                non_game[outcome] += 1
+            win = int(outcome == "WIN")
+            selected.append({**slot, "win": win, "episode_id": valid["episode_id"]})
+            clusters[slot["seed_group"]].append(win)
+    n, v, w = len(slots), len(selected), sum(s["win"] for s in selected)
+    return {
+        "planned": n,
+        "attempts": len(all_attempts),
+        "valid": v,
+        "wins": w,
+        "game_losses": v - w - sum(non_game.values()),
+        "non_game_endings": dict(non_game),
+        # Every finished attempt that ended outside the game, including unresolved slots.
+        "non_game_attempts": {
+            outcome: count for outcome, count in status.items()
+            if outcome not in GAME_TERMINAL_OUTCOMES and outcome != "RUNNING"
+        },
+        "unresolved": n - v,
+        "win_rate": w / v if v else None,
+        "coverage": v / n if n else None,
+        "missing_outcome_bounds": [w / n, (w + n - v) / n] if n else None,
+        "attempt_outcomes": dict(status),
+        "all_attempt_cost_usd": costs,
+        "seed_bootstrap_ci": cluster_interval(clusters),
+        "seed_bootstrap_diagnostic": cluster_diagnostic(clusters),
+        "selected_slots": selected,
+    }
 
 def cluster_diagnostic(clusters):
     if len(clusters) < 2:

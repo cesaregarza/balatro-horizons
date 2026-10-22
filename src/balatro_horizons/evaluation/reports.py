@@ -40,6 +40,7 @@ def report_batch(store, bid, output):
         "wins",
         "game_losses",
         "non_game_endings",
+        "non_game_attempts",
         "unresolved",
         "win_rate",
         "coverage",
@@ -50,7 +51,8 @@ def report_batch(store, bid, output):
         writer.writeheader()
         for agent, data in report["agents"].items():
             row = {k: agent if k == "agent" else data[k] for k in fields}
-            row["non_game_endings"] = sum(data["non_game_endings"].values())
+            for key in ("non_game_endings", "non_game_attempts"):
+                row[key] = sum(data[key].values())
             writer.writerow(row)
     body = "<h1>Balatro Horizons</h1><p>Autonomous outcomes with coverage and complete attempt costs. Human-assisted branches are excluded.</p>"
     body += "<pre>" + html.escape(json.dumps(report, indent=2)) + "</pre>"
