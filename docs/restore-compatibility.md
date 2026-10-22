@@ -125,8 +125,8 @@ old-source root still refuses; an admitted Restore child can carry its proof int
 a branch. Tests compare immutable Git source, reject mutations on both sides and
 exercise legacy/new Restore, branch and budget children with mock providers.
 These are offline compatibility checks, not new native certification or evidence
-of model quality. `tools_v8` remains the only active interface; v7 and previously
-incompatible sources are not admitted by this migration.
+of model quality. `tools_v8.5` is now the only active interface; `tools_v8`, v7
+and previously incompatible sources are not admitted by this migration.
 
 ### Claude provider addition
 

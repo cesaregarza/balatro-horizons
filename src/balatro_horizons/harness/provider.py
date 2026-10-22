@@ -5,6 +5,7 @@ import uuid
 from balatro_horizons.harness.contract import ProviderPolicy
 from balatro_horizons.harness.money import BudgetExhausted, reservation_usd
 from balatro_horizons.harness.transport import ProviderFailure
+from balatro_horizons.harness.transport.errors import MAX_RETRY_DELAY_SECONDS, InputCountFailure
 
 
 class OperatorAbort(RuntimeError):
@@ -15,6 +16,8 @@ class ProviderRuntimeMixin:
     """Supply metered provider requests to the decision runtime."""
 
     def _provider(self, policy: ProviderPolicy, ctx, exchanges):
+        if bind_stop := getattr(policy, "bind_stop", None):
+            bind_stop(self.stop.is_set)
         body = policy.request(ctx, exchanges)
         self._check_provider_budget()
         self._log_provider_input(policy, body)
@@ -36,7 +39,19 @@ class ProviderRuntimeMixin:
             raise BudgetExhausted("PROVIDER_CALL_LIMIT")
 
     def _log_provider_input(self, policy, body):
-        input_measurement = policy.check_input(body)
+        for attempt in range(self.limits.max_transport_attempts):
+            self._check_provider_budget()
+            try:
+                input_measurement = policy.check_input(body)
+                break
+            except InputCountFailure as error:
+                if not error.retryable or attempt + 1 == self.limits.max_transport_attempts:
+                    raise
+                self._wait_provider_retry(error, attempt)
+            except ProviderFailure as error:
+                if error.code == "PROVIDER_CANCELLED":
+                    raise OperatorAbort from None
+                raise
         if input_measurement is not None:
             self.log(
                 "provider_input_check",
@@ -84,19 +99,39 @@ class ProviderRuntimeMixin:
             request_id=request_id,
         )
         if not error.retryable or attempt + 1 == self.limits.max_transport_attempts:
+            if error.code == "PROVIDER_CANCELLED":
+                raise OperatorAbort from None
             return False
-        if self.stop.wait(min(2**attempt, 4)):
-            raise OperatorAbort from None
+        self._wait_provider_retry(error, attempt)
         return True
+
+    def _wait_provider_retry(self, error, attempt):
+        delay = error.retry_after
+        if delay is None:
+            delay = min(2**attempt, 4)
+        if self.stop.wait(min(MAX_RETRY_DELAY_SECONDS, max(0, delay))):
+            raise OperatorAbort from None
 
     def _settle_provider_response(self, policy, response, reserve, request_id):
         actual = policy.usage_cost(response, reserve)
-        self.spending.settle(request_id, actual)
-        self.cost += actual - reserve
+        known = getattr(policy, "usage_known", lambda _response: True)(response)
+        if known:
+            self.spending.settle(request_id, actual)
+            self.cost += actual - reserve
+        else:
+            self.spending.retain(request_id)
+        payload = {"body": response, "cost_usd": actual} if known else {
+            "body": response, "usage_known": False, "reserved_usd": reserve,
+        }
         self.log(
             "provider_response",
-            {"body": response, "cost_usd": actual},
+            payload,
             actor="agent",
             request_id=request_id,
         )
+        if not known:
+            self.log("provider_error", {
+                "code": "PROVIDER_USAGE_UNKNOWN", "provider_code": None, "usage": "unknown",
+            }, request_id=request_id)
+            raise ProviderFailure("PROVIDER_USAGE_UNKNOWN")
         return policy.parse(response)

@@ -59,7 +59,7 @@ def harness(store, monkeypatch):
         calls.append(body)
         if failures:
             # These shared funding/Restore cases require a retryable unknown-usage failure.
-            raise httpx.WriteTimeout("synthetic transport failure")
+            raise httpx.ConnectTimeout("synthetic transport failure")
         message = next(item for item in body["input"] if item.get("role") == "user")
         context = json.loads(message["content"])
         operation = operations[0] if operations else model_choice(context)
@@ -366,16 +366,15 @@ def test_reservation_lock_is_process_scoped(tmp_path):
     lock = path.with_suffix(".lock")
     code = (
         "from pathlib import Path; import time; from balatro_horizons.storage.journal import locked; "
-        f"p=Path({str(lock)!r});\nwith locked(p): time.sleep(.3)"
+        f"p=Path({str(lock)!r});\nwith locked(p): print('held', flush=True); time.sleep(.3)"
     )
-    process = subprocess.Popen([sys.executable, "-c", code])
-    deadline = time.monotonic() + 2
-    while not lock.exists() and time.monotonic() < deadline:
-        time.sleep(.01)
-    started = time.monotonic()
-    Spending(path, 1).reserve("request", "episode", 0.1, 1)
-    elapsed = time.monotonic() - started
-    process.wait()
+    child = [sys.executable, "-c", code]
+    with subprocess.Popen(child, stdout=subprocess.PIPE, text=True) as process:
+        # locked() creates the file before flock() returns; wait until the child holds it.
+        assert process.stdout.readline() == "held\n"
+        started = time.monotonic()
+        Spending(path, 1).reserve("request", "episode", 0.1, 1)
+        elapsed = time.monotonic() - started
     assert elapsed >= 0.15
 def test_reserve_event_precedes_send_and_unknown_usage_is_retained(harness):
     h = harness

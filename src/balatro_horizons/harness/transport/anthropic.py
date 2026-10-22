@@ -1,15 +1,17 @@
-"""Anthropic Messages field spec, thinking mapping, and conservative accounting."""
+"""Claude Messages runtime, thinking mapping, and conservative accounting."""
 
-import json
 import os
 
-from balatro_horizons.harness.transport.base import (
-    ProviderFailure,
-    ProviderSpec,
-    encode,
-    tool_messages,
-)
+from balatro_horizons.harness.transport import anthropic_stream
+from balatro_horizons.harness.transport.base import Transport, response_items, single_call
 from balatro_horizons.harness.transport.claude_models import EFFORTS, HAIKU_INPUT_CEILING, MODELS
+from balatro_horizons.harness.transport.conversation import (
+    canonical_messages,
+    encode,
+    exchange_result,
+    native_items,
+)
+from balatro_horizons.harness.transport.errors import ProtocolFailure, ProviderFailure
 
 CAPABILITIES = {
     "prompt_cache_diagnostics": lambda model: model in MODELS,
@@ -51,17 +53,18 @@ def validate_settings(model, settings):
         raise ValueError(f"{model} requires low, medium, high, xhigh or max reasoning effort")
 
 
-def native_messages(items, result, spec):
+def native_messages(items, result):
     calls = [item for item in items if item.get("type") == "tool_use"]
     if not calls:
-        return [
-            {"role": "assistant", "content": items},
-            {"role": "user", "content": [{"type": "text", "text": encode({"tool_error": result})}]},
-        ]
+        assistant = [{"role": "assistant", "content": items}] if items else []
+        return assistant + [{
+            "role": "user", "content": [{"type": "text", "text": encode({"tool_error": result})}],
+        }]
     output = encode(result)
-    is_error = isinstance(result, dict) and bool(result.get("error"))
+    inner = result.get("result", result) if isinstance(result, dict) else result
+    is_error = isinstance(inner, dict) and bool(inner.get("error"))
     results = [
-        {"type": spec.result_item_type, "tool_use_id": call["id"], "content": output}
+        {"type": "tool_result", "tool_use_id": call["id"], "content": output}
         for call in calls
     ]
     if is_error:
@@ -70,19 +73,19 @@ def native_messages(items, result, spec):
     return [{"role": "assistant", "content": items}, {"role": "user", "content": results}]
 
 
-def synthetic_messages(call, result, index, spec):
+def synthetic_messages(call, result, index):
     if not call:
-        return [{"role": "user", "content": json.dumps({"tool_error": result})}]
+        return [{"role": "user", "content": encode({"tool_error": result})}]
     call_id = f"harness_exchange_{index}"
     return [
         {
             "role": "assistant",
             "content": [
                 {
-                    "type": spec.call_item_type,
-                    spec.id_field: call_id,
+                    "type": "tool_use",
+                    "id": call_id,
                     "name": call["name"],
-                    spec.args_field: call["arguments"],
+                    "input": call["arguments"],
                 }
             ],
         },
@@ -90,7 +93,7 @@ def synthetic_messages(call, result, index, spec):
             "role": "user",
             "content": [
                 {
-                    "type": spec.result_item_type,
+                    "type": "tool_result",
                     "tool_use_id": call_id,
                     "content": encode(result),
                 }
@@ -99,16 +102,26 @@ def synthetic_messages(call, result, index, spec):
     ]
 
 
+def tool_messages(ctx, exchanges):
+    messages = canonical_messages(ctx)
+    for index, exchange in enumerate(exchanges):
+        result = exchange_result(ctx, exchange)
+        items = native_items(exchange, "anthropic")
+        messages.extend(native_messages(items, result) if items is not None else
+                        synthetic_messages(exchange.get("tool_call"), result, index))
+    return messages
+
+
 def payload(ctx, exchanges):
     return {
         "system": ctx.prompt + "\n\n" + ctx.rules_kernel,
-        "messages": tool_messages(ctx, exchanges, SPEC),
+        "messages": tool_messages(ctx, exchanges),
         "tools": [
             {
                 "name": tool["name"],
                 "description": tool["description"],
                 "input_schema": tool["parameters"],
-                "strict": True,
+                "strict": False,
             }
             for tool in ctx.tools
         ],
@@ -118,19 +131,17 @@ def payload(ctx, exchanges):
 def request_body(transport, ctx, exchanges):
     settings = transport.model.settings
     model = transport.model.model
-    if model == "claude-haiku-5-5" and (
-        transport.limits.max_input_tokens_per_call > HAIKU_INPUT_CEILING
-    ):
-        raise ProviderFailure("CLAUDE_LONG_CONTEXT_PRICING_NOT_CONFIGURED")
+    validate_config(transport.model, transport.limits)
     body = {
         "model": model,
         **payload(ctx, exchanges),
         "tool_choice": {"type": "auto", "disable_parallel_tool_use": True},
         "max_tokens": transport.limits.max_output_tokens_per_call,
         "service_tier": "standard_only",
+        "stream": True,
     }
     if model in MODELS:
-        body["thinking"] = {"type": "adaptive"}
+        body["thinking"] = {"type": "adaptive", "display": "summarized"}
         body["output_config"] = {"effort": settings.get("reasoning_effort", MODELS[model][1])}
     if "thinking_budget" in settings:
         if settings["thinking_budget"] >= body["max_tokens"]:
@@ -146,6 +157,17 @@ def request_body(transport, ctx, exchanges):
             "cache_control": {"type": "ephemeral", "ttl": "5m"},
         }]
     return body
+
+
+def validate_config(model, limits):
+    if model.model == "claude-haiku-5-5" and limits.max_input_tokens_per_call > HAIKU_INPUT_CEILING:
+        raise ProviderFailure("CLAUDE_LONG_CONTEXT_PRICING_NOT_CONFIGURED")
+    if "thinking_budget" in model.settings:
+        budget = model.settings["thinking_budget"]
+        if type(budget) is not int or budget < 1024:
+            raise ProviderFailure("INVALID_THINKING_BUDGET")
+        if budget >= limits.max_output_tokens_per_call:
+            raise ProviderFailure("THINKING_BUDGET_MUST_BE_BELOW_OUTPUT_LIMIT")
 
 
 def usage_cost(model, response, reserved):
@@ -193,35 +215,54 @@ def _usage_totals(usage):
     return totals
 
 
-SPEC = ProviderSpec(
-    name="anthropic",
-    terminal_field="stop_reason",
-    terminal_map={
-        "max_tokens": "PROVIDER_RESPONSE_INCOMPLETE",
-        "model_context_window_exceeded": "PROVIDER_CONTEXT_LIMIT",
-        "refusal": "PROVIDER_REFUSAL",
-        "pause_turn": "PROVIDER_RESPONSE_PAUSED",
-    },
-    call_item_type="tool_use",
-    id_field="id",
-    args_field="input",
-    result_item_type="tool_result",
-    cache_options=None,
-    items_field="content",
-    default_terminal=None,
-    success_terminals=frozenset({None, "tool_use"}),
-    terminal_detail="provider_stop_reason",
-    clear_terminals=frozenset({"max_tokens", "model_context_window_exceeded", "pause_turn"}),
-    endpoint="https://api.anthropic.com/v1/messages",
-    key_name="ANTHROPIC_API_KEY",
-    headers=headers,
-    payload=payload,
-    request_body=request_body,
-    usage_cost=usage_cost,
-    decode_arguments=lambda value: value,
-    validate_call=lambda _call: None,
-    terminal_details=lambda _response, _terminal: {},
-    native_messages=native_messages,
-    synthetic_messages=synthetic_messages,
-    defer_unknown_terminal=True,
-)
+class ClaudeMessagesRuntime(Transport):
+    endpoint = "https://api.anthropic.com/v1/messages"
+    count_endpoint = endpoint + "/count_tokens"
+    key_name = "ANTHROPIC_API_KEY"
+    headers = staticmethod(headers)
+    request_body = request_body
+    tool_messages = staticmethod(tool_messages)
+    assemble = staticmethod(anthropic_stream.assemble)
+
+    @staticmethod
+    def count_payload(body):
+        from copy import deepcopy
+
+        fields = ("model", "messages", "system", "tools", "tool_choice", "thinking", "output_config")
+        return deepcopy({key: body[key] for key in fields if key in body})
+
+    def usage_cost(self, response, reserved):
+        return usage_cost(self.model, response, reserved)
+
+    def usage_known(self, response):
+        return usage_cost(self.model, response, -1) >= 0
+
+    def parse(self, response):
+        self.last_tool_call = self.last_provider_turn = None
+        items = response_items(response, "content")
+        reason = response.get("stop_reason")
+        self._terminal(reason)
+        calls = self.capture_turn(items, "tool_use", "id")
+        if reason == "refusal":
+            raise ProtocolFailure("PROVIDER_REFUSAL", provider_stop_reason=reason)
+        if not calls and reason != "tool_use":
+            raise ProtocolFailure("NO_OPERATION", provider_stop_reason=reason)
+        if calls and reason != "tool_use":
+            raise ProtocolFailure("UNEXPECTED_PROVIDER_STOP", provider_stop_reason=reason)
+        call = single_call(calls)
+        if error := response.get(anthropic_stream.TOOL_INPUT_ERROR):
+            raise ProtocolFailure(error)
+        return self.decode_call(call.get("name"), call.get("input"))
+
+    def _terminal(self, reason):
+        if reason in ("tool_use", "end_turn", "stop_sequence", "refusal"):
+            return
+        if reason == "max_tokens":
+            code = "PROVIDER_RESPONSE_INCOMPLETE"
+        elif reason == "model_context_window_exceeded":
+            code = "PROVIDER_CONTEXT_LIMIT"
+        elif reason == "pause_turn":
+            code = "PROVIDER_RESPONSE_PAUSED"
+        else:
+            raise ProtocolFailure("INVALID_PROVIDER_RESPONSE")
+        raise ProtocolFailure(code, provider_stop_reason=reason)

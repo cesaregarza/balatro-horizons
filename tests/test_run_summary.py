@@ -188,6 +188,18 @@ def test_historical_harness_label_comes_only_from_recorded_bundle(recorded_run):
     assert summary_input(store, eid)["manifest"]["recorded_interface"] is None
 
 
+@pytest.mark.parametrize("interface, current", [("tools_v8", False), ("tools_v8.5", True)])
+def test_only_the_active_interface_is_the_current_harness(recorded_run, interface, current):
+    # tools_v8 runs predate the immutable-transcript runtime and are a separate cohort.
+    store, eid = recorded_run
+    bundle = {"version": "agent-protocol-v1", "interface": interface}
+    atomic_json(store.episode_path(eid, True) / "agent-protocol.json", bundle)
+    store.append(eid, "episode_start", {"agent_protocol": {"episode_id": eid, "hash": digest(bundle)}})
+    manifest = summary_input(store, eid)["manifest"]
+    assert manifest["recorded_interface"] == interface
+    assert manifest["current_harness"] is current
+
+
 def test_cleared_round_keeps_the_target_that_was_played_against(tmp_path):
     store = Store(tmp_path / "data")
     eid = store.create({"agent": "fixture", "evidence_kind": "SYNTHETIC_TEST"}, eid="e" * 32)

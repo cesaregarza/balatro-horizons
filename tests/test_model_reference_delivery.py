@@ -72,10 +72,12 @@ def test_budget_restore_preserves_compact_ids_and_canonical_journals(harness, mo
 
 
 def response(provider, name, arguments):
+    usage = {"input_tokens": 100, "output_tokens": 20,
+             "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0}}
     if provider == "openai":
-        return {"status": "completed", "output": [{"type": "function_call", "call_id": "call_x",
+        return {"status": "completed", "usage": usage, "output": [{"type": "function_call", "call_id": "call_x",
                 "name": name, "arguments": json.dumps(arguments)}]}
-    return {"stop_reason": "tool_use", "content": [{"type": "tool_use", "id": "call_x",
+    return {"stop_reason": "tool_use", "usage": usage, "content": [{"type": "tool_use", "id": "call_x",
             "name": name, "input": arguments}]}
 
 
@@ -178,7 +180,8 @@ def test_a_removed_reference_cannot_target_a_new_object_in_its_old_position():
     try:
         policy.request(ctx, [])
         raw = policy.parse(response("openai", "buy", {"observation_id": new.observation_id,
-            "offer_id": number, "mode": "acquire", "target_ids": []}))
+            "offer_id": number, "mode": "acquire", "target_ids": [],
+            "decision_note": None, "note_update": None}))
         action = Operation.validate_python(raw).envelope
         assert action.action.offer_id == removed_id
         with pytest.raises(InvalidAction, match="UNKNOWN_OFFER"):

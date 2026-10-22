@@ -177,7 +177,7 @@ def test_changed_skill_preset_is_refused_before_continuation(store, config, epis
         validate_continuation(protocol, changed, "heuristic", human=human)
 
 
-@pytest.mark.parametrize("interface", ["tools_v7", "retired-interface"])
+@pytest.mark.parametrize("interface", ["tools_v7", "tools_v8", "retired-interface"])
 def test_retired_frozen_interface_is_rejected_explicitly(store, config, episode, interface):
     checkpoint = read_checkpoint(store, episode, 0)
     reference = checkpoint["agent_protocol"]
@@ -190,7 +190,7 @@ def test_retired_frozen_interface_is_rejected_explicitly(store, config, episode,
         restore_protocol(store, checkpoint)
 
 
-def test_v8_is_the_single_active_frozen_interface(config):
+def test_v8_5_is_the_single_active_frozen_interface(config):
     from balatro_horizons.harness.baselines import ScriptedPolicy
     from balatro_horizons.harness.transport.base import Transport
     from balatro_horizons.workbench.policies import (
@@ -200,7 +200,7 @@ def test_v8_is_the_single_active_frozen_interface(config):
     )
 
     bundle = freeze_protocol(config, Baseline("heuristic"), {})
-    assert bundle["interface"] == "tools_v8"
+    assert bundle["interface"] == "tools_v8.5"
     assert all(policy.interface == bundle["interface"] for policy in (
         Baseline, ScriptedPolicy, Transport, HumanPolicy, HumanSequencePolicy, InterventionPolicy,
     ))

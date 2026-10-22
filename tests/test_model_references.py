@@ -11,7 +11,7 @@ from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.harness.context.build import context
 from balatro_horizons.harness.context.references import ModelReferences
 from balatro_horizons.harness.context.render import tool_catalog
-from balatro_horizons.harness.transport.base import canonical_messages
+from balatro_horizons.harness.transport import canonical_messages
 from balatro_horizons.observations.projection import HandleIssuer
 
 

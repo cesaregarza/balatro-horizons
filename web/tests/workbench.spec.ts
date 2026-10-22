@@ -29,8 +29,9 @@ test("synthetic run, progressive reveal, escaped annotation, replay-ready branch
   const response = await created;
   expect(response.ok(), await response.text()).toBe(true);
   const { episode_id } = await response.json();
-  await expect(page).toHaveURL(new RegExp(`#explore/${episode_id}`));
-  await page.getByRole("button", { name: "Runs", exact: true }).click();
+  // Launch neither opens the run nor turns on the exposure-recording worker status.
+  await expect(page.getByRole("region", { name: "Runs workspace" })).toBeVisible();
+  await expect(page.getByText("Worker status hidden", { exact: true })).toBeVisible();
   const newRun = page.locator(".episode-card").filter({ hasText: episode_id.slice(0, 10) });
   await expect(newRun).toBeVisible();
   await expect(async () => {
@@ -40,6 +41,7 @@ test("synthetic run, progressive reveal, escaped annotation, replay-ready branch
       page.getByRole("heading", { name: "What was knowable here?" }),
     ).toBeVisible();
   }).toPass({ timeout: 10000 });
+  await expect(page.getByText("prospective review", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Research review workspace" }).getByRole("heading", { name: "Recorded decision" }),
   ).toHaveCount(0);
@@ -111,6 +113,39 @@ test("synthetic run, progressive reveal, escaped annotation, replay-ready branch
     page.getByRole("heading", { name: "Branch", exact: true }),
   ).toBeVisible();
   expect(failures).toEqual([]);
+});
+
+test("launch records no exposure for an unrelated stored run", async ({ page }) => {
+  const statusPolls: string[] = [];
+  await page.goto("/");
+  await awaitIdleWorker(page);
+  const { operator_token } = await (await page.request.get("/api/bootstrap")).json();
+  const unrelated = await page.request.post("/api/runs", {
+    headers: { "X-BH-Operator": operator_token },
+    data: { agent: "heuristic", offline: true },
+  });
+  expect(unrelated.ok(), await unrelated.text()).toBe(true);
+  const { episode_id: unrelatedId } = await unrelated.json();
+  // From here on, only the operator status endpoint could expose the unrelated run.
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/operator/status")) statusPolls.push(request.url());
+  });
+  // Retrying Start until the worker accepts it also guarantees the unrelated run finished.
+  await expect(async () => {
+    const created = page.waitForResponse(
+      (response) => response.url().endsWith("/api/runs") && response.request().method() === "POST",
+      { timeout: 3000 },
+    );
+    await page.getByRole("button", { name: /Start test episode/ }).click();
+    expect((await created).ok()).toBe(true);
+  }).toPass({ timeout: 20000 });
+  await expect(page.getByText("Worker status hidden", { exact: true })).toBeVisible();
+  const unrelatedRun = page.locator(".episode-card").filter({ hasText: unrelatedId.slice(0, 10) });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await unrelatedRun.getByRole("button", { name: "Review", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "What was knowable here?" })).toBeVisible();
+  await expect(page.getByText("prospective review", { exact: true })).toBeVisible();
+  expect(statusPolls).toEqual([]);
 });
 
 test("mobile control center remains usable", async ({ page }) => {

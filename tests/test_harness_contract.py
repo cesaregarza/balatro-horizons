@@ -12,6 +12,7 @@ from balatro_horizons.harness.contract import Policy, ProviderPolicy
 from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.money import Spending
 from balatro_horizons.harness.transport import DirectProvider
+from balatro_horizons.harness.transport.openai import OpenAIResponsesRuntime
 from balatro_horizons.service import HumanPolicy, HumanSequencePolicy, InterventionPolicy
 
 
@@ -55,7 +56,7 @@ def test_committed_action_ends_provider_continuation_once(store):
     config = luna()
     config.budgets.paid_calls_enabled = True
 
-    class ProbeProvider(DirectProvider):
+    class ProbeProvider(OpenAIResponsesRuntime):
         def __init__(self):
             super().__init__(config.models["luna"], config.budgets)
             self.ended = 0
@@ -74,6 +75,9 @@ def test_committed_action_ends_provider_continuation_once(store):
 
         def usage_cost(self, response, reserved):
             return 0.0
+
+        def usage_known(self, response):
+            return True
 
         def parse(self, response):
             self.last_provider_turn = {"provider": "openai", "items": []}
@@ -110,6 +114,6 @@ def test_committed_action_ends_provider_continuation_once(store):
         ).run()
         assert result["committed_actions"] == 1
         assert result["reason"] == "AGENT_ABORT"
-        assert policy.ended == 1
+        assert policy.ended == 2  # Committed decision and final abort both release continuation.
     finally:
         policy.client.close()

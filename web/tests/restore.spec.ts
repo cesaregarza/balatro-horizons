@@ -54,6 +54,10 @@ async function app(page: Page, preview: RestorePreview, options: { workbench?: b
 
 test("restore preview is read-only until explicit confirmation", async ({ page }) => {
   const { posts } = await app(page, available());
+  const statusPolls: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/operator/status")) statusPolls.push(request.url());
+  });
   const spend = page.getByRole("region", { name: "Run API spend" });
   await expect(spend.locator(".run-spend-total")).toHaveText("$0.42");
   await page.getByRole("button", { name: "Restore run" }).click();
@@ -65,7 +69,10 @@ test("restore preview is read-only until explicit confirmation", async ({ page }
   await page.getByLabel(/I authorize the paid continuation/).check();
   await page.getByRole("button", { name: "Restore and continue" }).click();
   await expect(page).toHaveURL(new RegExp(`#explore/${"b".repeat(32)}`));
-  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Continuation created" })).toHaveText("Continuation created.");
+  // Restore leaves the exposure-recording worker status off.
+  await expect(page.getByText("Worker status hidden", { exact: true })).toBeVisible();
+  expect(statusPolls).toEqual([]);
   expect(posts[0]?.url).toMatch(new RegExp(`/api/operator/episodes/${eid}/restore$`));
   expect(posts[0]?.body).toEqual({
     parent_head: parent, plan_hash: planHash, authorize_paid: true, accept_compatible_update: false,
