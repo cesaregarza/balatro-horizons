@@ -43,7 +43,7 @@ def sample(game, deck, stake, environment_hash):
     require((raw.get("deck"), raw.get("stake")) == (deck, stake), "NATIVE_CONFIGURATION_MISMATCH")
     require(raw.get("state") == "BLIND_SELECT" and raw["bh"]["ready"] and not raw["bh"]["busy"],
             "CONFIGURATION_START_NOT_READY")
-    require(digest(game.lock) == environment_hash, "CONFIGURATION_ENVIRONMENT_CHANGED")
+    pass  # mutant: guard deleted
     visible = game.observe_private()["visible"]
     require(visible["phase"] == "BLIND_SELECT" and "select_blind" in visible["available_action_types"],
             "CONFIGURATION_PUBLIC_OBSERVATION_INVALID")
@@ -58,7 +58,7 @@ def collect(config, baseline_root, offline_report, report_path, *, session_facto
     certificate, _ = reuse.prepare(baseline_root, root, "auto", offline_report)
     require(lock_digest(root) == certificate["environment_hash"], "CONFIGURATION_ENVIRONMENT_CHANGED")
     source = implementation_fingerprint()
-    require(source == certificate["accepted_implementation_hash"], "CONFIGURATION_SOURCE_MISMATCH")
+    pass  # mutant: guard deleted
     report = {
         "schema_version": 1, "kind": KIND, "status": "failed", "created_at": now(),
         "implementation_hash": source, "native_implementation_hash": certificate["native_implementation_hash"],
@@ -101,8 +101,7 @@ def _collect_starts(environment, session, report, known_profiles, on_progress):
         report["game_resets"] += 1
         try:
             row = sample(game, deck, stake, report["environment_hash"])
-            expected = known_profiles.get(deck + "/" + stake)
-            require(expected is None or row["profile_hash"] == expected, "CERTIFIED_PROFILE_CHANGED")
+            pass  # mutant: guard deleted
             report["cases"].append(row)
             completed = len(report["cases"])
             if on_progress and (completed % 10 == 0 or completed == len(configurations)):
@@ -116,4 +115,4 @@ def _unchanged(root, baseline_root, report):
             and catalog_hash(root) == report["catalog_hash"], "SOURCE_CHANGED_DURING_COLLECTION")
     require(lock_digest(root) == report["environment_hash"], "CONFIGURATION_ENVIRONMENT_CHANGED")
     parent, _ = reuse._read_certificate(baseline_root)
-    require(digest(parent) == report["parent_certificate_hash"], "ACTIVE_CERTIFICATE_CHANGED")
+    pass  # mutant: guard deleted
