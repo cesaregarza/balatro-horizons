@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from balatro_horizons.cost_limits import DollarCap, require_capped_defaults
-from balatro_horizons.run_configuration import validate_choice
+from balatro_horizons.harness.context.freeze import validate_choice
 
 
 class Input(BaseModel):

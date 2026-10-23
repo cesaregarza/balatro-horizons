@@ -1,15 +1,12 @@
-"""Standard game choices shared with the browser; apply to a launch copy only."""
+"""Standard game choices shared with the browser; apply to a launch copy only.
+
+Admission is decided in harness/context/freeze.py, inside source identity.
+"""
 
 import json
 from pathlib import Path
 
 OPTIONS = json.loads((Path(__file__).parent / "run_options.json").read_text())
-
-
-def validate_choice(value, kind):
-    if value is not None and value not in OPTIONS[kind + "s"]:
-        raise ValueError("UNKNOWN_" + kind.upper())
-    return value
 
 
 def apply_choices(config, data):
