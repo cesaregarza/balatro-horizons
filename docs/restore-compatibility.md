@@ -169,6 +169,24 @@ operator consent, release/environment and single-replay gates still apply.
 Workspace routing is backend authentication like the API key, not frozen
 model-facing configuration; the value is never written into the protocol.
 
+### Validated deck and stake at freeze: no migration
+
+Freezing now refuses a deck or stake outside `run_options.json` with
+`UNKNOWN_DECK` or `UNKNOWN_STAKE`, and new runs are refused the same way before
+an episode is created. This edits two execution modules,
+`harness/context/freeze.py` and `service.py`. The membership test and refusal
+live in `freeze.py`, so source identity covers the decision itself: editing it
+changes the implementation fingerprint. `run_configuration.py` only loads the
+allowed names from `run_options.json`, which the fingerprint does not cover. That
+file is read when `run_configuration.py` is first imported, so a malformed file
+prevents import everywhere, Restore included. A valid edit changes only which
+names new roots may use, because restore and continuations reuse their frozen,
+already-validated selection. No upgrade group admits older sources across it.
+Checkpoints from `0aec480`, whose recorded `implementation_hash` is
+`3af9c75c…`, are refused with `RESTORE_SOURCE_INCOMPATIBLE`. Earlier deployed
+sources use retired interfaces, and no run was started on a deployment of
+`0aec480`, so a migration would have no consumer.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game

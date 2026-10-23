@@ -1,10 +1,14 @@
 """Public run choices in both provider prefixes; synthetic/offline evidence only."""
 
+import inspect
 import json
 from copy import deepcopy
 from itertools import product
+from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+import test_campaign_budget
 from test_boundary import project
 from test_transport_parity import configured
 
@@ -179,3 +183,133 @@ def test_pair_tampering_cannot_reuse_the_checkpoint_protocol_reference(store, ep
     path.write_text(json.dumps(frozen))
     with pytest.raises(ValueError, match="^AGENT_PROTOCOL_SNAPSHOT_MISMATCH$"):
         restore_protocol(store, checkpoint)
+
+
+UNKNOWN = [("deck", "UNKNOWN_DECK"), ("stake", "UNKNOWN_STAKE")]
+
+
+@pytest.mark.parametrize("field, code", UNKNOWN)
+def test_unknown_choice_is_refused_at_freeze(config, field, code):
+    setattr(config.environment, field, "NOT A STANDARD " + field.upper())
+    with pytest.raises(ValueError, match=f"^{code}$"):
+        freeze_protocol(config, Baseline("heuristic"), {})
+
+
+@pytest.mark.parametrize("field, code", UNKNOWN)
+def test_direct_runner_refuses_an_unknown_choice_before_any_episode(store, config, field, code):
+    setattr(config.environment, field, "NOT A STANDARD " + field.upper())
+    runner = Runner(store, config, FakeGame(), Baseline("heuristic"),
+                    Spending.episode_only(store.root / "private_runs" / "s.json", 1))
+    with pytest.raises(ValueError, match=f"^{code}$"):
+        runner.run()
+    assert store.list_episodes() == []
+
+
+@pytest.mark.parametrize("offline", [True, False], ids=["synthetic", "native"])
+@pytest.mark.parametrize("field, code", UNKNOWN)
+def test_service_start_refuses_an_unknown_choice_before_any_episode(
+    store, config, monkeypatch, offline, field, code,
+):
+    from balatro_horizons import service
+    from balatro_horizons.review.service import ReviewService
+
+    session = Mock()
+    monkeypatch.setattr(service, "load_session", session)
+    native = Mock(side_effect=AssertionError("native game must never launch"))
+    monkeypatch.setattr(service, "NativeGame", native)
+    setattr(config.environment, field, "NOT A STANDARD " + field.upper())
+    runs = service.RunService(store, ReviewService(store))
+    try:
+        with pytest.raises(ValueError, match=f"^{code}$"):
+            runs.start(config, "heuristic", "SEED", offline=offline)
+    finally:
+        if runs.thread:
+            runs.thread.join(30)
+    assert store.list_episodes() == []
+    session.assert_not_called()
+    native.assert_not_called()
+
+
+@pytest.mark.parametrize("field, code", UNKNOWN)
+def test_service_execute_refuses_an_unknown_choice_before_any_episode(store, config, field, code):
+    from balatro_horizons import service
+    from balatro_horizons.review.service import ReviewService
+
+    setattr(config.environment, field, "NOT A STANDARD " + field.upper())
+    with pytest.raises(ValueError, match=f"^{code}$"):
+        service.RunService(store, ReviewService(store)).execute(config, "heuristic", "SEED", offline=True)
+    assert store.list_episodes() == []
+
+
+def test_frozen_pair_is_inside_the_cached_anthropic_system_block(config):
+    config.environment.deck, config.environment.stake = "PLASMA", "ORANGE"
+    frozen = freeze_protocol(config, Baseline("heuristic"), {})
+    model = configured("anthropic").model_copy(
+        update={"cached_input_usd_per_million": 1, "cache_write_input_usd_per_million": 1})
+    transport = DirectProvider(model, config.budgets)
+    try:
+        ctx, exchanges = decision_context(project(FakeGame().observe_private()), [], frozen=frozen)
+        body = transport.request(ctx, exchanges)
+    finally:
+        transport.client.close()
+    (block,) = body["system"]
+    assert block["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
+    assert block["text"].endswith("Run configuration: deck=PLASMA; stake=ORANGE.")
+    assert "Run configuration:" not in json.dumps(body["messages"])
+
+
+harness = test_campaign_budget.harness
+
+
+@pytest.mark.parametrize("kind", ["deck", "stake"])
+def test_selection_admission_is_inside_source_identity(harness, monkeypatch, kind):
+    # Code that decides what a frozen run may contain must change the fingerprint when edited.
+    from test_restore_unfinished import interrupted
+
+    from balatro_horizons.config import ROOT
+    from balatro_horizons.evidence import compatibility
+    from balatro_horizons.evidence.provenance import fingerprint_sources, source_files
+    from balatro_horizons.harness.context import freeze
+    from balatro_horizons.service_restore import restore_preview
+
+    parent = interrupted(harness)
+    sources = source_files(ROOT)
+    # Mutate the executable decision itself: the membership test the freeze path relies on.
+    module = str(Path(inspect.getsourcefile(freeze.validate_choice)).relative_to(ROOT))
+    membership = b'value not in OPTIONS[kind + "s"]'
+    assert sources[module].count(membership) == 1
+    bypass = membership + f' and kind != "{kind}"'.encode()
+    mutant = {**sources, module: sources[module].replace(membership, bypass, 1)}
+    assert fingerprint_sources(mutant) != fingerprint_sources(sources)
+    # Run restore preview as the mutated source would: it must not call the parent same_source.
+    monkeypatch.setattr(compatibility, "implementation_fingerprint", lambda: fingerprint_sources(mutant))
+    monkeypatch.setattr(compatibility, "source_files", lambda _root: mutant)
+    preview = restore_preview(harness.service(), parent, paid_enabled=True)
+    assert not (preview["available"] and preview["plan"]["source_compatibility"] == "same_source")
+
+
+@pytest.mark.parametrize("field, code", UNKNOWN)
+def test_refused_start_leaves_service_status_unchanged(store, config, field, code):
+    from balatro_horizons import service
+    from balatro_horizons.review.service import ReviewService
+
+    runs = service.RunService(store, ReviewService(store))
+    runs.stop.set()
+    runs.error = "REVIEW_PRIOR_FAILURE"
+    setattr(config.environment, field, "NOT A STANDARD " + field.upper())
+    with pytest.raises(ValueError, match=f"^{code}$"):
+        runs.start(config, "heuristic", "SEED", offline=True)
+    assert (runs.stop.is_set(), runs.error) == (True, "REVIEW_PRIOR_FAILURE")
+    assert runs.thread is None
+
+
+def test_accepted_start_still_clears_service_status(store, config):
+    from balatro_horizons import service
+    from balatro_horizons.review.service import ReviewService
+
+    runs = service.RunService(store, ReviewService(store))
+    runs.stop.set()
+    runs.error = "REVIEW_PRIOR_FAILURE"
+    runs.start(config, "heuristic", "SEED", offline=True)
+    runs.thread.join(30)
+    assert (runs.stop.is_set(), runs.error) == (False, None)

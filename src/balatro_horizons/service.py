@@ -11,7 +11,11 @@ from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeGame
 from balatro_horizons.game.windows_context import load_session
 from balatro_horizons.harness.baselines import Baseline
-from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
+from balatro_horizons.harness.context.freeze import (
+    require_known_selection,
+    restore_protocol,
+    validate_continuation,
+)
 from balatro_horizons.harness.loop import run_episode
 from balatro_horizons.harness.money import (
     Spending,
@@ -114,6 +118,9 @@ class RunService:
         spending=None,
         human_steps=0,
     ):
+        if eid is None:
+            # New roots only; an existing episode was admitted when it was created.
+            require_known_selection(config.environment)
         request = ExecutionRequest(
             config=config.model_copy(deep=True), agent=agent, seed=seed, offline=offline,
             eid=eid, resume=resume, prefix=prefix, spending=spending,
@@ -145,9 +152,11 @@ class RunService:
     def start(self, config, agent, seed, *, offline=False, calibration=False):
         config = config.model_copy(deep=True)
         with self.admission():
+            # Validate before touching status, so a refused start keeps the prior error.
+            self.validate_policy(config, agent)
+            require_known_selection(config.environment)
             self.stop.clear()
             self.error = None
-            self.validate_policy(config, agent)
             from balatro_horizons.harness.instructions import load_prompt
 
             load_prompt(ROOT)

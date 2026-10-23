@@ -19,9 +19,24 @@ from balatro_horizons.harness.context.render import (
 from balatro_horizons.harness.contract import NamedPolicy, Policy
 from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.harness.instructions import load_prompt
+from balatro_horizons.run_configuration import OPTIONS
 from balatro_horizons.storage.journal import digest
 
 FROZEN_INTERFACE = "tools_v8.5"
+
+
+# Admission decisions live here, inside source identity, so editing them changes the
+# fingerprint. run_configuration.py only loads the catalog data.
+def validate_choice(value, kind):
+    if value is not None and value not in OPTIONS[kind + "s"]:
+        raise ValueError("UNKNOWN_" + kind.upper())
+    return value
+
+
+def require_known_selection(environment):
+    """Refuse a deck or stake outside the standard catalog before a run records it."""
+    validate_choice(environment.deck, "deck")
+    validate_choice(environment.stake, "stake")
 
 
 def episode_limits(config):
@@ -41,6 +56,8 @@ def validate_run_configuration(bundle, config):
 
 
 def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
+    # The pair becomes model-facing frozen text, so only standard choices may reach it.
+    require_known_selection(config.environment)
     template = load_prompt(ROOT) if prompt_bytes is None else prompt_bytes
     try:
         validate_prompt_template(template.decode("utf-8"))
