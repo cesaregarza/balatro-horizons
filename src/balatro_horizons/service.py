@@ -21,6 +21,7 @@ from balatro_horizons.harness.money import (
     validate_paid_configuration,
 )
 from balatro_horizons.harness.transport import DirectProvider
+from balatro_horizons.run_configuration import require_known_selection
 from balatro_horizons.service_execution import ExecutionRequest, execute_locked, prepare_execution
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
 from balatro_horizons.workbench.branches import prepare_branch
@@ -114,6 +115,9 @@ class RunService:
         spending=None,
         human_steps=0,
     ):
+        if eid is None:
+            # New roots only; an existing episode was admitted when it was created.
+            require_known_selection(config.environment)
         request = ExecutionRequest(
             config=config.model_copy(deep=True), agent=agent, seed=seed, offline=offline,
             eid=eid, resume=resume, prefix=prefix, spending=spending,
@@ -148,6 +152,7 @@ class RunService:
             self.stop.clear()
             self.error = None
             self.validate_policy(config, agent)
+            require_known_selection(config.environment)
             from balatro_horizons.harness.instructions import load_prompt
 
             load_prompt(ROOT)

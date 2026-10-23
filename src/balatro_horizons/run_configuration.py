@@ -12,6 +12,12 @@ def validate_choice(value, kind):
     return value
 
 
+def require_known_selection(environment):
+    """Refuse a deck or stake outside the standard catalog before a run records it."""
+    validate_choice(environment.deck, "deck")
+    validate_choice(environment.stake, "stake")
+
+
 def apply_choices(config, data):
     # Older clients retain their preset contract. Explicit choices never compete
     # with a preset and never change the saved configuration or an existing run.

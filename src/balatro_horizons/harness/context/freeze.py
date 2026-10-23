@@ -19,6 +19,7 @@ from balatro_horizons.harness.context.render import (
 from balatro_horizons.harness.contract import NamedPolicy, Policy
 from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.harness.instructions import load_prompt
+from balatro_horizons.run_configuration import require_known_selection
 from balatro_horizons.storage.journal import digest
 
 FROZEN_INTERFACE = "tools_v8.5"
@@ -41,6 +42,8 @@ def validate_run_configuration(bundle, config):
 
 
 def freeze_protocol(config, policy, rules, *, prompt_bytes=None):
+    # The pair becomes model-facing frozen text, so only standard choices may reach it.
+    require_known_selection(config.environment)
     template = load_prompt(ROOT) if prompt_bytes is None else prompt_bytes
     try:
         validate_prompt_template(template.decode("utf-8"))
