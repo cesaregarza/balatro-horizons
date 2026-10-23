@@ -1,11 +1,14 @@
 """Public run choices in both provider prefixes; synthetic/offline evidence only."""
 
+import inspect
 import json
 from copy import deepcopy
 from itertools import product
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+import test_campaign_budget
 from test_boundary import project
 from test_transport_parity import configured
 
@@ -253,3 +256,58 @@ def test_frozen_pair_is_inside_the_cached_anthropic_system_block(config):
     assert block["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
     assert block["text"].endswith("Run configuration: deck=PLASMA; stake=ORANGE.")
     assert "Run configuration:" not in json.dumps(body["messages"])
+
+
+harness = test_campaign_budget.harness
+
+
+@pytest.mark.parametrize("kind", ["deck", "stake"])
+def test_selection_admission_is_inside_source_identity(harness, monkeypatch, kind):
+    # Code that decides what a frozen run may contain must change the fingerprint when edited.
+    from test_restore_unfinished import interrupted
+
+    from balatro_horizons.config import ROOT
+    from balatro_horizons.evidence import compatibility
+    from balatro_horizons.evidence.provenance import fingerprint_sources, source_files
+    from balatro_horizons.harness.context import freeze
+    from balatro_horizons.service_restore import restore_preview
+
+    parent = interrupted(harness)
+    sources = source_files(ROOT)
+    module = str(Path(inspect.getsourcefile(freeze.require_known_selection)).relative_to(ROOT))
+    check = f'validate_choice(environment.{kind}, "{kind}")'
+    assert sources[module].count(check.encode()) == 1
+    mutant = {**sources, module: sources[module].replace(check.encode(), b"pass", 1)}
+    assert fingerprint_sources(mutant) != fingerprint_sources(sources)
+    # Run restore preview as the mutated source would: it must not call the parent same_source.
+    monkeypatch.setattr(compatibility, "implementation_fingerprint", lambda: fingerprint_sources(mutant))
+    monkeypatch.setattr(compatibility, "source_files", lambda _root: mutant)
+    preview = restore_preview(harness.service(), parent, paid_enabled=True)
+    assert not (preview["available"] and preview["plan"]["source_compatibility"] == "same_source")
+
+
+@pytest.mark.parametrize("field, code", UNKNOWN)
+def test_refused_start_leaves_service_status_unchanged(store, config, field, code):
+    from balatro_horizons import service
+    from balatro_horizons.review.service import ReviewService
+
+    runs = service.RunService(store, ReviewService(store))
+    runs.stop.set()
+    runs.error = "REVIEW_PRIOR_FAILURE"
+    setattr(config.environment, field, "NOT A STANDARD " + field.upper())
+    with pytest.raises(ValueError, match=f"^{code}$"):
+        runs.start(config, "heuristic", "SEED", offline=True)
+    assert (runs.stop.is_set(), runs.error) == (True, "REVIEW_PRIOR_FAILURE")
+    assert runs.thread is None
+
+
+def test_accepted_start_still_clears_service_status(store, config):
+    from balatro_horizons import service
+    from balatro_horizons.review.service import ReviewService
+
+    runs = service.RunService(store, ReviewService(store))
+    runs.stop.set()
+    runs.error = "REVIEW_PRIOR_FAILURE"
+    runs.start(config, "heuristic", "SEED", offline=True)
+    runs.thread.join(30)
+    assert (runs.stop.is_set(), runs.error) == (False, None)
