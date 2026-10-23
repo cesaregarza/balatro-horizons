@@ -111,3 +111,32 @@ def test_ci_web_job_runs_only_the_browser_lane_with_headroom():
     assert ".venv/bin/python scripts/check_offline.py --web-only" in runs["web"]
     assert ".venv/bin/python scripts/check_offline.py --web" not in runs["web"]
     assert jobs["web"]["timeout-minutes"] >= 15
+
+
+def test_local_web_still_runs_the_python_suite_before_the_browser_lane(tmp_path, monkeypatch):
+    root = _checkout(tmp_path)
+    calls = []
+    monkeypatch.setattr(check_offline.subprocess, "run", lambda command, **_: calls.append(command))
+    assert (_main(["--root", str(root), "--web"]), calls) == (0, check_offline.commands(root, web=True))
+    assert [command[:3] for command in calls[:1]] == [[str(root / ".venv/bin/python"), "-m", "pytest"]]
+    assert len(calls) == 5
+
+
+def test_web_and_web_only_are_mutually_exclusive(tmp_path, monkeypatch, capsys):
+    root = _checkout(tmp_path)
+    calls = []
+    monkeypatch.setattr(check_offline.subprocess, "run", lambda command, **_: calls.append(command))
+    assert (_main(["--root", str(root), "--web", "--web-only"]), calls) == (2, [])
+    assert "not allowed with argument" in capsys.readouterr().err
+
+
+def test_ci_web_job_checks_out_without_full_history():
+    import yaml
+
+    workflow = yaml.safe_load(
+        (Path(check_offline.ROOT) / ".github/workflows/offline.yml").read_text()
+    )
+    checkout = next(step for step in workflow["jobs"]["web"]["steps"]
+                    if step.get("uses", "").startswith("actions/checkout@"))
+    # Only the python job's release-source tests need full history.
+    assert "fetch-depth" not in checkout.get("with", {})
