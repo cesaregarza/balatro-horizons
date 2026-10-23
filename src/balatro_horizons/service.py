@@ -11,7 +11,11 @@ from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.session import NativeGame
 from balatro_horizons.game.windows_context import load_session
 from balatro_horizons.harness.baselines import Baseline
-from balatro_horizons.harness.context.freeze import restore_protocol, validate_continuation
+from balatro_horizons.harness.context.freeze import (
+    require_known_selection,
+    restore_protocol,
+    validate_continuation,
+)
 from balatro_horizons.harness.loop import run_episode
 from balatro_horizons.harness.money import (
     Spending,
@@ -21,7 +25,6 @@ from balatro_horizons.harness.money import (
     validate_paid_configuration,
 )
 from balatro_horizons.harness.transport import DirectProvider
-from balatro_horizons.run_configuration import require_known_selection
 from balatro_horizons.service_execution import ExecutionRequest, execute_locked, prepare_execution
 from balatro_horizons.storage.journal import atomic_json, digest, identifier, locked
 from balatro_horizons.workbench.branches import prepare_branch
@@ -149,10 +152,11 @@ class RunService:
     def start(self, config, agent, seed, *, offline=False, calibration=False):
         config = config.model_copy(deep=True)
         with self.admission():
-            self.stop.clear()
-            self.error = None
+            # Validate before touching status, so a refused start keeps the prior error.
             self.validate_policy(config, agent)
             require_known_selection(config.environment)
+            self.stop.clear()
+            self.error = None
             from balatro_horizons.harness.instructions import load_prompt
 
             load_prompt(ROOT)

@@ -19,10 +19,17 @@ from balatro_horizons.harness.context.render import (
 from balatro_horizons.harness.contract import NamedPolicy, Policy
 from balatro_horizons.harness.failures import HarnessFailure
 from balatro_horizons.harness.instructions import load_prompt
-from balatro_horizons.run_configuration import require_known_selection
+from balatro_horizons.run_configuration import validate_choice
 from balatro_horizons.storage.journal import digest
 
 FROZEN_INTERFACE = "tools_v8.5"
+
+
+def require_known_selection(environment):
+    """Refuse a deck or stake outside the standard catalog before a run records it."""
+    # Admission code lives here, inside source identity, so editing it changes the fingerprint.
+    validate_choice(environment.deck, "deck")
+    validate_choice(environment.stake, "stake")
 
 
 def episode_limits(config):
