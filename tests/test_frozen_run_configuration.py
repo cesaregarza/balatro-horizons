@@ -274,10 +274,12 @@ def test_selection_admission_is_inside_source_identity(harness, monkeypatch, kin
 
     parent = interrupted(harness)
     sources = source_files(ROOT)
-    module = str(Path(inspect.getsourcefile(freeze.require_known_selection)).relative_to(ROOT))
-    check = f'validate_choice(environment.{kind}, "{kind}")'
-    assert sources[module].count(check.encode()) == 1
-    mutant = {**sources, module: sources[module].replace(check.encode(), b"pass", 1)}
+    # Mutate the executable decision itself: the membership test the freeze path relies on.
+    module = str(Path(inspect.getsourcefile(freeze.validate_choice)).relative_to(ROOT))
+    membership = b'value not in OPTIONS[kind + "s"]'
+    assert sources[module].count(membership) == 1
+    bypass = membership + f' and kind != "{kind}"'.encode()
+    mutant = {**sources, module: sources[module].replace(membership, bypass, 1)}
     assert fingerprint_sources(mutant) != fingerprint_sources(sources)
     # Run restore preview as the mutated source would: it must not call the parent same_source.
     monkeypatch.setattr(compatibility, "implementation_fingerprint", lambda: fingerprint_sources(mutant))
