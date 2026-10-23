@@ -63,3 +63,51 @@ def test_success_report_requires_completed_checks_and_unchanged_source(tmp_path,
     result = json.loads(report.read_text())
     assert result['status'] == 'passed' and result['suite'] == 'check_offline'
     assert result['implementation_hash'] and len(result['commands']) == 3
+
+
+def _checkout(tmp_path):
+    (tmp_path / "src/balatro_horizons").mkdir(parents=True)
+    (tmp_path / ".venv/bin").mkdir(parents=True)
+    (tmp_path / ".venv/bin/python").touch()
+    return tmp_path
+
+
+def _main(argv):
+    try:
+        return check_offline.main(argv)
+    except SystemExit as exit:
+        return exit.code
+
+
+def test_web_only_runs_the_browser_lane_without_the_python_suite(tmp_path, monkeypatch):
+    root = _checkout(tmp_path)
+    calls = []
+    monkeypatch.setattr(check_offline.subprocess, "run", lambda command, **_: calls.append(command))
+    assert (_main(["--root", str(root), "--web-only"]), calls) == (0, [
+        ["npm", "--prefix", str(root / "web"), "run", "build"],
+        ["npm", "--prefix", str(root / "web"), "test"],
+    ])
+
+
+def test_web_only_cannot_write_a_source_bound_report(tmp_path, monkeypatch, capsys):
+    # Evidence reuse accepts any passed check_offline report; a partial run must not produce one.
+    root = _checkout(tmp_path)
+    calls = []
+    monkeypatch.setattr(check_offline.subprocess, "run", lambda command, **_: calls.append(command))
+    code = _main(["--root", str(root), "--web-only", "--report", str(tmp_path / "r.json")])
+    assert (code, calls, (tmp_path / "r.json").exists()) == (2, [], False)
+    assert "--web-only cannot write --report" in capsys.readouterr().err
+
+
+def test_ci_web_job_runs_only_the_browser_lane_with_headroom():
+    import yaml
+
+    workflow = yaml.safe_load(
+        (Path(check_offline.ROOT) / ".github/workflows/offline.yml").read_text()
+    )
+    jobs = workflow["jobs"]
+    runs = {name: [step.get("run", "") for step in job["steps"]] for name, job in jobs.items()}
+    assert ".venv/bin/python scripts/check_offline.py" in runs["python"]
+    assert ".venv/bin/python scripts/check_offline.py --web-only" in runs["web"]
+    assert ".venv/bin/python scripts/check_offline.py --web" not in runs["web"]
+    assert jobs["web"]["timeout-minutes"] >= 15

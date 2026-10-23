@@ -72,7 +72,9 @@ uv run bh offline
 ```
 
 The gate runs the Python checks without launching Balatro or making paid
-provider calls. CI adds a separate web build and browser-test lane. Inspect the
+provider calls. In CI, the `python` job carries the pytest, Ruff and whitespace
+evidence; the `web` job runs only the build, web unit tests and Playwright
+(`bh offline --web-only`, which cannot write a report). Inspect the
 native plan before any operator-authorized run:
 
 ```bash
@@ -95,7 +97,7 @@ retain the former scripts' defaults, guards, and output formats:
 
 | Command | Purpose |
 | --- | --- |
-| `offline [--web] [--report PATH]` | Python checks, optional web lane, source-bound receipt |
+| `offline [--web \| --web-only] [--report PATH]` | Python checks, optional web lane, source-bound receipt (not with `--web-only`) |
 | `deploy frontend` / `deploy candidate` | Frontend publication / idle candidate installation and rollback |
 | `deploy runtime` | Dry-run-first update of existing bridge/Lua instrumentation, with snapshot and rollback; caller owns service/worker admission |
 | `guide package` / `prompt sync` | Guide validation and packaging / persistent prompt freshness |
