@@ -46,7 +46,7 @@ def configure_parser(parser):
         default=ROOT,
         help="repository checkout (default: this script's checkout)",
     )
-    lane = parser.add_mutually_exclusive_group()
+    lane = parser
     lane.add_argument("--web", action="store_true", help="also build and test the browser UI")
     lane.add_argument("--web-only", action="store_true",
                       help="only build and test the browser UI (the Python checks run elsewhere)")
@@ -69,7 +69,7 @@ def run(args):
             from balatro_horizons.storage.journal import atomic_json, now
 
             before = fingerprint_sources(source_files(root))
-        run_checks(root, web=args.web or args.web_only, python=not args.web_only)
+        run_checks(root, web=args.web or args.web_only, python=not (args.web or args.web_only))
         if args.report:
             if fingerprint_sources(source_files(root)) != before:
                 print("Source changed during offline checks; report was not written.")
