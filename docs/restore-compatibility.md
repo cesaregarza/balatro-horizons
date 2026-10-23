@@ -174,8 +174,12 @@ model-facing configuration; the value is never written into the protocol.
 Freezing now refuses a deck or stake outside `run_options.json` with
 `UNKNOWN_DECK` or `UNKNOWN_STAKE`, and new runs are refused the same way before
 an episode is created. This edits two execution modules,
-`harness/context/freeze.py` and `service.py`, with the shared check in
-`run_configuration.py`. No upgrade group admits older sources across it.
+`harness/context/freeze.py` and `service.py`. The check lives in `freeze.py` so
+that source identity covers it: editing it changes the implementation
+fingerprint. The allowed names come from `run_options.json`, which the fingerprint
+does not cover: changing it changes only which names new roots may use, because
+restore and continuations reuse their frozen, already-validated selection.
+No upgrade group admits older sources across it.
 Checkpoints from `0aec480`, whose recorded `implementation_hash` is
 `3af9c75c…`, are refused with `RESTORE_SOURCE_INCOMPATIBLE`. Earlier deployed
 sources use retired interfaces, and no run was started on a deployment of
