@@ -48,7 +48,7 @@ def harness(tmp_path, monkeypatch):
     session.new_game.side_effect = new_game
     factory = Mock(return_value=session)
     return SimpleNamespace(root=root, baseline=baseline, report=tmp_path / "report.json",
-                           factory=factory, session=session, games=games)
+                           factory=factory, session=session, games=games, certificate=certificate)
 
 
 def run(harness):
@@ -152,3 +152,47 @@ def test_incompatible_cli_modes_are_refused_before_collection():
         run_evidence_command(build_parser().parse_args([
             "evidence", "collect", "--configurations-only", "--gameplay-only",
         ]))
+
+
+# One test per collector-side guard. Each changes only that guard's input, so
+# deleting the guard lets collection finish as "passed".
+
+def test_profile_change_against_the_certificate_stops_at_that_start(harness):
+    second = "/".join(collector.pairs()[1])
+    harness.certificate["profile_hashes"] = {second: digest({"profile": "certified"})}
+    result = run(harness)
+    assert result["status"] == "failed" and result["reason"] == "CERTIFIED_PROFILE_CHANGED"
+    assert result["configurations_checked"] == 1 and result["game_resets"] == 2
+    for game in harness.games:
+        game.close.assert_called_once()
+
+
+def test_source_other_than_the_accepted_implementation_is_refused_before_launch(harness, monkeypatch):
+    monkeypatch.setattr(collector, "implementation_fingerprint", lambda: "unaccepted")
+    with pytest.raises(ValueError, match="^CONFIGURATION_SOURCE_MISMATCH$"):
+        run(harness)
+    harness.factory.assert_not_called()
+    assert not harness.report.exists()
+
+
+def test_environment_change_seen_by_one_game_stops_at_that_start(harness):
+    create = harness.session.new_game.side_effect
+
+    def changed(environment, seed):
+        game = create(environment, seed)
+        if len(harness.games) == 2:
+            game.lock = {"environment": "changed"}
+        return game
+
+    harness.session.new_game.side_effect = changed
+    result = run(harness)
+    assert result["status"] == "failed" and result["reason"] == "CONFIGURATION_ENVIRONMENT_CHANGED"
+    assert result["configurations_checked"] == 1 and result["game_resets"] == 2
+
+
+def test_active_certificate_change_during_collection_fails_the_receipt(harness, monkeypatch):
+    monkeypatch.setattr(collector.reuse, "_read_certificate", lambda _: ({"certificate": "replaced"}, "x"))
+    result = run(harness)
+    assert result["status"] == "failed" and result["reason"] == "ACTIVE_CERTIFICATE_CHANGED"
+    assert result["configurations_checked"] == len(collector.pairs())
+    assert json.loads(harness.report.read_text())["status"] == "failed"
