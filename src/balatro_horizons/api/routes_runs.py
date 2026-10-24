@@ -12,6 +12,7 @@ from balatro_horizons.run_configuration import apply_choices, require_native_sel
 
 from .middleware import require_operator
 from .models import RunInput
+from .routes_settings import model_revision
 
 router = APIRouter()
 
@@ -30,6 +31,11 @@ def start_run(request: Request, data: RunInput):
     state = request.app.state
     chosen = state.config.model_copy(deep=True)
     agent = _configured_agent(state.config.models, data.agent)
+    if data.model_revision is not None:
+        # The record behind this key must still be the one the operator was shown.
+        model = state.config.models.get(agent)
+        if model is None or model_revision(model) != data.model_revision:
+            raise ValueError("MODEL_CONFIG_CHANGED")
     if data.model_settings is not None:
         model = chosen.models.get(agent)
         if model is None:

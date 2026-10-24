@@ -1,5 +1,7 @@
 """Bootstrap and operator configuration routes."""
 
+import hashlib
+import json
 import os
 
 from fastapi import APIRouter, Depends, Request
@@ -13,13 +15,23 @@ from .models import SettingsInput
 router = APIRouter()
 
 
+def model_revision(model):
+    """Content hash of one configured model record, as the browser displayed it."""
+    return hashlib.sha256(json.dumps(model.model_dump(), sort_keys=True).encode()).hexdigest()
+
+
+def public_config(config):
+    revisions = {key: model_revision(model) for key, model in config.models.items()}
+    return {**config.public(), "model_revisions": revisions}
+
+
 @router.get("/api/bootstrap")
 def bootstrap(request: Request):
     """The token is acceptable here because the supported bind is loopback."""
     config = request.app.state.config
     return {
         "operator_token": request.app.state.operator_token,
-        "config": config.public(),
+        "config": public_config(config),
         "workbench": config.workbench_enabled,
         "paid_credentials": {
             name: bool(os.environ.get(key))
@@ -37,4 +49,4 @@ def update_settings(request: Request, data: SettingsInput):
         {**state.config.model_dump(), **data.model_dump(exclude_unset=True)}
     )
     atomic_json(state.settings_path, state.config.model_dump())
-    return state.config.public()
+    return public_config(state.config)

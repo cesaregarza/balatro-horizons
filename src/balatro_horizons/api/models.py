@@ -27,6 +27,7 @@ class RunInput(Input):
     cost_override: Literal[10, "uncapped"] | None = None
     confirm_uncapped: bool = Field(default=False, strict=True)
     model_settings: dict | None = None
+    model_revision: str | None = None
 
     @field_validator("deck", "stake")
     @classmethod

@@ -245,6 +245,7 @@ export type RunInput = {
   cost_override?: 10 | "uncapped" | null;
   confirm_uncapped?: boolean;
   model_settings?: Record<string, unknown>;
+  model_revision?: string;
 };
 export type ReviewOpenInput = {
   episode_id: string;

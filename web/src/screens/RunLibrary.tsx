@@ -79,11 +79,17 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
             startPending.current = true;
             void action(async () => {
               const chosen = selectedModel ? configureModel(selectedModel, effort, capabilities) : null;
+              const key = chosen ? options[agent].key : agent;
               const result = await startRun({
-                agent: chosen ? options[agent].key : agent, ...(chosen ? { model_settings: chosen.settings } : {}),
+                agent: key, ...(chosen ? { model_settings: chosen.settings, model_revision: config.model_revisions?.[key] } : {}),
                 offline, deck, stake, seed: seed || null,
                 ...(costOverride === null ? {} : { cost_override: costOverride }),
                 ...(costOverride === "uncapped" ? { confirm_uncapped: true } : {}),
+              }).catch(async (error) => {
+                if (!(error instanceof Error) || error.message !== "MODEL_CONFIG_CHANGED") throw error;
+                // The record behind this choice changed after it was shown; show the current one.
+                setConfig((await bootstrap()).config);
+                throw new Error("This model's configuration changed after it was shown. Review the refreshed choice and start again.");
               });
               setCostOverride(null);
               setNotice("Run created: " + result.episode_id.slice(0, 10));
