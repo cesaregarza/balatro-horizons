@@ -409,3 +409,28 @@ test("a rejected explicit defaults save never starts a run", async ({ page }) =>
   await expect(page.getByRole("alert")).toContainText("WORKER_BUSY");
   expect(launches).toBe(0);
 });
+
+test("a launch sends the configured alias the picker shows, even for integer-like keys", async ({ page }) => {
+  // Object order lists "2" before "10"; Python and saved JSON keep "10" first.
+  const ten = { ...terra, input_usd_per_million: 3, settings: { ...terra.settings, reasoning_effort: "high" } };
+  const two = { ...terra, input_usd_per_million: 1, settings: { ...terra.settings, reasoning_effort: "low" } };
+  await page.route("**/api/bootstrap", async (route) => {
+    const body = await (await route.fetch()).json();
+    body.config.models = { "10": ten, "2": two };
+    body.config.model_capabilities = capabilities;
+    await route.fulfill({ json: body });
+  });
+  const launches: any[] = [];
+  await page.route("**/api/runs", async (route) => {
+    launches.push(route.request().postDataJSON());
+    await route.fulfill({ json: { episode_id: "c".repeat(32) } });
+  });
+  await page.route("**/api/episodes", (route) => route.fulfill({ json: [] }));
+  await page.goto("/");
+  expect(modelCatalog({ "10": ten, "2": two })[modelKey(terra)]).toEqual(two);
+  await page.getByLabel("Model", { exact: true }).selectOption(modelKey(terra));
+  await expect(page.getByLabel("Reasoning effort", { exact: true })).toHaveValue("low");
+  await page.getByRole("button", { name: /Start test episode/ }).click();
+  await expect.poll(() => launches).toHaveLength(1);
+  expect(launches[0]).toMatchObject({ agent: "2", model_settings: two.settings });
+});

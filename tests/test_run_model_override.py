@@ -70,23 +70,50 @@ def test_model_settings_reject_invalid_values_and_baseline_overrides(store):
     assert unknown_model.json()["error"] == "MODEL_NOT_CONFIGURED"
 
 
-def test_canonical_launch_with_duplicate_aliases_uses_the_browsers_choice(store):
-    # The browser lists one option per provider/model: the canonical key if configured, else
-    # the first configured alias. A launch of that option must resolve the same way.
-    app, client, headers = client_for(store)
+def _integer_like_aliases(app):
     models = app.state.config.models
-    models["luna-alt"] = models["luna"].model_copy(deep=True)
+    luna = models.pop("luna")
+    models["10"] = luna.model_copy(update={
+        "input_usd_per_million": 0.3, "settings": {**luna.settings, "reasoning_effort": "high"},
+    })
+    models["2"] = luna.model_copy(update={
+        "input_usd_per_million": 0.1, "settings": {**luna.settings, "reasoning_effort": "low"},
+    })
+    return models
+
+
+def test_exact_alias_launch_uses_that_aliases_pricing_and_overlays_run_settings(store):
+    app, client, headers = client_for(store)
+    models = _integer_like_aliases(app)
     captured = {}
 
     def start(config, agent, seed, **kwargs):
-        captured.update(agent=agent)
+        captured.update(config=config, agent=agent)
         return "a" * 32
 
     app.state.runs.start = start
+    try:
+        reply = client.post("/api/runs", headers=headers, json={
+            "agent": "2", "offline": True, "model_settings": {"reasoning_effort": "medium"},
+        })
+    finally:
+        client.close()
+    assert reply.status_code == 200, reply.text
+    assert captured["agent"] == "2"
+    launched = captured["config"].models["2"]
+    assert launched.input_usd_per_million == 0.1
+    assert launched.settings == {**models["2"].settings, "reasoning_effort": "medium"}
+
+
+def test_canonical_launch_matching_several_aliases_is_refused(store):
+    app, client, headers = client_for(store)
+    _integer_like_aliases(app)
+    app.state.runs.start = lambda *_args, **_kwargs: "a" * 32
     try:
         reply = client.post("/api/runs", headers=headers, json={
             "agent": "model:openai:gpt-5.6-luna", "offline": True,
         })
     finally:
         client.close()
-    assert (reply.status_code, captured.get("agent")) == (200, "luna"), reply.text
+    assert reply.status_code == 400
+    assert reply.json()["error"] == "AMBIGUOUS_CONFIGURED_MODEL"
