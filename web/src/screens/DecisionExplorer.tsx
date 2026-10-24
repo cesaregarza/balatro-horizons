@@ -48,6 +48,8 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
   const [annotationDirty, setAnnotationDirty] = useState(false);
   const annotationPanel = useRef<HTMLElement>(null);
   const focusOpenedAnnotation = useRef(false);
+  // Counts annotation openings; a heading focus queued before one must not take focus after it.
+  const annotationOpenings = useRef(0);
   const requestedDecision = useRef(initialDecision);
   const chosenDecision = useRef<number | undefined>(undefined);
   const focusedDecision = useRef("");
@@ -104,7 +106,9 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
     if (!screenActive || !mobileDetail || !view || initialDecision === undefined ||
         focusedDecision.current === key || !window.matchMedia("(max-width: 1000px)").matches) return;
     focusedDecision.current = key;
+    const openings = annotationOpenings.current;
     requestAnimationFrame(() => {
+      if (annotationOpenings.current !== openings) return;
       const heading = document.querySelector<HTMLElement>("[data-decision-detail-heading]");
       heading?.scrollIntoView({ block: "start" }); heading?.focus({ preventScroll: true });
     });
@@ -121,6 +125,7 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
   useEffect(() => {
     if (!annotationView || !focusOpenedAnnotation.current) return;
     focusOpenedAnnotation.current = false;
+    annotationOpenings.current += 1;
     annotationPanel.current?.scrollIntoView({ block: "start" });
     annotationPanel.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
   }, [annotationView]);
@@ -135,7 +140,10 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
     chosenDecision.current = row.decision;
     if (onDecisionChange) onDecisionChange(row.decision);
     else if (ledger) window.history.replaceState(null, "", `#explore/${ledger.manifest.episode_id}/${row.decision}`);
-    if (window.matchMedia("(max-width: 1000px)").matches) requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-decision-detail-heading]")?.focus());
+    const openings = annotationOpenings.current;
+    if (window.matchMedia("(max-width: 1000px)").matches) requestAnimationFrame(() => {
+      if (annotationOpenings.current === openings) document.querySelector<HTMLElement>("[data-decision-detail-heading]")?.focus();
+    });
     return true;
   }
   function jumpTo(row: DecisionRow) { if (choose(row)) { setSearch(""); setFilter("all"); setAnte("all"); } }
