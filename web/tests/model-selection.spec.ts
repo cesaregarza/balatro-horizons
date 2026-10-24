@@ -520,3 +520,65 @@ test("a refusal whose refresh lacks revisions keeps the shown choice and starts 
   await expect(picker.locator("optgroup[label='Models'] option")).toHaveText(["GPT-5.6 Terra · OpenAI"]);
   expect(launches).toEqual([expect.objectContaining({ agent: "2", model_revision: "revision-terra" })]);
 });
+
+test("a model removed and restored after it was shown must be chosen again before any launch", async ({ page }) => {
+  // "2" is Terra at $1; settings then remove every model, and later restore "2" at $9.
+  let current: Record<string, unknown> = { models: { "2": { ...terra, input_usd_per_million: 1 } }, model_revisions: { "2": "revision-shown" } };
+  let bootstraps = 0;
+  await page.route("**/api/bootstrap", async (route) => {
+    bootstraps++;
+    const body = await (await route.fetch()).json();
+    const { model_revisions: _ignored, ...config } = body.config;
+    body.config = { ...config, ...current, model_capabilities: capabilities };
+    await route.fulfill({ json: body });
+  });
+  const launches: any[] = [];
+  await page.route("**/api/runs", async (route) => {
+    launches.push(route.request().postDataJSON());
+    await route.fulfill({ status: 400, json: { error: "MODEL_CONFIG_CHANGED" } });
+  });
+  await page.route("**/api/episodes", (route) => route.fulfill({ json: [] }));
+  await page.goto("/");
+  const picker = page.getByLabel("Model", { exact: true });
+  const start = page.getByRole("button", { name: /Start test episode/ });
+  await picker.selectOption(modelKey(terra));
+  current = { models: {}, model_revisions: {} };
+  await start.click();
+  await expect(page.getByRole("alert")).toContainText("changed");
+  await expect(picker.locator("optgroup[label='Models'] option")).toHaveCount(0);
+  current = { models: { "2": { ...terra, input_usd_per_million: 9, settings: { ...terra.settings, reasoning_effort: "high" } } }, model_revisions: { "2": "revision-restored" } };
+  const before = bootstraps;
+  await start.click();
+  await expect(page.getByRole("alert")).toContainText(/choose/i);
+  expect(bootstraps).toBeGreaterThan(before);
+  await expect(picker.locator("optgroup[label='Models'] option")).toHaveText(["GPT-5.6 Terra · OpenAI"]);
+  await expect(picker).not.toHaveValue(modelKey(terra));
+  // Only the first, bound request was ever sent; it was refused, so nothing started.
+  expect(launches).toEqual([expect.objectContaining({ agent: "2", model_revision: "revision-shown" })]);
+});
+
+for (const [name, models] of [["a null", null], ["an array", []], ["a string", "models"]] as const) {
+  test(`a refresh with ${name} model collection is not installed`, async ({ page }) => {
+    let current: Record<string, unknown> = { models: { "2": terra }, model_revisions: { "2": "revision-terra" } };
+    await page.route("**/api/bootstrap", async (route) => {
+      const body = await (await route.fetch()).json();
+      const { model_revisions: _ignored, ...config } = body.config;
+      body.config = { ...config, ...current, model_capabilities: capabilities };
+      await route.fulfill({ json: body });
+    });
+    const launches: unknown[] = [];
+    await page.route("**/api/runs", async (route) => {
+      launches.push(route.request().postDataJSON());
+      await route.fulfill({ status: 400, json: { error: "MODEL_CONFIG_CHANGED" } });
+    });
+    await page.route("**/api/episodes", (route) => route.fulfill({ json: [] }));
+    await page.goto("/");
+    const picker = page.getByLabel("Model", { exact: true });
+    await picker.selectOption(modelKey(terra));
+    current = { models, model_revisions: {} };
+    await page.getByRole("button", { name: /Start test episode/ }).click();
+    await expect(page.getByRole("alert")).toContainText(/could not be confirmed/i);
+    await expect(picker.locator("optgroup[label='Models'] option")).toHaveText(["GPT-5.6 Terra · OpenAI"]);
+    expect(launches).toHaveLength(1);
+  });
+}
