@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listOperatorEpisodes, type Episode, type OperatorEpisode } from "../../api/client";
 import { modelCatalog, modelLabel, EMPTY_CAPABILITIES } from "../../modelSelection";
 
@@ -7,7 +7,10 @@ const PAGE_SIZE = 15;
 const money = (value: number | null) => value == null ? "Unknown" : `$${value.toFixed(4)}`;
 
 export function LibraryTable(props: Props) {
-  const [mode, setMode] = useState<"blinded" | "operator">("blinded");
+  // Operator details reveal exactly the list on screen at the click: the click handler freezes
+  // it, and the server exposes no other runs. A later list falls back to Blinded review.
+  const [revealed, setRevealed] = useState<Episode[] | null>(null);
+  const mode = revealed ? "operator" : "blinded";
   const [operatorRows, setOperatorRows] = useState<OperatorEpisode[]>([]);
   const [loadingOperatorRows, setLoadingOperatorRows] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -23,23 +26,15 @@ export function LibraryTable(props: Props) {
   const [selected, setSelected] = useState<string[]>([]);
 
   useEffect(() => { setPage(0); setSelected([]); }, [mode, props.episodes]);
-  // Operator details reveal the runs listed when the operator chose them. A changed list may
-  // hold later runs, so fall back to Blinded review rather than exposing them implicitly.
-  const revealedList = useRef<Episode[] | null>(null);
-  useEffect(() => {
-    if (mode !== "operator") { revealedList.current = null; return; }
-    if (revealedList.current === null) revealedList.current = props.episodes;
-    else if (revealedList.current !== props.episodes) setMode("blinded");
-  }, [mode, props.episodes]);
+  useEffect(() => { if (revealed && revealed !== props.episodes) setRevealed(null); }, [revealed, props.episodes]);
 
   useEffect(() => {
-    if (mode !== "operator") return;
+    if (!revealed) return;
     let active = true;
     setLoadingOperatorRows(true);
-    // The server reveals only these IDs, so a run added after the click stays blinded.
-    listOperatorEpisodes((revealedList.current ?? props.episodes).map((row) => row.episode_id)).then((rows) => { if (active) { setOperatorRows(rows); setLoadError(""); } }).catch((error) => { if (active) setLoadError(error instanceof Error ? error.message : "Could not load operator episode details."); }).finally(() => { if (active) setLoadingOperatorRows(false); });
+    listOperatorEpisodes(revealed.map((row) => row.episode_id)).then((rows) => { if (active) { setOperatorRows(rows); setLoadError(""); } }).catch((error) => { if (active) setLoadError(error instanceof Error ? error.message : "Could not load operator episode details."); }).finally(() => { if (active) setLoadingOperatorRows(false); });
     return () => { active = false; };
-  }, [mode]);
+  }, [revealed]);
 
   const source = mode === "operator" ? operatorRows : props.episodes;
   const catalog = modelCatalog(props.config.models ?? {});
@@ -91,8 +86,8 @@ export function LibraryTable(props: Props) {
   return <section className="panel run-library-panel">
     <div className="area-title"><h2>Run library</h2><span>{rows.length} matching episodes</span></div>
     <div className="library-mode" role="group" aria-label="Library information view">
-      <button aria-pressed={mode === "blinded"} onClick={() => setMode("blinded")}>Blinded review</button>
-      <button aria-pressed={mode === "operator"} onClick={() => setMode("operator")}>Operator details</button>
+      <button aria-pressed={mode === "blinded"} onClick={() => setRevealed(null)}>Blinded review</button>
+      <button aria-pressed={mode === "operator"} onClick={() => setRevealed(props.episodes)}>Operator details</button>
     </div>
     <p className="muted">{mode === "blinded" ? "Model and outcome details stay hidden. Switching to Operator details reveals both and is recorded as operator exposure." : "Operator details reveal model identity, outcome, reason, and attempt-only spend."}</p>
     {props.workbench && <label className="check"><input type="checkbox" checked={props.priorSeedExposure} onChange={(e) => props.setPriorSeedExposure(e.target.checked)} /> I have previously played or watched the seed of the run I am about to review.</label>}
