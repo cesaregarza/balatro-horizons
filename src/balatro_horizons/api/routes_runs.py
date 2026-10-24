@@ -67,9 +67,11 @@ def _configured_agent(models, requested):
         key for key, model in models.items()
         if requested == f"model:{model.provider}:{quote(model.model, safe='')}"
     ]
-    if len(matches) == 1:
-        return matches[0]
-    raise ValueError("MODEL_NOT_CONFIGURED" if not matches else "AMBIGUOUS_CONFIGURED_MODEL")
+    if not matches:
+        raise ValueError("MODEL_NOT_CONFIGURED")
+    # Same rule as the browser's modelCatalog: without a canonical key, the first
+    # configured alias for that provider/model is the one it lists and launches.
+    return matches[0]
 
 
 @router.post("/api/stop", dependencies=[Depends(require_operator)])
