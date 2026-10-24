@@ -47,6 +47,7 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
   const [annotations, setAnnotations] = useState<any[]>([]);
   const [annotationDirty, setAnnotationDirty] = useState(false);
   const annotationPanel = useRef<HTMLElement>(null);
+  const focusOpenedAnnotation = useRef(false);
   const requestedDecision = useRef(initialDecision);
   const chosenDecision = useRef<number | undefined>(undefined);
   const focusedDecision = useRef("");
@@ -116,6 +117,13 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
     return () => { current = false; };
   }, [token, active?.event_id, ledger?.source_journal_head, refresh, screenActive]);
 
+  // Focus only after React commits the panel; a frame callback could run before it mounts.
+  useEffect(() => {
+    if (!annotationView || !focusOpenedAnnotation.current) return;
+    focusOpenedAnnotation.current = false;
+    annotationPanel.current?.scrollIntoView({ block: "start" });
+    annotationPanel.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+  }, [annotationView]);
   function closeAnnotation() {
     if (annotationDirty && !window.confirm("Discard the unsaved annotation draft?")) return false;
     setAnnotationView(null); setAnnotationDirty(false);
@@ -154,11 +162,8 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
     try {
       const detail = view?.decision === active.decision ? view : await decisionDetail(token, active.decision);
       const revisions = await listAnnotations(token, detail.decision);
+      focusOpenedAnnotation.current = true;
       setAnnotationView(detail); setAnnotations(revisions);
-      requestAnimationFrame(() => {
-        annotationPanel.current?.scrollIntoView({ block: "start" });
-        annotationPanel.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
-      });
     } catch (caught) { setDetailError(inspectionError(caught)); } finally { setBusy(false); }
   }
   async function runAnnotation(task: () => Promise<void>) { setBusy(true); try { await task(); } finally { setBusy(false); } }
