@@ -79,8 +79,14 @@ ceilings. Per-run model settings are validated against the configured model and
 applied to a copy; only **Save model defaults** writes persistent defaults. A launch
 names the exact configured entry shown and its revision; if that entry changed after
 it was shown, the launch is refused, the picker refreshes, and nothing starts. The
-browser never launches a shown model without its revision: it refreshes first, and if
-the refreshed models still lack revisions it starts nothing and shows an error. The
+browser binds a revision to every model selection it displays. Only the heuristic,
+random-legal and human baselines launch without one. A selection that is neither a
+displayed model nor a baseline (for example, a model removed after it was chosen) is
+cleared and refetched, and the operator must choose again; nothing is sent. A shown
+model whose revision is absent or empty is refreshed instead of launched. A refreshed
+catalog is installed only if its model collection is an object with a revision for
+every model; an empty collection is valid and leaves only the baselines, and a null,
+array or other malformed collection shows an error and keeps the previous catalog. The
 server checks one copy of the configuration for the whole launch. `POST /api/runs`
 accepts a launch without `model_revision` only for clients that display no catalog,
 such as the CLI and scripts; they get exactly the named configured entry. A new

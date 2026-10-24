@@ -11,6 +11,10 @@ import { RunConfiguration, gameChoiceLabel } from "./run-library/RunConfiguratio
 import "./run-library/library.css";
 
 const isRevision = (value: unknown): value is string => typeof value === "string" && value !== "";
+// The only agents launched without a model revision; any other selection must be a shown model.
+const BASELINES = ["heuristic", "random_legal", "human"];
+const isModelCollection = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes, busy, run, openExplorer, openReview, onCompare, priorSeedExposure, setPriorSeedExposure, watch, setWatch, status, setNotice, onHumanStart }: any) {
   const [agent, setAgent] = useState("heuristic");
@@ -45,7 +49,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
   // installed, so nothing can launch unbound. Either way the operator must confirm again.
   async function refreshShownModels(reason = "Model details were refreshed."): Promise<never> {
     const latest = (await bootstrap()).config;
-    if (!Object.keys(latest.models ?? {}).every((key) => isRevision(latest.model_revisions?.[key]))) {
+    if (!isModelCollection(latest.models) || !Object.keys(latest.models).every((key) => isRevision(latest.model_revisions?.[key]))) {
       throw new Error("Model details could not be confirmed. Refresh the workbench before starting a run.");
     }
     setConfig(latest);
@@ -63,6 +67,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
         <h2>Start a run</h2>
         <div className="form-row">
           <label>Model<select aria-label="Model" value={agent} onChange={(e) => { setAgent(e.target.value); setCostOverride(null); }} disabled={busy}>
+            {!selectedModel && !BASELINES.includes(agent) && <option value={agent} disabled>Choose a model</option>}
             <optgroup label="Models">{Object.entries(options).map(([key, option]) => <option key={key} value={key}>{modelLabel(option.model, capabilities)}</option>)}</optgroup>
             <optgroup label="Baselines & human control"><option value="heuristic">Heuristic baseline</option><option value="random_legal">Random legal baseline</option>{workbench && <option value="human">Human player</option>}</optgroup>
           </select></label>
@@ -90,6 +95,11 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
             if (startPending.current || busy || !selectedModelSupported || (!offline && connection?.ready !== true)) return;
             startPending.current = true;
             void action(async () => {
+              if (!selectedModel && !BASELINES.includes(agent)) {
+                // The selected model is no longer in the catalog: never launch it unbound.
+                setAgent("");
+                await refreshShownModels("The selected model is no longer configured. Choose a model.");
+              }
               const chosen = selectedModel ? configureModel(selectedModel, effort, capabilities) : null;
               const key = chosen ? options[agent].key : agent;
               const revision = config.model_revisions?.[key];
