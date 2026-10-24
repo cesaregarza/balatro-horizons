@@ -29,7 +29,11 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [opening, setOpening] = useState(false);
-  const [watch, setWatch] = useState(false);
+  // Live status reveals the run list on screen when it was chosen: the toggle freezes that
+  // list, and the server exposes no other runs. A later list stops watching.
+  const [watched, setWatched] = useState<Episode[] | null>(null);
+  const watch = watched !== null;
+  const setWatch = (on: boolean) => setWatched(on ? episodes : null);
   const [status, setStatus] = useState<any>(null);
   const [priorSeedExposure, setPriorSeedExposure] = useState(false);
   const sessions = useRef<{ explorer?: ExplorerSession; review?: ReviewSession; comparisonId?: string }>({});
@@ -160,7 +164,8 @@ export default function App() {
       window.removeEventListener("hashchange", historyChanged);
     };
   }, []);
-  usePolling(watch, 2000, operatorStatus, setStatus, (caught) => setError(String(caught)));
+  useEffect(() => { if (watched && watched !== episodes) setWatched(null); }, [watched, episodes]);
+  usePolling(watch, 2000, () => operatorStatus((watched ?? []).map((row) => row.episode_id)), setStatus, (caught) => setError(String(caught)));
   usePolling(tab === "human", 1000, humanStatus, setHuman, (caught) => setError(String(caught)));
 
   if (!config) return <main className="loading"><h1>Balatro Horizons</h1><p>{error || "Opening the dashboard…"}</p></main>;
