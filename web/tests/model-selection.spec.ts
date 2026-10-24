@@ -10,6 +10,7 @@ import {
   type ModelConfig,
 } from "../src/modelSelection";
 import { awaitIdleWorker } from "./runHelpers";
+import { startLegacyServer, type LegacyServer } from "./legacyServer";
 
 const terra: ModelConfig = {
   provider: "openai",
@@ -659,6 +660,7 @@ test("renaming a reserved alias moves its record to the new key and leaves other
   await expect(repair.getByRole("listitem")).toHaveCount(1);
   await repair.getByLabel("New alias for human").fill("luna-legacy");
   await repair.getByRole("button", { name: "Rename human" }).click();
+  await repair.getByRole("button", { name: "Repair aliases" }).click();
   await expect.poll(() => saves.length).toBe(1);
   expect(Object.keys(saves[0].models).sort()).toEqual(["luna-legacy", "luna2"]);
   expect(saves[0].models["luna-legacy"]).toEqual({ ...luna, input_usd_per_million: 1 });
@@ -670,6 +672,7 @@ test("removing a reserved alias saves the models without it", async ({ page }) =
   const { saves, repair } = await legacyAliasApp(page);
   await expect(repair.getByRole("listitem")).toHaveCount(1);
   await repair.getByRole("button", { name: "Remove human" }).click();
+  await repair.getByRole("button", { name: "Repair aliases" }).click();
   await expect.poll(() => saves.length).toBe(1);
   expect(Object.keys(saves[0].models)).toEqual(["luna2"]);
 });
@@ -680,6 +683,7 @@ for (const [name, value] of [["a built-in name", "random_legal"], ["a configured
     await expect(repair.getByRole("listitem")).toHaveCount(1);
     await repair.getByLabel("New alias for human").fill(value);
     await repair.getByRole("button", { name: "Rename human" }).click();
+    await repair.getByRole("button", { name: "Repair aliases" }).click();
     await expect(page.getByRole("alert")).toBeVisible();
     expect(saves).toEqual([]);
   });
@@ -690,10 +694,140 @@ test("after a rename, ordinary saves carry no reserved alias", async ({ page }) 
   await expect(repair.getByRole("listitem")).toHaveCount(1);
   await repair.getByLabel("New alias for human").fill("luna-legacy");
   await repair.getByRole("button", { name: "Rename human" }).click();
+  await repair.getByRole("button", { name: "Repair aliases" }).click();
   await expect.poll(() => saves.length).toBe(1);
   await page.getByRole("button", { name: "Save spending limits", exact: true }).click();
   await expect.poll(() => saves.length).toBe(2);
   await page.getByRole("button", { name: "Save skill access", exact: true }).click();
   await expect.poll(() => saves.length).toBe(3);
   for (const save of saves.slice(1)) expect(Object.keys(save.models).sort()).toEqual(["luna-legacy", "luna2"]);
+});
+
+// Several reserved aliases against the real settings route, which refuses any save that still
+// carries one: only a single save that repairs all of them can succeed.
+test.describe("repairing several reserved aliases on a real server", () => {
+  let server: LegacyServer | undefined;
+  test.afterEach(async () => { await server?.stop(); server = undefined; });
+
+  async function open(page: import("@playwright/test").Page, reserved: string[]) {
+    server = await startLegacyServer(reserved);
+    const puts: any[] = [];
+    page.on("request", (request) => { if (request.method() === "PUT" && new URL(request.url()).pathname === "/api/settings") puts.push(request.postDataJSON()); });
+    await page.goto(server.origin + "/");
+    await page.getByRole("button", { name: "Models & budgets", exact: true }).click();
+    const repair = page.getByRole("region", { name: "Aliases using built-in player names" });
+    await expect(repair.getByRole("listitem")).toHaveCount(reserved.length);
+    return { server, puts, repair };
+  }
+
+  test("recording each alias's decision sends no request", async ({ page }) => {
+    const { puts, repair } = await open(page, ["human", "heuristic"]);
+    await repair.getByLabel("New alias for human").fill("luna-human");
+    await repair.getByRole("button", { name: "Rename human" }).click();
+    await repair.getByRole("button", { name: "Remove heuristic" }).click();
+    await expect(repair.getByRole("listitem")).toHaveCount(2);
+    expect(puts).toEqual([]);
+    await expect(repair.getByRole("button", { name: "Repair aliases" })).toBeEnabled();
+  });
+
+  test("one repair save of two renames is accepted, then an ordinary save follows", async ({ page }) => {
+    const { server, puts, repair } = await open(page, ["human", "heuristic"]);
+    await expect(repair.getByRole("button", { name: "Repair aliases" })).toBeVisible();
+    for (const key of ["human", "heuristic"]) {
+      await repair.getByLabel(`New alias for ${key}`).fill(`luna-${key}`);
+      await repair.getByRole("button", { name: `Rename ${key}` }).click();
+    }
+    const saved = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().endsWith("/api/settings"));
+    await repair.getByRole("button", { name: "Repair aliases" }).click();
+    expect((await saved).status()).toBe(200);
+    const models = server.persisted().models;
+    expect(Object.keys(models).sort()).toEqual(["luna-heuristic", "luna-human", "luna2"]);
+    expect(models["luna-human"]).toEqual(server.seeded.models.human);
+    expect(models["luna-heuristic"]).toEqual(server.seeded.models.heuristic);
+    expect(models.luna2).toEqual(server.seeded.models.luna2);
+    const ordinary = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().endsWith("/api/settings"));
+    await page.getByRole("button", { name: "Save spending limits", exact: true }).click();
+    expect((await ordinary).status()).toBe(200);
+    expect(puts).toHaveLength(2);
+  });
+
+  test("one repair save mixes renames and a removal across three reserved aliases", async ({ page }) => {
+    const { server, puts, repair } = await open(page, ["human", "heuristic", "random_legal"]);
+    await expect(repair.getByRole("button", { name: "Repair aliases" })).toBeVisible();
+    await repair.getByLabel("New alias for human").fill("luna-human");
+    await repair.getByRole("button", { name: "Rename human" }).click();
+    await repair.getByRole("button", { name: "Remove heuristic" }).click();
+    await repair.getByLabel("New alias for random_legal").fill("luna-random");
+    await repair.getByRole("button", { name: "Rename random_legal" }).click();
+    const saved = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().endsWith("/api/settings"));
+    await repair.getByRole("button", { name: "Repair aliases" }).click();
+    expect((await saved).status()).toBe(200);
+    const models = server.persisted().models;
+    expect(Object.keys(models).sort()).toEqual(["luna-human", "luna-random", "luna2"]);
+    expect(models["luna-human"]).toEqual(server.seeded.models.human);
+    expect(models["luna-random"]).toEqual(server.seeded.models.random_legal);
+    expect(puts).toHaveLength(1);
+  });
+
+  test("two quick repair clicks while bootstrap is held send exactly one save", async ({ page }) => {
+    const { server, puts, repair } = await open(page, ["human", "heuristic"]);
+    await expect(repair.getByRole("button", { name: "Repair aliases" })).toBeVisible();
+    await repair.getByRole("button", { name: "Remove human" }).click();
+    await repair.getByRole("button", { name: "Remove heuristic" }).click();
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let bootstraps = 0;
+    await page.route("**/api/bootstrap", async (route) => { bootstraps++; await held; await route.continue(); });
+    await page.evaluate(() => {
+      const button = Array.from(document.querySelectorAll("button")).find((candidate) => candidate.textContent === "Repair aliases")!;
+      button.click();
+      button.click();
+    });
+    await expect.poll(() => bootstraps).toBe(1);
+    const saved = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().endsWith("/api/settings"));
+    release();
+    expect((await saved).status()).toBe(200);
+    await expect(repair).toHaveCount(0);
+    expect(puts).toHaveLength(1);
+    expect(bootstraps).toBe(1);
+    expect(Object.keys(server.persisted().models)).toEqual(["luna2"]);
+  });
+
+  for (const [name, targets] of [["duplicate new names", ["luna-legacy", "luna-legacy"]], ["a configured name", ["luna2", "luna-heuristic"]]] as const) {
+    test(`a repair with ${name} sends no save`, async ({ page }) => {
+      const { puts, repair } = await open(page, ["human", "heuristic"]);
+    await expect(repair.getByRole("button", { name: "Repair aliases" })).toBeVisible();
+      for (const [index, key] of ["human", "heuristic"].entries()) {
+        await repair.getByLabel(`New alias for ${key}`).fill(targets[index]);
+        await repair.getByRole("button", { name: `Rename ${key}` }).click();
+      }
+      await repair.getByRole("button", { name: "Repair aliases" }).click();
+      await expect(page.getByRole("alert")).toBeVisible();
+      expect(puts).toEqual([]);
+    });
+  }
+
+  test("a repair whose reserved alias vanished meanwhile sends no save", async ({ page }) => {
+    const { puts, repair } = await open(page, ["human", "heuristic"]);
+    await expect(repair.getByRole("button", { name: "Repair aliases" })).toBeVisible();
+    await repair.getByRole("button", { name: "Remove human" }).click();
+    await repair.getByRole("button", { name: "Remove heuristic" }).click();
+    // Another session's view of the latest config: "heuristic" is gone.
+    await page.route("**/api/bootstrap", async (route) => {
+      const body = await (await route.fetch()).json();
+      delete body.config.models.heuristic;
+      await route.fulfill({ json: body });
+    });
+    await repair.getByRole("button", { name: "Repair aliases" }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    expect(puts).toEqual([]);
+  });
+
+  test("the repair stays disabled until every reserved alias has a decision", async ({ page }) => {
+    const { puts, repair } = await open(page, ["human", "heuristic"]);
+    await expect(repair.getByRole("button", { name: "Repair aliases" })).toBeDisabled();
+    await repair.getByRole("button", { name: "Remove human" }).click();
+    await expect(repair.getByRole("button", { name: "Repair aliases" })).toBeDisabled();
+    expect(puts).toEqual([]);
+  });
 });
