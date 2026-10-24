@@ -300,7 +300,11 @@ export const startRun = (input: RunInput) => request<{ episode_id: string }>("/r
 export const stopRun = () => request<{ stop_requested: boolean }>("/stop", "POST", {});
 export const operatorStatus = () => request<any>("/operator/status");
 export const operatorRuntime = (signal?: AbortSignal) => request<RuntimeConnection>("/operator/runtime", "GET", undefined, undefined, signal);
-export const saveSettings = (input: unknown) => request<any>("/settings", "PUT", input);
+export const saveSettings = (input: unknown) => request<any>("/settings", "PUT", input).catch((error) => {
+  if (error instanceof Error && error.message === "RESERVED_MODEL_ALIAS")
+    throw new Error("A model alias uses a built-in player name. Rename or remove it under Models & budgets before saving.");
+  throw error;
+});
 export const openReview = (input: ReviewOpenInput) => request<{ review_token: string; view: View }>("/reviews", "POST", input);
 export const openExplorer = (input: ReviewOpenInput) => request<{ review_token: string; view: View | null }>("/explore/sessions", "POST", { ...input, retrospective: true, include_view: false });
 export const reviewView = (token: string) => request<View>("/review", "GET", undefined, token);

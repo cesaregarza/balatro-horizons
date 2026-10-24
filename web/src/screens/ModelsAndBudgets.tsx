@@ -1,9 +1,11 @@
 import { saveSettings } from "../api/client";
 import { ModelConnection } from "./ModelConnection";
+import { ReservedAliasRepair } from "./ReservedAliasRepair";
 
 export function ModelsAndBudgets({ config, setConfig, run, setNotice, credentials, busy }: any) {
   return <>
     <h1>Models & budgets</h1><p>Direct provider access with a shared gameplay context. Keys are read from the backend environment.</p>
+    <ReservedAliasRepair config={config} setConfig={setConfig} run={run} setNotice={setNotice} />
     <section className="panel"><h2>Game knowledge</h2><label>Skill access<select aria-label="Skill access" value={config.skills ?? "balatro-guide-v1"} onChange={(e) => setConfig({ ...config, skills: e.target.value })}><option value="balatro-guide-v1">Balatro guide — rules and strategy</option><option value="none">Native rules only</option></select></label><p className="muted">The model sees a small skill catalog and reads chapters when needed. Each run keeps its own frozen copy.</p><button onClick={() => run(async () => { setConfig(await saveSettings({ models: config.models, budgets: config.budgets, skills: config.skills ?? "balatro-guide-v1" })); setNotice("Skill access saved for new runs."); })}>Save skill access</button></section>
     <div className="split"><ModelConnection config={config} setConfig={setConfig} run={run} setNotice={setNotice} credentials={credentials} busy={busy} /><SpendingControls config={config} setConfig={setConfig} run={run} setNotice={setNotice} /></div>
   </>;

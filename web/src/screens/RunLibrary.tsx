@@ -71,7 +71,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
             <optgroup label="Baselines & human control"><option value="heuristic">Heuristic baseline</option><option value="random_legal">Random legal baseline</option>{workbench && <option value="human">Human player</option>}</optgroup>
           </select></label>
         </div>
-        {reservedAliases.length > 0 && <p className="error">Model alias {reservedAliases.join(", ")} uses a built-in player name, so it is not offered. Rename it in Models & budgets.</p>}
+        {reservedAliases.length > 0 && <p className="error">Model alias {reservedAliases.join(", ")} uses a built-in player name, so it is not offered. Rename or remove it under Models & budgets.</p>}
         <RunConfiguration deck={deck} stake={stake} onDeck={setDeck} onStake={setStake} disabled={busy} />
         {selectedModel && <>
           <ModelControls model={selectedModel} effort={effort} onEffort={setEffort} capabilities={capabilities} disabled={busy} />

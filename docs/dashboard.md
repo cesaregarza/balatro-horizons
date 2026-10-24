@@ -95,7 +95,11 @@ server checks one copy of the configuration for the whole launch. A configured m
 alias may not use a built-in player name (`heuristic`, `random_legal`, `human`):
 settings refuse it with `RESERVED_MODEL_ALIAS`, the picker does not offer it and shows
 a configuration error, and the server refuses a launch that names one with model
-fields or resolves a canonical key to one. `POST /api/runs`
+fields or resolves a canonical key to one. An older configuration that already holds
+such an alias is repaired under **Models & budgets**, in **Aliases using built-in player
+names**: Rename moves that one record to a new, unused, non-reserved key, and Remove
+drops it. Each is one save of the latest configuration. Nothing is migrated
+automatically, and recorded runs keep their configuration. `POST /api/runs`
 accepts a launch without `model_revision` only for clients that display no catalog,
 such as the CLI and scripts; they get exactly the named configured entry. A new
 run stays in the library until opened, so launching exposes nothing beyond it; a
