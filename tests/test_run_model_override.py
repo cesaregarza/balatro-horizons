@@ -68,3 +68,25 @@ def test_model_settings_reject_invalid_values_and_baseline_overrides(store):
     assert baseline.json()["error"] == "MODEL_SETTINGS_REQUIRE_CONFIGURED_MODEL"
     assert unknown_model.status_code == 400
     assert unknown_model.json()["error"] == "MODEL_NOT_CONFIGURED"
+
+
+def test_canonical_launch_with_duplicate_aliases_uses_the_browsers_choice(store):
+    # The browser lists one option per provider/model: the canonical key if configured, else
+    # the first configured alias. A launch of that option must resolve the same way.
+    app, client, headers = client_for(store)
+    models = app.state.config.models
+    models["luna-alt"] = models["luna"].model_copy(deep=True)
+    captured = {}
+
+    def start(config, agent, seed, **kwargs):
+        captured.update(agent=agent)
+        return "a" * 32
+
+    app.state.runs.start = start
+    try:
+        reply = client.post("/api/runs", headers=headers, json={
+            "agent": "model:openai:gpt-5.6-luna", "offline": True,
+        })
+    finally:
+        client.close()
+    assert (reply.status_code, captured.get("agent")) == (200, "luna"), reply.text
