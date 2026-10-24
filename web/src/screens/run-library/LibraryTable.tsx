@@ -36,7 +36,8 @@ export function LibraryTable(props: Props) {
     if (mode !== "operator") return;
     let active = true;
     setLoadingOperatorRows(true);
-    listOperatorEpisodes().then((rows) => { if (active) { setOperatorRows(rows); setLoadError(""); } }).catch((error) => { if (active) setLoadError(error instanceof Error ? error.message : "Could not load operator episode details."); }).finally(() => { if (active) setLoadingOperatorRows(false); });
+    // The server reveals only these IDs, so a run added after the click stays blinded.
+    listOperatorEpisodes((revealedList.current ?? props.episodes).map((row) => row.episode_id)).then((rows) => { if (active) { setOperatorRows(rows); setLoadError(""); } }).catch((error) => { if (active) setLoadError(error instanceof Error ? error.message : "Could not load operator episode details."); }).finally(() => { if (active) setLoadingOperatorRows(false); });
     return () => { active = false; };
   }, [mode]);
 

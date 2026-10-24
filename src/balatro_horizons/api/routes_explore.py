@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Request
 
-from balatro_horizons.api.models import OpenExplorer, SeekReview
+from balatro_horizons.api.models import OpenExplorer, OperatorEpisodes, SeekReview
 from balatro_horizons.review.export import export_response
 
 from .middleware import require_operator, require_session
@@ -31,9 +31,9 @@ def episodes(request: Request):
     return rows
 
 
-@router.get("/api/operator/episodes", dependencies=[Depends(require_operator)])
-def operator_episodes(request: Request):
-    return request.app.state.operator_library.episodes()
+@router.post("/api/operator/episodes", dependencies=[Depends(require_operator)])
+def operator_episodes(request: Request, data: OperatorEpisodes):
+    return request.app.state.operator_library.episodes(data.episode_ids)
 
 
 @router.post("/api/explore/sessions", dependencies=[Depends(require_operator)])

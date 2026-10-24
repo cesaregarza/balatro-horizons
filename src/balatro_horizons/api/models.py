@@ -48,6 +48,10 @@ class OpenReview(Input):
     prior_seed_exposure: bool = False
 
 
+class OperatorEpisodes(Input):
+    episode_ids: list[str]
+
+
 class OpenExplorer(Input):
     episode_id: str
     retrospective: bool = False

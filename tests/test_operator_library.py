@@ -10,7 +10,7 @@ from balatro_horizons.review.operator_library import project_episode
 def test_operator_library_is_authenticated_and_blinded_library_stays_unchanged(store, episode):
     app = create_app(store.root, Config())
     with TestClient(app) as client:
-        assert client.get("/api/operator/episodes").status_code == 403
+        assert client.post("/api/operator/episodes", json={"episode_ids": [episode]}).status_code == 403
         token = client.get("/api/bootstrap").json()["operator_token"]
         headers = {"X-BH-Operator": token}
         blinded = client.get("/api/episodes", headers=headers).json()[0]
@@ -18,7 +18,7 @@ def test_operator_library_is_authenticated_and_blinded_library_stays_unchanged(s
             "episode_id", "created_at", "evidence_kind", "evaluation_eligible", "fixture",
             "deck", "stake", "branch",
         }
-        response = client.get("/api/operator/episodes", headers=headers)
+        response = client.post("/api/operator/episodes", headers=headers, json={"episode_ids": [episode]})
         assert response.status_code == 200
         row = next(item for item in response.json() if item["episode_id"] == episode)
         assert row["model_name"] == "heuristic"
@@ -28,7 +28,7 @@ def test_operator_library_is_authenticated_and_blinded_library_stays_unchanged(s
 
         exposure_path = store.root / "review" / f"{episode}-exposure.jsonl"
         initial_records = exposure_path.read_text().splitlines()
-        client.get("/api/operator/episodes", headers=headers)
+        client.post("/api/operator/episodes", headers=headers, json={"episode_ids": [episode]})
         assert exposure_path.read_text().splitlines() == initial_records
 
 
@@ -63,7 +63,9 @@ def test_operator_library_projects_frozen_model_lineage_and_unknowns(store, epis
     app = create_app(store.root, Config())
     with TestClient(app) as client:
         headers = {"X-BH-Operator": client.get("/api/bootstrap").json()["operator_token"]}
-        rows = {row["episode_id"]: row for row in client.get("/api/operator/episodes", headers=headers).json()}
+        rows = {row["episode_id"]: row for row in client.post(
+            "/api/operator/episodes", headers=headers, json={"episode_ids": [child]},
+        ).json()}
     model = rows[child]
     assert model["parent_episode_id"] == episode
     assert model["model_name"] == "gpt-6-luna"
