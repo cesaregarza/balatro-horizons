@@ -8,7 +8,7 @@ from balatro_horizons.api import create_app
 from balatro_horizons.game.fake import FakeGame
 from balatro_horizons.game.replay import restore_seed_prefix
 from balatro_horizons.observations.projection import HandleIssuer
-from balatro_horizons.storage.journal import digest
+from balatro_horizons.storage.journal import digest, locked
 
 
 def test_seed_restore_waits_before_first_comparison():
@@ -84,6 +84,13 @@ def test_fixture_labels_and_export_download_are_separate_from_review(
         assert "private_runs" not in json.dumps(response.json())
 
 
+def _read_locked(store, eid, read):
+    # The worker thread appends under the episode's writer lock. Read the same way
+    # production readers do, so a half-written trailing line is never seen as TORN_JOURNAL.
+    with locked(store.episode_path(eid) / ".writer.lock"):
+        return read(eid)
+
+
 @pytest.mark.parametrize("mode", ["agent_continue", "short_human_sequence", "human_takeover"])
 def test_intervention_modes_use_shared_human_api(store, workbench_config, episode, mode):
     """Drive synthetic human operations through the same endpoint as the browser/CLI."""
@@ -92,7 +99,7 @@ def test_intervention_modes_use_shared_human_api(store, workbench_config, episod
 
     config = workbench_config
     assert verify_checkpoint(store, config, episode, 0)["status"] == "passed"
-    parent_head = store.summary(episode)["journal_head"]
+    parent_head = _read_locked(store, episode, store.summary)["journal_head"]
     app = create_app(store.root, config)
     with TestClient(app) as client:
         op = {"X-BH-Operator": client.get("/api/bootstrap").json()["operator_token"]}
@@ -106,7 +113,7 @@ def test_intervention_modes_use_shared_human_api(store, workbench_config, episod
         sent = set()
         deadline = time.monotonic() + 10
         try:
-            while not store.summary(child) and time.monotonic() < deadline:
+            while not _read_locked(store, child, store.summary) and time.monotonic() < deadline:
                 current = client.get("/api/operator/human", headers=op).json()
                 if current["waiting"]:
                     decision = current["context"]["observation"]["observation_id"]
@@ -120,8 +127,9 @@ def test_intervention_modes_use_shared_human_api(store, workbench_config, episod
                         )
                         sent.add(decision)
                 time.sleep(0.01)
-            assert store.summary(child)["outcome"] == "WIN"
-            commits = [e for e in store.events(child) if e["type"] == "action_commit"]
+            assert _read_locked(store, child, store.summary)["outcome"] == "WIN"
+            events = _read_locked(store, child, store.events)
+            commits = [e for e in events if e["type"] == "action_commit"]
             humans = [e for e in commits if e["actor"] == "human"]
             if mode == "short_human_sequence":
                 assert len(humans) == 3 and len(commits) > 3
@@ -131,7 +139,7 @@ def test_intervention_modes_use_shared_human_api(store, workbench_config, episod
             else:
                 assert not humans
             assert not store.manifest(child)["evaluation_eligible"]
-            assert store.summary(episode)["journal_head"] == parent_head
+            assert _read_locked(store, episode, store.summary)["journal_head"] == parent_head
         finally:
             app.state.runs.stop.set()
             app.state.runs.thread.join(3)
