@@ -1,3 +1,9 @@
+import type { ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { PassThrough } from "node:stream";
 import { test, expect } from "@playwright/test";
 import {
   configureModel,
@@ -830,4 +836,414 @@ test.describe("repairing several reserved aliases on a real server", () => {
     await expect(repair.getByRole("button", { name: "Repair aliases" })).toBeDisabled();
     expect(puts).toEqual([]);
   });
+});
+
+// The legacy-server helper itself: every startup failure must leave no process and no temp dir.
+test.describe("legacy server startup failures", () => {
+  const legacyDirs = () => readdirSync(tmpdir()).filter((name) => name.startsWith("bh-legacy-")).sort();
+  const node = process.execPath;
+  // Startup must settle within this bound on every path, so a hang fails an assertion.
+  const settled = <T,>(promise: Promise<T>, ms = 15000) => Promise.race([promise, new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), ms))]);
+  async function startFailure(options: Parameters<typeof startLegacyServer>[1]) {
+    // Cleanup must delete only the directory this start created: a same-prefix directory and an
+    // unrelated file nearby both survive it.
+    const sentinelDir = mkdtempSync(join(tmpdir(), "bh-legacy-sentinel-"));
+    const sentinelFile = join(tmpdir(), `bh-sentinel-${process.pid}-${Date.now()}.txt`);
+    writeFileSync(sentinelFile, "keep");
+    const before = legacyDirs();
+    const outcome = await settled(startLegacyServer(["human"], options).then(async (server) => { await server.stop(); return "started"; }, (error: Error) => error));
+    const after = legacyDirs();
+    const sentinelsSurvived = existsSync(sentinelDir) && existsSync(sentinelFile);
+    rmSync(sentinelDir, { recursive: true, force: true });
+    rmSync(sentinelFile, { force: true });
+    return { outcome, before, after, sentinelsSurvived };
+  }
+  const pidIn = (error: Error) => Number(/fake pid (\d+)/.exec(error.message)?.[1]);
+  type Probe = (pid: number, signal: 0) => unknown;
+  // Present when the probe succeeds or is refused (EPERM: it exists); absent only on ESRCH.
+  const alive = (pid: number, probe: Probe = process.kill) => {
+    try { probe(pid, 0); return true; } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EPERM") return true;
+      if (code === "ESRCH") return false;
+      throw new Error(`Could not probe pid ${pid}: ${code ?? (error as Error).message}`);
+    }
+  };
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  test("a readiness request that hangs fails at the deadline with the server's stderr", async () => {
+    // Accepts connections but never answers.
+    const hung = `require("net").createServer(() => {}).listen(+process.argv[1], "127.0.0.1", () => console.error("fake pid " + process.pid));`;
+    const started = Date.now();
+    const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: (_dir, port) => [node, ["-e", hung, String(port)]], readyTimeoutMs: 2000, fetchTimeoutMs: 300 });
+    expect(outcome).toBeInstanceOf(Error);
+    const error = outcome as Error;
+    expect(error.message).toMatch(/did not start within/);
+    expect(error.message).toContain("fake pid");
+    expect(Date.now() - started).toBeLessThan(10000);
+    expect(Number.isFinite(pidIn(error))).toBe(true);
+    expect(alive(pidIn(error))).toBe(false);
+    expect(after).toEqual(before);
+    expect(sentinelsSurvived).toBe(true);
+  });
+
+  test("a server that exits early fails with its stderr and leaves nothing behind", async () => {
+    const early = `console.error("fake pid " + process.pid); process.exit(3);`;
+    const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: () => [node, ["-e", early]] });
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toMatch(/exited/);
+    expect((outcome as Error).message).toContain("fake pid");
+    expect(after).toEqual(before);
+    expect(sentinelsSurvived).toBe(true);
+  });
+
+  test("a server that cannot be spawned fails clearly and leaves no temp dir", async () => {
+    const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: () => ["/nonexistent/bh-legacy-python", []] });
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toMatch(/could not be started/);
+    expect(after).toEqual(before);
+    expect(sentinelsSurvived).toBe(true);
+  });
+
+  // A real fake server whose own child inherits its stderr: the pipe stays open after it exits.
+  const grandchild = `const { spawn } = require("child_process"); const g = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "ignore", "inherit"] }); require("fs").writeFileSync(process.argv[1], String(g.pid));`;
+  // Scope: guards against false passes, signalling a process the test did not create, leaks and lost causes.
+  // Out of scope: hostile same-UID receipt planting, PID reuse before the signal-0 probe, other kill errors, multiple workers.
+  // Reads a grandchild PID receipt the test itself wrote and kills that process. It signals only a
+  // canonical decimal id in (1, 2147483647] that is neither this process nor its parent (0 or a
+  // negative id would reach a whole process group), and reports only a confirmed outcome:
+  // "gone" if there was no such process, "dead" once the probe stops finding it. Anything else
+  // throws with the pid, the error code and the receipt path.
+  const killGrandchild = async (pidFile: string, send: (pid: number, signal: NodeJS.Signals) => unknown = process.kill, probe: Probe = process.kill, boundMs = 3000): Promise<"dead" | "gone"> => {
+    const text = existsSync(pidFile) ? readFileSync(pidFile, "utf8") : undefined;
+    const pid = text !== undefined && /^[1-9][0-9]*$/.test(text) ? Number(text) : NaN;
+    if (!(pid > 1 && pid <= 2147483647) || pid === process.pid || pid === process.ppid)
+      throw new Error(`Invalid grandchild receipt ${pidFile}: ${JSON.stringify(text)}`);
+    try { send(pid, "SIGKILL"); } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ESRCH") return "gone";
+      throw new Error(`Could not kill grandchild ${pid} from receipt ${pidFile}: ${code ?? (error as Error).message}`);
+    }
+    const deadline = Date.now() + boundMs;
+    do {
+      let present: boolean;
+      try { present = alive(pid, probe); } catch (error) {
+        throw new Error(`Could not probe grandchild ${pid} from receipt ${pidFile}: ${(error as Error).message}`);
+      }
+      if (!present) return "dead";
+      await sleep(50);
+    } while (Date.now() < deadline);
+    throw new Error(`Grandchild ${pid} from receipt ${pidFile}: SIGKILL delivered but death unconfirmed`);
+  };
+
+  type Send = (pid: number, signal: NodeJS.Signals) => unknown;
+  type Grandchild = { pidFile: string; start: (...args: Parameters<typeof startLegacyServer>) => Promise<LegacyServer> };
+  // Test-only seams, so every acquisition, setup and cleanup failure can be exercised.
+  type GrandchildDeps = { mkdtemp?: (prefix: string) => string; start?: typeof startLegacyServer; send?: Send; probe?: Probe; rm?: (dir: string) => void; boundMs?: number };
+  // One guard for every test that may leave a grandchild: it owns the receipts dir, any server
+  // the body starts through it, and the grandchild a receipt names. Once the dir exists, every
+  // step runs inside it; each cleanup step is tried on its own (stop the server, kill the
+  // grandchild if a receipt was written, remove the dir), and no cause is ever replaced: a body
+  // or setup failure stays first, followed by any cleanup failures.
+  async function withGrandchild<T>(body: (grandchild: Grandchild) => Promise<T>, deps: GrandchildDeps = {}): Promise<T> {
+    const receipts = (deps.mkdtemp ?? mkdtempSync)(join(tmpdir(), "bh-receipts-"));
+    const pidFile = join(receipts, "grandchild.pid");
+    let server: LegacyServer | undefined;
+    let outcome: { value: T } | { error: unknown };
+    try {
+      outcome = { value: await body({ pidFile, start: async (...args) => (server = await (deps.start ?? startLegacyServer)(...args)) }) };
+    } catch (error) {
+      outcome = { error };
+    }
+    const cleanup: unknown[] = [];
+    if (server) { try { await server.stop(); } catch (error) { cleanup.push(error); } }
+    if (existsSync(pidFile)) { try { expect(["dead", "gone"]).toContain(await killGrandchild(pidFile, deps.send, deps.probe, deps.boundMs)); } catch (error) { cleanup.push(error); } }
+    try { (deps.rm ?? ((dir: string) => rmSync(dir, { recursive: true, force: true })))(receipts); } catch (error) { cleanup.push(error); }
+    const causes = "error" in outcome ? [outcome.error, ...cleanup] : cleanup;
+    if (causes.length === 1) throw causes[0];
+    if (causes.length) throw new AggregateError(causes, causes.map((cause) => (cause as Error).message).join("\n"));
+    return (outcome as { value: T }).value;
+  }
+
+  test("a server that exits while its child holds stderr open still fails startup and cleans up", async () => {
+    const exits = `${grandchild} console.error("fake pid " + process.pid); process.exit(0);`;
+    await withGrandchild(async ({ pidFile }) => {
+      const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: () => [node, ["-e", exits, pidFile]], stopTimeoutMs: 1000 });
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toMatch(/exited/);
+      expect(after).toEqual(before);
+      expect(sentinelsSurvived).toBe(true);
+    });
+  });
+
+  test("a server that exits on shutdown while its child holds stderr open still fails startup within a bound", async () => {
+    // It never answers, so startup times out and stops it; it exits on SIGTERM, but its own
+    // child keeps the inherited stderr pipe open, so the pipe never closes.
+    const hangs = `${grandchild.replace("process.argv[1]", "process.argv[2]")} require("net").createServer(() => {}).listen(+process.argv[1], "127.0.0.1", () => console.error("fake pid " + process.pid));`;
+    await withGrandchild(async ({ pidFile }) => {
+      const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: (_dir, port) => [node, ["-e", hangs, String(port), pidFile]], readyTimeoutMs: 1500, fetchTimeoutMs: 300, stopTimeoutMs: 1000 });
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toMatch(/did not start within/);
+      expect(Number.isFinite(pidIn(outcome as Error))).toBe(true);
+      expect(alive(pidIn(outcome as Error))).toBe(false);
+      expect(after).toEqual(before);
+      expect(sentinelsSurvived).toBe(true);
+    });
+  });
+
+  test("repeated stops share one shutdown that ends only after cleanup", async () => {
+    const serves = `${grandchild.replace("process.argv[1]", "process.argv[2]")} require("http").createServer((_q, r) => r.end("{}")).listen(+process.argv[1], "127.0.0.1");`;
+    await withGrandchild(async ({ pidFile, start }) => {
+      // Started through the fixture, so a startup failure still releases the receipt dir.
+      const server = await start(["human"], { command: (_dir, port) => [node, ["-e", serves, String(port), pidFile]], stopTimeoutMs: 1000 });
+      const first = server.stop();
+      const second = server.stop();
+      expect(second).toBe(first);
+      expect(Number.isFinite(server.pid)).toBe(true);
+      const state = () => ({ dir: existsSync(server.dataDir), alive: alive(server.pid!) });
+      const outcome = await settled(Promise.all([first.then(state), second.then(state)]));
+      expect(outcome).toEqual([{ dir: false, alive: false }, { dir: false, alive: false }]);
+    });
+  });
+
+  test("errors from signalling the child never escape and never skip cleanup", async () => {
+    // A real process cannot fail kill() twice on demand, so this one case injects a fake child
+    // whose every kill() emits two errors. It never signals a real process.
+    const escaped: unknown[] = [];
+    const record = (error: unknown) => { escaped.push(error); };
+    process.on("uncaughtException", record);
+    try {
+      const fake = () => Object.assign(new EventEmitter(), {
+        pid: 2147483646, exitCode: null, signalCode: null, stderr: new PassThrough(),
+        kill(this: EventEmitter) { this.emit("error", new Error("kill failed")); this.emit("error", new Error("kill failed again")); return false; },
+      }) as unknown as ChildProcess;
+      const { outcome, before, after, sentinelsSurvived } = await startFailure({ spawn: fake, readyTimeoutMs: 1000, fetchTimeoutMs: 200, stopTimeoutMs: 300 });
+      await sleep(500);
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toMatch(/did not start within/);
+      // Its fake child never exits, so shutdown cannot confirm termination and must say so.
+      expect((outcome as Error).message).toMatch(/termination unconfirmed/);
+      expect(after).toEqual(before);
+      expect(sentinelsSurvived).toBe(true);
+      expect(escaped).toEqual([]);
+    } finally {
+      process.off("uncaughtException", record);
+    }
+  });
+
+  // Fake children for kill outcomes no real process produces on demand. Their pid is never a
+  // real target: kill() is the fake's own method.
+  const fakeChild = (kill: (child: EventEmitter) => boolean, stderr: PassThrough = new PassThrough()) => () =>
+    Object.assign(new EventEmitter(), { pid: 2147483646, exitCode: null, signalCode: null, stderr, kill(this: EventEmitter) { return kill(this); } }) as unknown as ChildProcess;
+  const unconfirmed: [string, (child: EventEmitter) => boolean][] = [
+    ["returns false", () => false],
+    ["throws", () => { throw new Error("kill threw"); }],
+    ["reports EPERM", (child) => { child.emit("error", Object.assign(new Error("kill EPERM"), { code: "EPERM" })); return false; }],
+  ];
+  for (const [name, kill] of unconfirmed) {
+    test(`a child whose kill ${name} and never exits fails startup with termination unconfirmed`, async () => {
+      const { outcome, before, after, sentinelsSurvived } = await startFailure({ spawn: fakeChild(kill), readyTimeoutMs: 1000, fetchTimeoutMs: 200, stopTimeoutMs: 300 });
+      expect(outcome).toBeInstanceOf(Error);
+      const error = outcome as Error & { pid?: number; dataDir?: string };
+      expect(error.message).toMatch(/did not start within/);
+      expect(error.message).toMatch(/termination unconfirmed/);
+      expect(error.message).toContain("2147483646");
+      expect(error.pid).toBe(2147483646);
+      expect(typeof error.dataDir).toBe("string");
+      expect(existsSync(error.dataDir!)).toBe(false);
+      expect(after).toEqual(before);
+      expect(sentinelsSurvived).toBe(true);
+    });
+  }
+
+  test("a stderr that throws on destroy still removes the dir and keeps the startup cause", async () => {
+    const stderr = Object.assign(new PassThrough(), { destroy(): never { throw new Error("destroy failed"); } });
+    const exits = (child: EventEmitter) => { setImmediate(() => child.emit("exit", null, "SIGTERM")); return true; };
+    const { outcome, before, after, sentinelsSurvived } = await startFailure({ spawn: fakeChild(exits, stderr), readyTimeoutMs: 1000, fetchTimeoutMs: 200, stopTimeoutMs: 300 });
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toMatch(/did not start within/);
+    expect((outcome as Error).message).toContain("destroy failed");
+    expect(after).toEqual(before);
+    expect(sentinelsSurvived).toBe(true);
+  });
+
+  test("grandchild receipts signal only a validated process id", async () => {
+    // Recorded, never sent: 0 or a negative id would signal a whole process group.
+    const receipts = mkdtempSync(join(tmpdir(), "bh-receipts-"));
+    const file = join(receipts, "grandchild.pid");
+    try {
+      for (const text of ["", "0", "-5", "1", "12abc", " 7", String(process.pid), String(process.ppid)]) {
+        const sent: unknown[] = [];
+        writeFileSync(file, text);
+        const result = await settle(() => killGrandchild(file, (...args) => sent.push(args), gone));
+        expect(result, JSON.stringify(text)).toHaveProperty("error");
+        expect(sent, JSON.stringify(text)).toEqual([]);
+      }
+      const sent: unknown[] = [];
+      writeFileSync(file, "424242");
+      expect(await settle(() => killGrandchild(file, (...args) => sent.push(args), gone))).toEqual({ value: "dead" });
+      expect(sent).toEqual([[424242, "SIGKILL"]]);
+    } finally {
+      rmSync(receipts, { recursive: true, force: true });
+    }
+  });
+
+  // Recorders and probes only: none of these cases sends a real signal.
+  const errno = (code: string) => Object.assign(new Error(`simulated ${code}`), { code });
+  const gone: Probe = () => { throw errno("ESRCH"); };
+  const present: Probe = () => true;
+  const settle = (run: () => unknown) => Promise.resolve().then(run).then((value) => ({ value }), (error: Error) => ({ error: error.message }));
+  async function withReceipt<T>(text: string, use: (file: string) => Promise<T>) {
+    const dir = mkdtempSync(join(tmpdir(), "bh-receipts-"));
+    const file = join(dir, "grandchild.pid");
+    writeFileSync(file, text);
+    try { return await use(file); } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+
+  for (const code of ["EPERM", "EINVAL"]) {
+    test(`a grandchild kill that fails with ${code} reports the pid, the code and the receipt`, async () => {
+      await withReceipt("424242", async (file) => {
+        const result = await settle(() => killGrandchild(file, () => { throw errno(code); }, gone, 200));
+        expect(result).toHaveProperty("error");
+        const message = (result as { error: string }).error;
+        expect(message).toContain("424242");
+        expect(message).toContain(code);
+        expect(message).toContain(file);
+      });
+    });
+  }
+
+  test("a grandchild kill that finds no such process reports it gone", async () => {
+    await withReceipt("424242", async (file) => {
+      expect(await settle(() => killGrandchild(file, () => { throw errno("ESRCH"); }, present, 200))).toEqual({ value: "gone" });
+    });
+  });
+
+  test("a delivered grandchild kill reports death only once the probe stops finding it", async () => {
+    await withReceipt("424242", async (file) => {
+      expect(await settle(() => killGrandchild(file, () => true, gone, 200))).toEqual({ value: "dead" });
+    });
+    await withReceipt("424242", async (file) => {
+      const result = await settle(() => killGrandchild(file, () => true, present, 200));
+      expect(result).toHaveProperty("error");
+      expect((result as { error: string }).error).toMatch(/delivered but death unconfirmed/);
+      expect((result as { error: string }).error).toContain("424242");
+    });
+  });
+
+  test("grandchild receipts above the largest process id send nothing", async () => {
+    const sent: unknown[] = [];
+    await withReceipt("2147483648", async (file) => {
+      expect(await settle(() => killGrandchild(file, (...args) => sent.push(args), gone, 200))).toHaveProperty("error");
+    });
+    expect(sent).toEqual([]);
+    await withReceipt("2147483647", async (file) => {
+      expect(await settle(() => killGrandchild(file, (...args) => sent.push(args), gone, 200))).toEqual({ value: "dead" });
+    });
+    expect(sent).toEqual([[2147483647, "SIGKILL"]]);
+  });
+
+  test("liveness counts a process it may not signal as present and rejects other probe errors", () => {
+    expect(alive(2147483646, gone)).toBe(false);
+    expect(alive(2147483646, () => { throw errno("EPERM"); })).toBe(true);
+    expect(() => alive(2147483646, () => { throw errno("EINVAL"); })).toThrow(/EINVAL/);
+  });
+
+  test("an invalid receipt still removes the receipt dir", async () => {
+    let receipts = "";
+    const sent: unknown[] = [];
+    const outcome = await withGrandchild(async ({ pidFile }) => {
+      receipts = dirname(pidFile);
+      writeFileSync(pidFile, "0");
+    }, { send: (...args) => sent.push(args), probe: gone }).then(() => "released", (error: Error) => error);
+    expect(outcome).toBeInstanceOf(Error);
+    expect(sent).toEqual([]);
+    expect(existsSync(receipts)).toBe(false);
+  });
+
+  // The whole acquisition, setup, body and cleanup matrix for withGrandchild, with recorders and
+  // injected failures. "424242" is a recorded grandchild that is only ever recorded, never sent.
+  const messagesOf = (error: unknown) => (error instanceof AggregateError ? error.errors : [error]).map((item) => (item as Error).message);
+  type Case = { body?: "fails"; stop?: "rejects"; send?: "EPERM"; probe?: "EINVAL"; rm?: "fails" };
+  async function grandchildCase(failures: Case) {
+    const steps: string[] = [];
+    let receipts = "";
+    const fakeServer = { stop: () => { steps.push("stop"); return failures.stop ? Promise.reject(new Error("stop failed")) : Promise.resolve(); } } as unknown as LegacyServer;
+    const outcome = await withGrandchild(async ({ pidFile, start }) => {
+      await start(["human"]);
+      writeFileSync(pidFile, "424242");
+      if (failures.body) throw new Error("body assertion failed");
+      return "done";
+    }, {
+      mkdtemp: (prefix) => (receipts = mkdtempSync(prefix)),
+      start: (async () => fakeServer) as unknown as typeof startLegacyServer,
+      send: (pid, signal) => { steps.push(`send ${pid} ${signal}`); if (failures.send) throw errno(failures.send); },
+      probe: (pid) => { steps.push(`probe ${pid}`); throw errno(failures.probe ?? "ESRCH"); },
+      rm: (dir) => { steps.push("rm"); if (failures.rm) throw new Error("rm failed"); rmSync(dir, { recursive: true, force: true }); },
+      boundMs: 200,
+    }).then((value) => ({ value, errors: [] as string[] }), (error: unknown) => ({ value: undefined, errors: messagesOf(error) }));
+    const receiptsGone = !existsSync(receipts);
+    rmSync(receipts, { recursive: true, force: true });
+    return { ...outcome, steps, receiptsGone };
+  }
+  const killed = ["send 424242 SIGKILL", "probe 424242"];
+
+  test("withGrandchild: a clean run stops the server, confirms the grandchild dead and removes the receipts", async () => {
+    expect(await grandchildCase({})).toEqual({ value: "done", errors: [], steps: ["stop", ...killed, "rm"], receiptsGone: true });
+  });
+
+  test("withGrandchild: a failed acquisition reports its cause and attempts nothing", async () => {
+    const steps: string[] = [];
+    const outcome = await withGrandchild(async () => { steps.push("body"); }, {
+      mkdtemp: () => { throw new Error("mkdtemp failed"); },
+      send: () => steps.push("send"), probe: () => steps.push("probe"), rm: () => steps.push("rm"),
+    }).then(() => [], messagesOf);
+    expect(outcome).toEqual(["mkdtemp failed"]);
+    expect(steps).toEqual([]);
+  });
+
+  test("withGrandchild: a body assertion failure stays primary after a full cleanup", async () => {
+    expect(await grandchildCase({ body: "fails" })).toEqual({ value: undefined, errors: ["body assertion failed"], steps: ["stop", ...killed, "rm"], receiptsGone: true });
+  });
+
+  const cleanupFailures: [string, Case, string[], RegExp][] = [
+    ["a kill that fails with EPERM", { send: "EPERM" }, ["stop", "send 424242 SIGKILL", "rm"], /^Could not kill grandchild 424242 from receipt .*grandchild\.pid: EPERM$/],
+    ["a probe that fails with EINVAL", { probe: "EINVAL" }, ["stop", ...killed, "rm"], /^Could not probe grandchild 424242 from receipt .*grandchild\.pid: .*EINVAL/],
+    ["a failed receipts removal", { rm: "fails" }, ["stop", ...killed, "rm"], /^rm failed$/],
+    ["a server stop that rejects", { stop: "rejects" }, ["stop", ...killed, "rm"], /^stop failed$/],
+  ];
+  for (const [name, failure, steps, cause] of cleanupFailures) {
+    test(`withGrandchild: ${name} is reported and every other cleanup step still runs`, async () => {
+      const result = await grandchildCase(failure);
+      expect(result.steps).toEqual(steps);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toMatch(cause);
+      expect(result.receiptsGone).toBe(!failure.rm);
+    });
+    test(`withGrandchild: ${name} after a body failure keeps both causes, the body's first`, async () => {
+      const result = await grandchildCase({ ...failure, body: "fails" });
+      expect(result.steps).toEqual(steps);
+      expect(result.errors).toHaveLength(2);
+      expect(result.errors[0]).toBe("body assertion failed");
+      expect(result.errors[1]).toMatch(cause);
+      expect(result.receiptsGone).toBe(!failure.rm);
+    });
+  }
+
+  for (const recorded of [true, false]) {
+    test(`withGrandchild: a server that exits during startup ${recorded ? "with" : "without"} a grandchild keeps the startup error primary`, async () => {
+      const sent: number[] = [];
+      let receipts = "";
+      const exits = `${recorded ? grandchild : ""} console.error("fake pid " + process.pid); process.exit(0);`;
+      const outcome = await withGrandchild(async ({ pidFile, start }) => {
+        receipts = dirname(pidFile);
+        await start(["human"], { command: () => [node, ["-e", exits, pidFile]], stopTimeoutMs: 1000 });
+      }, { send: (pid, signal) => { sent.push(pid); process.kill(pid, signal); } }).then(() => [], messagesOf);
+      expect(outcome).toHaveLength(1);
+      expect(outcome[0]).toMatch(/^The legacy server exited/);
+      expect(existsSync(receipts)).toBe(false);
+      expect(sent).toHaveLength(recorded ? 1 : 0);
+      if (recorded) expect(alive(sent[0])).toBe(false);
+    });
+  }
 });

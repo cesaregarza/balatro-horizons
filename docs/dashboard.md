@@ -13,8 +13,8 @@ dashboard always mounts the run library, live status, decision exploration,
 cost/model-budget settings, batches, reports, and cheap append-only
 retrospective annotations under the `/api/explore...` and core namespaces.
 These surfaces remain usable when the flag is off; workbench-only routes are
-registered separately, including budget-continuation and restore admission. There are 25
-mounted routes flag-off, 46 flag-on, and 21 workbench-only routes.
+registered separately, including budget-continuation and restore admission. There are 26
+mounted routes flag-off, 47 flag-on, and 21 workbench-only routes.
 
 The workbench owns staged reveal/review, branching and comparison, human
 takeover, budget continuation, and verification. Its `/api/review*`,
@@ -114,8 +114,10 @@ continuation opens its explorer. Worker status is explicitly revealed, like
 Operator details: choosing it freezes the runs listed then, and the server shows
 and records exposure for no others. If the list changes (for example, after a
 launch), watching stops, and choosing it again watches the new list. Running
-state, the active episode and errors carry no model identity and need no run
-list. Active/recent cards open runs. Stop stays enabled without worker status: stopping
+state, the active episode and the worker error need no run list; they carry no
+run's model identity and record no exposure, though the error can name a
+configuration problem found before a run started, such as
+`CLAUDE_LONG_CONTEXT_PRICING_NOT_CONFIGURED`. Active/recent cards open runs. Stop stays enabled without worker status: stopping
 while idle is harmless, records no exposure, and every launch clears it.
 
 Deck and **Stake (difficulty)** are independent selectors covering the 15 standard
