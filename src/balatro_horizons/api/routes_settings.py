@@ -1,5 +1,7 @@
 """Bootstrap and operator configuration routes."""
 
+import hashlib
+import json
 import os
 
 from fastapi import APIRouter, Depends, Request
@@ -11,6 +13,18 @@ from .middleware import require_operator
 from .models import SettingsInput
 
 router = APIRouter()
+# Agent names RunService runs as built-in players; a configured model may not use one.
+BUILT_IN_PLAYERS = frozenset({"heuristic", "random_legal", "human"})
+
+
+def model_revision(model):
+    """Content hash of one configured model record, as the browser displayed it."""
+    return hashlib.sha256(json.dumps(model.model_dump(), sort_keys=True).encode()).hexdigest()
+
+
+def public_config(config):
+    revisions = {key: model_revision(model) for key, model in config.models.items()}
+    return {**config.public(), "model_revisions": revisions}
 
 
 @router.get("/api/bootstrap")
@@ -19,7 +33,7 @@ def bootstrap(request: Request):
     config = request.app.state.config
     return {
         "operator_token": request.app.state.operator_token,
-        "config": config.public(),
+        "config": public_config(config),
         "workbench": config.workbench_enabled,
         "paid_credentials": {
             name: bool(os.environ.get(key))
@@ -33,8 +47,10 @@ def update_settings(request: Request, data: SettingsInput):
     state = request.app.state
     if state.runs.thread and state.runs.thread.is_alive():
         raise ValueError("WORKER_BUSY")
+    if BUILT_IN_PLAYERS & set(data.models):
+        raise ValueError("RESERVED_MODEL_ALIAS")
     state.config = Config.model_validate(
         {**state.config.model_dump(), **data.model_dump(exclude_unset=True)}
     )
     atomic_json(state.settings_path, state.config.model_dump())
-    return state.config.public()
+    return public_config(state.config)

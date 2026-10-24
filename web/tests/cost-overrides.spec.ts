@@ -12,6 +12,7 @@ const model = {
 const config = {
   workbench: true,
   models: { "test-model": model },
+  model_revisions: { "test-model": "revision-test-model" },
   model_capabilities: { providers: { openai: { supported_settings: [] }, anthropic: { supported_settings: [] } }, models: {} },
   budgets: { paid_calls_enabled: true, max_episode_cost_usd: 1, max_batch_cost_usd: 2 },
   skills: "none",
@@ -59,7 +60,7 @@ test("default limits omit both override fields from a new run", async ({ page })
   await page.getByRole("button", { name: /Start test episode/ }).click();
   await expect(page.getByRole("status").filter({ hasText: "Run created" })) .toContainText("Run created");
   expect(settings).toHaveLength(0);
-  expect(runs).toEqual([{ agent: "model:anthropic:claude-cost-test", model_settings: {}, offline: true, deck: "RED", stake: "GOLD", seed: null }]);
+  expect(runs).toEqual([{ agent: "test-model", model_settings: {}, model_revision: "revision-test-model", offline: true, deck: "RED", stake: "GOLD", seed: null }]);
 });
 
 test("$10 sends the exact per-run ceiling", async ({ page }) => {
@@ -68,7 +69,7 @@ test("$10 sends the exact per-run ceiling", async ({ page }) => {
   await page.getByRole("button", { name: /Start test episode/ }).click();
   await expect(page.getByRole("status").filter({ hasText: "Run created" })) .toContainText("Run created");
   expect(runs).toEqual([{
-    agent: "model:anthropic:claude-cost-test", model_settings: {}, offline: true, deck: "RED", stake: "GOLD", seed: null, cost_override: 10,
+    agent: "test-model", model_settings: {}, model_revision: "revision-test-model", offline: true, deck: "RED", stake: "GOLD", seed: null, cost_override: 10,
   }]);
 });
 
@@ -120,7 +121,7 @@ test("accepted Uncapped confirmation sends its required flag", async ({ page }) 
   await page.getByRole("button", { name: /Start test episode/ }).click();
   await expect(page.getByRole("status").filter({ hasText: "Run created" })) .toContainText("Run created");
   expect(runs).toEqual([{
-    agent: "model:anthropic:claude-cost-test", model_settings: {}, offline: true, deck: "RED", stake: "GOLD", seed: null,
+    agent: "test-model", model_settings: {}, model_revision: "revision-test-model", offline: true, deck: "RED", stake: "GOLD", seed: null,
     cost_override: "uncapped", confirm_uncapped: true,
   }]);
 });
@@ -137,7 +138,7 @@ test("successful start resets Uncapped so the next run uses current limits", asy
   await start.click();
   await expect.poll(() => runs.length).toBe(2);
   expect(runs[0]).toMatchObject({ cost_override: "uncapped", confirm_uncapped: true });
-  expect(runs[1]).toEqual({ agent: "model:anthropic:claude-cost-test", model_settings: {}, offline: true, deck: "RED", stake: "GOLD", seed: null });
+  expect(runs[1]).toEqual({ agent: "test-model", model_settings: {}, model_revision: "revision-test-model", offline: true, deck: "RED", stake: "GOLD", seed: null });
 });
 
 test("busy state disables overrides and rapid duplicate clicks submit once", async ({ page }) => {

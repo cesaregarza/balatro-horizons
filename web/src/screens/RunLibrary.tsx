@@ -5,10 +5,14 @@ import { RunSpend } from "../RunSpend";
 import { CostOverrideControls, type CostOverride } from "../CostOverrideControls";
 import { useRunAction } from "./useRunAction";
 import { RuntimeConnection, useRuntimeConnection } from "./RuntimeConnection";
-import { configureModel, EMPTY_CAPABILITIES, effortDefault, modelCatalog, modelKey, modelLabel, supportsCachedHarness } from "../modelSelection";
+import { configureModel, EMPTY_CAPABILITIES, effortDefault, modelCatalog, modelKey, modelLabel, modelOptions, supportsCachedHarness, BUILT_IN_AGENTS } from "../modelSelection";
 import { LibraryTable } from "./run-library/LibraryTable";
 import { RunConfiguration, gameChoiceLabel } from "./run-library/RunConfiguration";
 import "./run-library/library.css";
+
+const isRevision = (value: unknown): value is string => typeof value === "string" && value !== "";
+const isModelCollection = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes, busy, run, openExplorer, openReview, onCompare, priorSeedExposure, setPriorSeedExposure, watch, setWatch, status, setNotice, onHumanStart }: any) {
   const [agent, setAgent] = useState("heuristic");
@@ -19,9 +23,10 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
   const [effort, setEffort] = useState("medium");
   const [costOverride, setCostOverride] = useState<CostOverride>(null);
   const startPending = useRef(false);
-  const catalog = modelCatalog(config.models ?? {});
+  const options = modelOptions(config.models ?? {});
   const capabilities = config.model_capabilities ?? EMPTY_CAPABILITIES;
-  const selectedModel = catalog[agent];
+  const selectedModel = options[agent]?.model;
+  const reservedAliases = Object.keys(config.models ?? {}).filter((key) => BUILT_IN_AGENTS.includes(key));
   const selectedModelSupported = !selectedModel || selectedModel.provider !== "openai" || supportsCachedHarness(selectedModel, capabilities);
   const action = useRunAction(run);
   const { connection, refresh: refreshConnection } = useRuntimeConnection(!offline);
@@ -39,6 +44,16 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
   }
 
   async function refreshEpisodes() { setEpisodes(await listEpisodes()); }
+  // Reload the models shown for launch. A refresh without a revision for every model is not
+  // installed, so nothing can launch unbound. Either way the operator must confirm again.
+  async function refreshShownModels(reason = "Model details were refreshed."): Promise<never> {
+    const latest = (await bootstrap()).config;
+    if (!isModelCollection(latest.models) || !Object.keys(latest.models).every((key) => isRevision(latest.model_revisions?.[key]))) {
+      throw new Error("Model details could not be confirmed. Refresh the workbench before starting a run.");
+    }
+    setConfig(latest);
+    throw new Error(reason + " Review the model and confirm by starting again.");
+  }
   const budgets = config.budgets ?? {};
   const episodeLimit = costOverride === 10 ? 10 : costOverride === "uncapped" ? null : budgets.max_episode_cost_usd;
   const batchLimit = costOverride === "uncapped" ? null : costOverride ?? budgets.max_batch_cost_usd;
@@ -51,10 +66,12 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
         <h2>Start a run</h2>
         <div className="form-row">
           <label>Model<select aria-label="Model" value={agent} onChange={(e) => { setAgent(e.target.value); setCostOverride(null); }} disabled={busy}>
-            <optgroup label="Models">{Object.entries(catalog).map(([key, value]) => <option key={key} value={key}>{modelLabel(value, capabilities)}</option>)}</optgroup>
+            {!selectedModel && !BUILT_IN_AGENTS.includes(agent) && <option value={agent} disabled>Choose a model</option>}
+            <optgroup label="Models">{Object.entries(options).map(([key, option]) => <option key={key} value={key}>{modelLabel(option.model, capabilities)}</option>)}</optgroup>
             <optgroup label="Baselines & human control"><option value="heuristic">Heuristic baseline</option><option value="random_legal">Random legal baseline</option>{workbench && <option value="human">Human player</option>}</optgroup>
           </select></label>
         </div>
+        {reservedAliases.length > 0 && <p className="error">Model alias {reservedAliases.join(", ")} uses a built-in player name, so it is not offered. Rename or remove it under Models & budgets.</p>}
         <RunConfiguration deck={deck} stake={stake} onDeck={setDeck} onStake={setStake} disabled={busy} />
         {selectedModel && <>
           <ModelControls model={selectedModel} effort={effort} onEffort={setEffort} capabilities={capabilities} disabled={busy} />
@@ -78,12 +95,25 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
             if (startPending.current || busy || !selectedModelSupported || (!offline && connection?.ready !== true)) return;
             startPending.current = true;
             void action(async () => {
+              if (!selectedModel && !BUILT_IN_AGENTS.includes(agent)) {
+                // The selected model is no longer in the catalog: never launch it unbound.
+                setAgent("");
+                await refreshShownModels("The selected model is no longer configured. Choose a model.");
+              }
               const chosen = selectedModel ? configureModel(selectedModel, effort, capabilities) : null;
+              const key = chosen ? options[agent].key : agent;
+              const revision = config.model_revisions?.[key];
+              // A shown model launches only bound to the revision it was shown with.
+              if (chosen && !isRevision(revision)) await refreshShownModels();
               const result = await startRun({
-                agent: chosen ? modelKey(chosen) : agent, ...(chosen ? { model_settings: chosen.settings } : {}),
+                agent: key, ...(chosen ? { model_settings: chosen.settings, model_revision: revision } : {}),
                 offline, deck, stake, seed: seed || null,
                 ...(costOverride === null ? {} : { cost_override: costOverride }),
                 ...(costOverride === "uncapped" ? { confirm_uncapped: true } : {}),
+              }).catch(async (error) => {
+                if (!(error instanceof Error) || error.message !== "MODEL_CONFIG_CHANGED") throw error;
+                // The record behind this choice changed after it was shown; show the current one.
+                return refreshShownModels("This model's configuration changed after it was shown.");
               });
               setCostOverride(null);
               setNotice("Run created: " + result.episode_id.slice(0, 10));

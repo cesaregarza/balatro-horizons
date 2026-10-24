@@ -32,7 +32,7 @@ async function mockApp(page: Page, options: { savedClaude?: boolean; rejectSave?
   };
   await page.route("**/api/**", async (route) => {
     const request = route.request(), path = new URL(request.url()).pathname;
-    if (path === "/api/bootstrap") return route.fulfill({ json: { operator_token: "mock", config, workbench: true, paid_credentials: { openai: true, anthropic: false } } });
+    if (path === "/api/bootstrap") return route.fulfill({ json: { operator_token: "mock", config: { ...config, model_revisions: Object.fromEntries(Object.keys(config.models).map((key) => [key, "revision-" + key])) }, workbench: true, paid_credentials: { openai: true, anthropic: false } } });
     if (["/api/episodes", "/api/panels", "/api/batches"].includes(path)) return route.fulfill({ json: [] });
     if (path === "/api/operator/status") return route.fulfill({ json: { running: false, active_episode: null, episodes: [], error: null } });
     if (path === "/api/settings" && request.method() === "PUT") {

@@ -80,7 +80,35 @@ history navigation. Seed drafts remain only in memory, never local storage.
 **Start a run** jumps to a preserved launch draft. The confirmation summary shows
 model/effort, real versus synthetic mode, deck/stake and both effective dollar
 ceilings. Per-run model settings are validated against the configured model and
-applied to a copy; only **Save model defaults** writes persistent defaults. A new
+applied to a copy; only **Save model defaults** writes persistent defaults. A launch
+names the exact configured entry shown and its revision; if that entry changed after
+it was shown, the launch is refused, the picker refreshes, and nothing starts. The
+browser binds a revision to every model selection it displays. Only the heuristic,
+random-legal and human baselines launch without one. A selection that is neither a
+displayed model nor a baseline (for example, a model removed after it was chosen) is
+cleared and refetched, and the operator must choose again; nothing is sent. A shown
+model whose revision is absent or empty is refreshed instead of launched. A refreshed
+catalog is installed only if its model collection is an object with a revision for
+every model; an empty collection is valid and leaves only the baselines, and a null,
+array or other malformed collection shows an error and keeps the previous catalog. The
+server checks one copy of the configuration for the whole launch. A configured model
+alias may not use a built-in player name (`heuristic`, `random_legal`, `human`):
+settings refuse it with `RESERVED_MODEL_ALIAS`, the picker does not offer it and shows
+a configuration error, and the server refuses a launch that names one with model
+fields or resolves a canonical key to one. An older configuration that already holds
+such an alias is repaired under **Models & budgets**, in **Reserved model
+aliases**: each row records a decision, Rename to a new key or Remove, and sends
+nothing. **Repair aliases** is enabled once every listed alias has a decision and
+repairs them all in one settings save, since the server refuses any save that still
+carries a reserved alias. New names are checked before any request (not empty, no
+surrounding spaces, not a built-in name, all different). After a fresh read of the
+configuration and before the settings PUT, the repair stops if the set of reserved
+aliases has changed or a new name is already configured. Otherwise it saves the latest
+models without any reserved key, each renamed record unchanged under its new key, and
+the latest budgets and skills. Repeated clicks while a repair is in flight send nothing. Nothing is migrated
+automatically, and recorded runs keep their configuration. `POST /api/runs`
+accepts a launch without `model_revision` only for clients that display no catalog,
+such as the CLI and scripts; they get exactly the named configured entry. A new
 run stays in the library until opened, so launching exposes nothing beyond it; a
 continuation opens its explorer. Worker status is explicitly revealed, like
 Operator details: choosing it freezes the runs listed then, and the server shows
