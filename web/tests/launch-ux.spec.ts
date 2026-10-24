@@ -6,6 +6,7 @@ const config = {
   models: { [modelKey]: { provider: "openai", model: "gpt-5.6-luna", input_usd_per_million: 1, output_usd_per_million: 2, cached_input_usd_per_million: 0.1, cache_write_input_usd_per_million: 1.2, pricing_date: "2026-09-24", settings: { temperature: 0.2 } } },
   model_capabilities: { providers: { openai: { supported_settings: ["temperature", "reasoning_effort"] }, anthropic: { supported_settings: [] } }, models: { [modelKey]: { display_name: "GPT-5.6 Luna", prompt_cache_diagnostics: true, explicit_cache_mode: true, supported_settings: ["temperature", "reasoning_effort"], unsupported_settings: {}, reasoning_efforts: ["low", "medium", "high"] } } },
   budgets: { paid_calls_enabled: true, max_episode_cost_usd: 3.5, max_batch_cost_usd: 12 }, skills: "none",
+  model_revisions: { [modelKey]: "revision-luna" },
 };
 
 async function mockApp(page: import("@playwright/test").Page, bootstrapDelay = 0) {

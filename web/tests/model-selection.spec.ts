@@ -417,6 +417,7 @@ test("a launch sends the configured alias the picker shows, even for integer-lik
   await page.route("**/api/bootstrap", async (route) => {
     const body = await (await route.fetch()).json();
     body.config.models = { "10": ten, "2": two };
+    body.config.model_revisions = { "10": "revision-ten", "2": "revision-two" };
     body.config.model_capabilities = capabilities;
     await route.fulfill({ json: body });
   });
@@ -432,7 +433,7 @@ test("a launch sends the configured alias the picker shows, even for integer-lik
   await expect(page.getByLabel("Reasoning effort", { exact: true })).toHaveValue("low");
   await page.getByRole("button", { name: /Start test episode/ }).click();
   await expect.poll(() => launches).toHaveLength(1);
-  expect(launches[0]).toMatchObject({ agent: "2", model_settings: two.settings });
+  expect(launches[0]).toMatchObject({ agent: "2", model_settings: two.settings, model_revision: "revision-two" });
 });
 
 test("a launch refused because the shown alias changed refreshes the picker and starts nothing", async ({ page }) => {
