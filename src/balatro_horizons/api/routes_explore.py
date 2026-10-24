@@ -25,7 +25,6 @@ def episodes(request: Request):
                 "fixture": manifest.get("fixture"),
                 "deck": config.get("deck"),
                 "stake": config.get("stake"),
-                "agent": manifest.get("agent", "unknown"),
                 "branch": bool(manifest.get("parent_episode_id")),
             }
         )

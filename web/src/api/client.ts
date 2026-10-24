@@ -211,9 +211,9 @@ export type Episode = {
   branch: boolean;
   evaluation_eligible: boolean;
   fixture: string | null;
-  agent?: string;
 };
 export type OperatorEpisode = Episode & {
+  agent?: string;
   parent_episode_id: string | null;
   model_name: string;
   reasoning_effort: string | null;
