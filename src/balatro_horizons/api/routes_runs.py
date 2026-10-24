@@ -11,7 +11,7 @@ from balatro_horizons.game.windows_context import connection_status
 from balatro_horizons.run_configuration import apply_choices, require_native_selection
 
 from .middleware import require_operator
-from .models import RunInput
+from .models import OperatorEpisodes, RunInput
 
 router = APIRouter()
 
@@ -78,12 +78,21 @@ def stop_run(request: Request):
     return {"stop_requested": True}
 
 
-@router.get("/api/operator/status", dependencies=[Depends(require_operator)])
-def operator_status(request: Request):
-    state = request.app.state
+def _worker_state(state):
     return {
         "running": bool(state.runs.thread and state.runs.thread.is_alive()),
         "active_episode": state.runs.active_id,
         "error": state.runs.error,
-        "episodes": state.operator_status.episodes(),
     }
+
+
+@router.get("/api/operator/status", dependencies=[Depends(require_operator)])
+def operator_status(request: Request):
+    """Worker state only: it names no run's model, so it records no exposure."""
+    return _worker_state(request.app.state)
+
+
+@router.post("/api/operator/status", dependencies=[Depends(require_operator)])
+def watched_status(request: Request, data: OperatorEpisodes):
+    state = request.app.state
+    return {**_worker_state(state), "episodes": state.operator_status.episodes(data.episode_ids)}

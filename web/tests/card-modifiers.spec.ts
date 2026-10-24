@@ -82,7 +82,7 @@ test("explorer shows pickup modifiers in live rows, details and the board on a p
   await expect
     .poll(async () => {
       const status = await (
-        await page.request.get("/api/operator/status", { headers })
+        await page.request.post("/api/operator/status", { headers, data: { episode_ids: [episode_id] } })
       ).json();
       return status.episodes.find((r: any) => r.episode_id === episode_id)
         ?.summary?.outcome;

@@ -82,8 +82,12 @@ model/effort, real versus synthetic mode, deck/stake and both effective dollar
 ceilings. Per-run model settings are validated against the configured model and
 applied to a copy; only **Save model defaults** writes persistent defaults. A new
 run stays in the library until opened, so launching exposes nothing beyond it; a
-continuation opens its explorer. Worker status is explicitly revealed;
-active/recent cards open runs. Stop stays enabled without worker status: stopping
+continuation opens its explorer. Worker status is explicitly revealed, like
+Operator details: choosing it freezes the runs listed then, and the server shows
+and records exposure for no others. If the list changes (for example, after a
+launch), watching stops, and choosing it again watches the new list. Running
+state, the active episode and errors carry no model identity and need no run
+list. Active/recent cards open runs. Stop stays enabled without worker status: stopping
 while idle is harmless, records no exposure, and every launch clears it.
 
 Deck and **Stake (difficulty)** are independent selectors covering the 15 standard

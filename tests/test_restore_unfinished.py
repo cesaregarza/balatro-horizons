@@ -78,7 +78,7 @@ def test_restore_uses_one_child_and_shared_budget_without_changing_parent(harnes
     )
     assert episode_export(h.store, child)["manifest"]["restoration"] == manifest["restoration"]
     retrospective = summary_input(h.store, child)["spend"]
-    operator = next(row for row in OperatorStatus(h.store, service.review).episodes()
+    operator = next(row for row in OperatorStatus(h.store, service.review).episodes([child])
                     if row["episode_id"] == child)["spend"]
     assert retrospective == operator
     assert retrospective["combined_usd"] == pytest.approx(sum(row["cost"] for row in ledger.values()))

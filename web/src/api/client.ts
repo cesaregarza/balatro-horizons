@@ -297,7 +297,7 @@ export const budgetContinuationPreview = (episodeId: string) => request<BudgetCo
 export const continueBudget = (episodeId: string, input: BudgetContinuationInput) => request<{ episode_id: string }>("/operator/episodes/" + episodeId + "/continue-budget", "POST", input);
 export const startRun = (input: RunInput) => request<{ episode_id: string }>("/runs", "POST", input);
 export const stopRun = () => request<{ stop_requested: boolean }>("/stop", "POST", {});
-export const operatorStatus = () => request<any>("/operator/status");
+export const operatorStatus = (episodeIds: string[]) => request<any>("/operator/status", "POST", { episode_ids: episodeIds });
 export const operatorRuntime = (signal?: AbortSignal) => request<RuntimeConnection>("/operator/runtime", "GET", undefined, undefined, signal);
 export const saveSettings = (input: unknown) => request<any>("/settings", "PUT", input);
 export const openReview = (input: ReviewOpenInput) => request<{ review_token: string; view: View }>("/reviews", "POST", input);
