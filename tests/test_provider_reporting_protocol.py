@@ -30,7 +30,7 @@ def test_frozen_policies_reach_library_and_ledger_without_runtime_support(store,
     before = (store.episode_path(eid) / "events.jsonl").read_bytes()
     expected = {"recorded_interface": "tools_v8", **policies}
     assert protocol_metadata(store, eid) == expected
-    for result in (OperatorLibrary(store, ReviewService(store)).episodes()[0],
+    for result in (OperatorLibrary(store, ReviewService(store)).episodes([eid])[0],
                    summary_input(store, eid)["manifest"],
                    _comparison_run(SimpleNamespace(store=store, review=ReviewService(store)), eid)["metadata"]):
         assert {key: result[key] for key in expected} == expected

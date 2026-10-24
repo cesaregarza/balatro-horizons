@@ -60,6 +60,10 @@ at 1. API and journal IDs remain zero-based; no historical records are renumbere
 
 The library starts in **Blinded review**. **Operator details** explicitly reveals
 model identity and outcomes and records exposure before returning those fields.
+It covers the runs listed when it was chosen: the request names those runs, and
+the server reveals and records exposure for no others. If the list changes, the
+library returns to Blinded review, and choosing Operator details again reveals
+the new list.
 Search/filter by model, effort text, harness text, deck/stake, status and evidence;
 hide test/fixture records, sort, and page through continuation families. Each
 continuation keeps its own Explore, Review and comparison actions. Select two
