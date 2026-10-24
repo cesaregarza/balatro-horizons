@@ -926,16 +926,14 @@ test.describe("legacy server startup failures", () => {
     }
     const deadline = Date.now() + boundMs;
     do {
-      if (!alive(pid, probe)) return "dead";
+      let present: boolean;
+      try { present = alive(pid, probe); } catch (error) {
+        throw new Error(`Could not probe grandchild ${pid} from receipt ${pidFile}: ${(error as Error).message}`);
+      }
+      if (!present) return "dead";
       await sleep(50);
     } while (Date.now() < deadline);
     throw new Error(`Grandchild ${pid} from receipt ${pidFile}: SIGKILL delivered but death unconfirmed`);
-  };
-
-  // Signals the grandchild a test started and removes that test's receipt dir.
-  const releaseReceipts = async (receipts: string, pidFile: string, send?: (pid: number, signal: NodeJS.Signals) => unknown, probe?: Probe) => {
-    // The receipt's details travel in any error, so the dir always goes.
-    try { expect(["dead", "gone"]).toContain(await killGrandchild(pidFile, send, probe)); } finally { rmSync(receipts, { recursive: true, force: true }); }
   };
 
   type Send = (pid: number, signal: NodeJS.Signals) => unknown;
@@ -943,17 +941,28 @@ test.describe("legacy server startup failures", () => {
   // Test-only seams, so every acquisition, setup and cleanup failure can be exercised.
   type GrandchildDeps = { mkdtemp?: (prefix: string) => string; start?: typeof startLegacyServer; send?: Send; probe?: Probe; rm?: (dir: string) => void; boundMs?: number };
   // One guard for every test that may leave a grandchild: it owns the receipts dir, any server
-  // the body starts through it, and the grandchild a receipt names.
+  // the body starts through it, and the grandchild a receipt names. Once the dir exists, every
+  // step runs inside it; each cleanup step is tried on its own (stop the server, kill the
+  // grandchild if a receipt was written, remove the dir), and no cause is ever replaced: a body
+  // or setup failure stays first, followed by any cleanup failures.
   async function withGrandchild<T>(body: (grandchild: Grandchild) => Promise<T>, deps: GrandchildDeps = {}): Promise<T> {
     const receipts = (deps.mkdtemp ?? mkdtempSync)(join(tmpdir(), "bh-receipts-"));
     const pidFile = join(receipts, "grandchild.pid");
     let server: LegacyServer | undefined;
+    let outcome: { value: T } | { error: unknown };
     try {
-      return await body({ pidFile, start: async (...args) => (server = await (deps.start ?? startLegacyServer)(...args)) });
-    } finally {
-      await releaseReceipts(receipts, pidFile, deps.send, deps.probe);
-      if (server) await server.stop();
+      outcome = { value: await body({ pidFile, start: async (...args) => (server = await (deps.start ?? startLegacyServer)(...args)) }) };
+    } catch (error) {
+      outcome = { error };
     }
+    const cleanup: unknown[] = [];
+    if (server) { try { await server.stop(); } catch (error) { cleanup.push(error); } }
+    if (existsSync(pidFile)) { try { expect(["dead", "gone"]).toContain(await killGrandchild(pidFile, deps.send, deps.probe, deps.boundMs)); } catch (error) { cleanup.push(error); } }
+    try { (deps.rm ?? ((dir: string) => rmSync(dir, { recursive: true, force: true })))(receipts); } catch (error) { cleanup.push(error); }
+    const causes = "error" in outcome ? [outcome.error, ...cleanup] : cleanup;
+    if (causes.length === 1) throw causes[0];
+    if (causes.length) throw new AggregateError(causes, causes.map((cause) => (cause as Error).message).join("\n"));
+    return (outcome as { value: T }).value;
   }
 
   test("a server that exits while its child holds stderr open still fails startup and cleans up", async () => {
