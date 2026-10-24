@@ -5,7 +5,7 @@ import { RunSpend } from "../RunSpend";
 import { CostOverrideControls, type CostOverride } from "../CostOverrideControls";
 import { useRunAction } from "./useRunAction";
 import { RuntimeConnection, useRuntimeConnection } from "./RuntimeConnection";
-import { configureModel, EMPTY_CAPABILITIES, effortDefault, modelCatalog, modelKey, modelLabel, supportsCachedHarness } from "../modelSelection";
+import { configureModel, EMPTY_CAPABILITIES, effortDefault, modelCatalog, modelKey, modelLabel, modelOptions, supportsCachedHarness } from "../modelSelection";
 import { LibraryTable } from "./run-library/LibraryTable";
 import { RunConfiguration, gameChoiceLabel } from "./run-library/RunConfiguration";
 import "./run-library/library.css";
@@ -19,9 +19,9 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
   const [effort, setEffort] = useState("medium");
   const [costOverride, setCostOverride] = useState<CostOverride>(null);
   const startPending = useRef(false);
-  const catalog = modelCatalog(config.models ?? {});
+  const options = modelOptions(config.models ?? {});
   const capabilities = config.model_capabilities ?? EMPTY_CAPABILITIES;
-  const selectedModel = catalog[agent];
+  const selectedModel = options[agent]?.model;
   const selectedModelSupported = !selectedModel || selectedModel.provider !== "openai" || supportsCachedHarness(selectedModel, capabilities);
   const action = useRunAction(run);
   const { connection, refresh: refreshConnection } = useRuntimeConnection(!offline);
@@ -51,7 +51,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
         <h2>Start a run</h2>
         <div className="form-row">
           <label>Model<select aria-label="Model" value={agent} onChange={(e) => { setAgent(e.target.value); setCostOverride(null); }} disabled={busy}>
-            <optgroup label="Models">{Object.entries(catalog).map(([key, value]) => <option key={key} value={key}>{modelLabel(value, capabilities)}</option>)}</optgroup>
+            <optgroup label="Models">{Object.entries(options).map(([key, option]) => <option key={key} value={key}>{modelLabel(option.model, capabilities)}</option>)}</optgroup>
             <optgroup label="Baselines & human control"><option value="heuristic">Heuristic baseline</option><option value="random_legal">Random legal baseline</option>{workbench && <option value="human">Human player</option>}</optgroup>
           </select></label>
         </div>
@@ -80,7 +80,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
             void action(async () => {
               const chosen = selectedModel ? configureModel(selectedModel, effort, capabilities) : null;
               const result = await startRun({
-                agent: chosen ? modelKey(chosen) : agent, ...(chosen ? { model_settings: chosen.settings } : {}),
+                agent: chosen ? options[agent].key : agent, ...(chosen ? { model_settings: chosen.settings } : {}),
                 offline, deck, stake, seed: seed || null,
                 ...(costOverride === null ? {} : { cost_override: costOverride }),
                 ...(costOverride === "uncapped" ? { confirm_uncapped: true } : {}),

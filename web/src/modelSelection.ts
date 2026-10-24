@@ -48,15 +48,20 @@ export function modelLabel(model: ModelConfig, capabilities = EMPTY_CAPABILITIES
   return `${name} · ${model.provider === "openai" ? "OpenAI" : "Anthropic"}`;
 }
 
-// Saved defaults win; otherwise retain the first configured exact model pair.
-export function modelCatalog(models: Record<string, ModelConfig>) {
-  const result: Record<string, ModelConfig> = {};
-  for (const model of Object.values(models)) {
+// One option per provider/model: saved defaults win; otherwise retain the first configured
+// exact model pair. Each option keeps the configured key it came from, which is what launches.
+export function modelOptions(models: Record<string, ModelConfig>) {
+  const result: Record<string, { key: string; model: ModelConfig }> = {};
+  for (const [configured, model] of Object.entries(models)) {
     const key = modelKey(model);
-    if (models[key]) result[key] = models[key];
-    else if (!result[key]) result[key] = model;
+    if (models[key]) result[key] = { key, model: models[key] };
+    else if (!result[key]) result[key] = { key: configured, model };
   }
   return result;
+}
+
+export function modelCatalog(models: Record<string, ModelConfig>) {
+  return Object.fromEntries(Object.entries(modelOptions(models)).map(([key, option]) => [key, option.model]));
 }
 
 export function effortOptions(model: ModelConfig, capabilities = EMPTY_CAPABILITIES) {
