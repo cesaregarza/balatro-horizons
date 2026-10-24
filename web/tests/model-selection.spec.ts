@@ -860,7 +860,15 @@ test.describe("legacy server startup failures", () => {
   }
   const pidIn = (error: Error) => Number(/fake pid (\d+)/.exec(error.message)?.[1]);
   type Probe = (pid: number, signal: 0) => unknown;
-  const alive = (pid: number, _probe: Probe = process.kill) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  // Present when the probe succeeds or is refused (EPERM: it exists); absent only on ESRCH.
+  const alive = (pid: number, probe: Probe = process.kill) => {
+    try { probe(pid, 0); return true; } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EPERM") return true;
+      if (code === "ESRCH") return false;
+      throw new Error(`Could not probe pid ${pid}: ${code ?? (error as Error).message}`);
+    }
+  };
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   test("a readiness request that hangs fails at the deadline with the server's stderr", async () => {
@@ -899,23 +907,35 @@ test.describe("legacy server startup failures", () => {
 
   // A real fake server whose own child inherits its stderr: the pipe stays open after it exits.
   const grandchild = `const { spawn } = require("child_process"); const g = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "ignore", "inherit"] }); require("fs").writeFileSync(process.argv[1], String(g.pid));`;
-  // Reads a grandchild PID receipt the test itself wrote, signals it, and reports whether it did.
-  // Only a canonical decimal above 1 that is neither this process nor its parent is signalled:
-  // 0 or a negative id would reach a whole process group.
-  const killGrandchild = (pidFile: string, send: (pid: number, signal: NodeJS.Signals) => unknown = process.kill, _probe: Probe = process.kill, _boundMs = 3000) => {
-    if (!existsSync(pidFile)) return false;
-    const text = readFileSync(pidFile, "utf8");
-    rmSync(pidFile, { force: true });
-    const pid = /^[1-9][0-9]*$/.test(text) ? Number(text) : NaN;
-    if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid || pid === process.ppid) return false;
-    try { send(pid, "SIGKILL"); } catch { /* already gone */ }
-    return true;
+  // Scope: guards against false passes, signalling a process the test did not create, leaks and lost causes.
+  // Out of scope: hostile same-UID receipt planting, PID reuse before the signal-0 probe, other kill errors, multiple workers.
+  // Reads a grandchild PID receipt the test itself wrote and kills that process. It signals only a
+  // canonical decimal id in (1, 2147483647] that is neither this process nor its parent (0 or a
+  // negative id would reach a whole process group), and reports only a confirmed outcome:
+  // "gone" if there was no such process, "dead" once the probe stops finding it. Anything else
+  // throws with the pid, the error code and the receipt path.
+  const killGrandchild = async (pidFile: string, send: (pid: number, signal: NodeJS.Signals) => unknown = process.kill, probe: Probe = process.kill, boundMs = 3000): Promise<"dead" | "gone"> => {
+    const text = existsSync(pidFile) ? readFileSync(pidFile, "utf8") : undefined;
+    const pid = text !== undefined && /^[1-9][0-9]*$/.test(text) ? Number(text) : NaN;
+    if (!(pid > 1 && pid <= 2147483647) || pid === process.pid || pid === process.ppid)
+      throw new Error(`Invalid grandchild receipt ${pidFile}: ${JSON.stringify(text)}`);
+    try { send(pid, "SIGKILL"); } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ESRCH") return "gone";
+      throw new Error(`Could not kill grandchild ${pid} from receipt ${pidFile}: ${code ?? (error as Error).message}`);
+    }
+    const deadline = Date.now() + boundMs;
+    do {
+      if (!alive(pid, probe)) return "dead";
+      await sleep(50);
+    } while (Date.now() < deadline);
+    throw new Error(`Grandchild ${pid} from receipt ${pidFile}: SIGKILL delivered but death unconfirmed`);
   };
 
   // Signals the grandchild a test started and removes that test's receipt dir.
   const releaseReceipts = async (receipts: string, pidFile: string, send?: (pid: number, signal: NodeJS.Signals) => unknown, probe?: Probe) => {
-    expect(["dead", "gone"]).toContain(await killGrandchild(pidFile, send, probe));
-    rmSync(receipts, { recursive: true, force: true });
+    // The receipt's details travel in any error, so the dir always goes.
+    try { expect(["dead", "gone"]).toContain(await killGrandchild(pidFile, send, probe)); } finally { rmSync(receipts, { recursive: true, force: true }); }
   };
 
   test("a server that exits while its child holds stderr open still fails startup and cleans up", async () => {
