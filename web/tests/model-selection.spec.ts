@@ -583,3 +583,40 @@ for (const [name, models] of [["a null", null], ["an array", []], ["a string", "
     expect(launches).toHaveLength(1);
   });
 }
+
+for (const reserved of ["heuristic", "random_legal", "human"]) {
+  test(`a model aliased "${reserved}" launches through its other alias, never as the built-in player`, async ({ page }) => {
+    const first = { ...terra, input_usd_per_million: 1 };
+    const second = { ...terra, input_usd_per_million: 2 };
+    await page.route("**/api/bootstrap", async (route) => {
+      const body = await (await route.fetch()).json();
+      body.config = { ...body.config, workbench: false, models: { [reserved]: first, terra2: second }, model_revisions: { [reserved]: "revision-reserved", terra2: "revision-terra2" }, model_capabilities: capabilities };
+      body.workbench = false;
+      await route.fulfill({ json: body });
+    });
+    const launches: any[] = [];
+    await page.route("**/api/runs", async (route) => {
+      launches.push(route.request().postDataJSON());
+      await route.fulfill({ json: { episode_id: "e".repeat(32) } });
+    });
+    await page.route("**/api/episodes", (route) => route.fulfill({ json: [] }));
+    await page.goto("/");
+    await page.getByLabel("Model", { exact: true }).selectOption(modelKey(terra));
+    await page.getByRole("button", { name: /Start test episode/ }).click();
+    await expect.poll(() => launches.length).toBe(1);
+    expect(launches[0]).toMatchObject({ agent: "terra2", model_revision: "revision-terra2" });
+  });
+}
+
+test("a model configured only under a built-in player name is not offered", async ({ page }) => {
+  await page.route("**/api/bootstrap", async (route) => {
+    const body = await (await route.fetch()).json();
+    body.config = { ...body.config, models: { human: terra }, model_revisions: { human: "revision-human" }, model_capabilities: capabilities };
+    await route.fulfill({ json: body });
+  });
+  await page.route("**/api/episodes", (route) => route.fulfill({ json: [] }));
+  await page.goto("/");
+  const picker = page.getByLabel("Model", { exact: true });
+  await expect(picker.locator("optgroup[label='Models'] option")).toHaveCount(0);
+  await expect(page.getByText(/built-in player name/)).toBeVisible();
+});
