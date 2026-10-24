@@ -549,12 +549,13 @@ test("a model removed and restored after it was shown must be chosen again befor
   current = { models: { "2": { ...terra, input_usd_per_million: 9, settings: { ...terra.settings, reasoning_effort: "high" } } }, model_revisions: { "2": "revision-restored" } };
   const before = bootstraps;
   await start.click();
-  await expect(page.getByRole("alert")).toContainText(/choose/i);
-  expect(bootstraps).toBeGreaterThan(before);
-  await expect(picker.locator("optgroup[label='Models'] option")).toHaveText(["GPT-5.6 Terra · OpenAI"]);
-  await expect(picker).not.toHaveValue(modelKey(terra));
+  // Either way the browser refetches; any second launch request would already have been sent.
+  await expect.poll(() => bootstraps).toBeGreaterThan(before);
   // Only the first, bound request was ever sent; it was refused, so nothing started.
   expect(launches).toEqual([expect.objectContaining({ agent: "2", model_revision: "revision-shown" })]);
+  await expect(page.getByRole("alert")).toContainText(/choose/i);
+  await expect(picker.locator("optgroup[label='Models'] option")).toHaveText(["GPT-5.6 Terra · OpenAI"]);
+  await expect(picker).not.toHaveValue(modelKey(terra));
 });
 
 for (const [name, models] of [["a null", null], ["an array", []], ["a string", "models"]] as const) {
