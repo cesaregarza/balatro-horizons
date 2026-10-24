@@ -117,3 +117,47 @@ def test_canonical_launch_matching_several_aliases_is_refused(store):
         client.close()
     assert reply.status_code == 400
     assert reply.json()["error"] == "AMBIGUOUS_CONFIGURED_MODEL"
+
+
+def _launch_shown_alias(store, rebind):
+    # The browser launches "2" with the revision its catalog showed. The old catalog had
+    # none, so its payload was the bare alias.
+    app, client, headers = client_for(store)
+    models = app.state.config.models
+    luna = models.pop("luna")
+    models["2"] = luna.model_copy(update={"input_usd_per_million": 1.0})
+    launched = []
+    app.state.runs.start = lambda config, agent, *_a, **_k: launched.append(
+        (agent, config.models[agent].model, config.models[agent].input_usd_per_million),
+    ) or "a" * 32
+    try:
+        shown = client.get("/api/bootstrap").json()["config"]
+        revision = shown.get("model_revisions", {}).get("2")
+        if rebind:
+            rebound = {**shown["models"], "2": {
+                **shown["models"]["2"], "model": "gpt-5.6-sol", "input_usd_per_million": 9.0,
+            }}
+            saved = client.put("/api/settings", headers=headers, json={
+                "models": rebound, "budgets": shown["budgets"], "skills": shown["skills"],
+            })
+            assert saved.status_code == 200, saved.text
+        reply = client.post("/api/runs", headers=headers, json={
+            "agent": "2", "offline": True, "model_settings": shown["models"]["2"]["settings"],
+            **({"model_revision": revision} if revision else {}),
+        })
+    finally:
+        client.close()
+    return reply, launched
+
+
+def test_launch_of_an_alias_rebound_after_it_was_shown_is_refused(store):
+    reply, launched = _launch_shown_alias(store, rebind=True)
+    assert launched == []
+    assert reply.status_code == 400
+    assert reply.json()["error"] == "MODEL_CONFIG_CHANGED"
+
+
+def test_launch_of_an_unchanged_shown_alias_starts_that_record(store):
+    reply, launched = _launch_shown_alias(store, rebind=False)
+    assert reply.status_code == 200, reply.text
+    assert launched == [("2", "gpt-5.6-luna", 1.0)]

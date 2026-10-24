@@ -434,3 +434,34 @@ test("a launch sends the configured alias the picker shows, even for integer-lik
   await expect.poll(() => launches).toHaveLength(1);
   expect(launches[0]).toMatchObject({ agent: "2", model_settings: two.settings });
 });
+
+test("a launch refused because the shown alias changed refreshes the picker and starts nothing", async ({ page }) => {
+  // "2" shows Terra at $1; before Start, another operator rebinds "2" to Sol at $9.
+  const shown = { ...terra, input_usd_per_million: 1 };
+  const rebound = { ...sol, input_usd_per_million: 9 };
+  let current = { models: { "2": shown }, model_revisions: { "2": "revision-terra" } };
+  let bootstraps = 0;
+  await page.route("**/api/bootstrap", async (route) => {
+    bootstraps++;
+    const body = await (await route.fetch()).json();
+    body.config = { ...body.config, ...current, model_capabilities: capabilities };
+    await route.fulfill({ json: body });
+  });
+  const launches: any[] = [];
+  await page.route("**/api/runs", async (route) => {
+    launches.push(route.request().postDataJSON());
+    await route.fulfill({ status: 400, json: { error: "MODEL_CONFIG_CHANGED" } });
+  });
+  await page.route("**/api/episodes", (route) => route.fulfill({ json: [] }));
+  await page.goto("/");
+  const picker = page.getByLabel("Model", { exact: true });
+  await picker.selectOption(modelKey(terra));
+  current = { models: { "2": rebound }, model_revisions: { "2": "revision-sol" } };
+  const before = bootstraps;
+  await page.getByRole("button", { name: /Start test episode/ }).click();
+  await expect(page.getByRole("alert")).toContainText("changed");
+  expect(launches).toEqual([expect.objectContaining({ agent: "2", model_revision: "revision-terra" })]);
+  expect(bootstraps).toBeGreaterThan(before);
+  await expect(picker.locator("optgroup[label='Models'] option")).toHaveText(["GPT-5.6 Sol · OpenAI"]);
+  expect(launches).toHaveLength(1);
+});
