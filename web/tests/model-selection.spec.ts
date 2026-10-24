@@ -899,10 +899,15 @@ test.describe("legacy server startup failures", () => {
   // A real fake server whose own child inherits its stderr: the pipe stays open after it exits.
   const grandchild = `const { spawn } = require("child_process"); const g = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "ignore", "inherit"] }); require("fs").writeFileSync(process.argv[1], String(g.pid));`;
   // Reads a grandchild PID receipt the test itself wrote, signals it, and reports whether it did.
+  // Only a canonical decimal above 1 that is neither this process nor its parent is signalled:
+  // 0 or a negative id would reach a whole process group.
   const killGrandchild = (pidFile: string, send: (pid: number, signal: NodeJS.Signals) => unknown = process.kill) => {
     if (!existsSync(pidFile)) return false;
-    try { send(Number(readFileSync(pidFile, "utf8")), "SIGKILL"); } catch { /* already gone */ }
+    const text = readFileSync(pidFile, "utf8");
     rmSync(pidFile, { force: true });
+    const pid = /^[1-9][0-9]*$/.test(text) ? Number(text) : NaN;
+    if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid || pid === process.ppid) return false;
+    try { send(pid, "SIGKILL"); } catch { /* already gone */ }
     return true;
   };
 
