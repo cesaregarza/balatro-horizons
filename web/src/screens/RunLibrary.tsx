@@ -10,6 +10,8 @@ import { LibraryTable } from "./run-library/LibraryTable";
 import { RunConfiguration, gameChoiceLabel } from "./run-library/RunConfiguration";
 import "./run-library/library.css";
 
+const isRevision = (value: unknown): value is string => typeof value === "string" && value !== "";
+
 export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes, busy, run, openExplorer, openReview, onCompare, priorSeedExposure, setPriorSeedExposure, watch, setWatch, status, setNotice, onHumanStart }: any) {
   const [agent, setAgent] = useState("heuristic");
   const [offline, setOffline] = useState(true);
@@ -39,6 +41,16 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
   }
 
   async function refreshEpisodes() { setEpisodes(await listEpisodes()); }
+  // Reload the models shown for launch. A refresh without a revision for every model is not
+  // installed, so nothing can launch unbound. Either way the operator must confirm again.
+  async function refreshShownModels(reason = "Model details were refreshed."): Promise<never> {
+    const latest = (await bootstrap()).config;
+    if (!Object.keys(latest.models ?? {}).every((key) => isRevision(latest.model_revisions?.[key]))) {
+      throw new Error("Model details could not be confirmed. Refresh the workbench before starting a run.");
+    }
+    setConfig(latest);
+    throw new Error(reason + " Review the model and confirm by starting again.");
+  }
   const budgets = config.budgets ?? {};
   const episodeLimit = costOverride === 10 ? 10 : costOverride === "uncapped" ? null : budgets.max_episode_cost_usd;
   const batchLimit = costOverride === "uncapped" ? null : costOverride ?? budgets.max_batch_cost_usd;
@@ -80,16 +92,18 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
             void action(async () => {
               const chosen = selectedModel ? configureModel(selectedModel, effort, capabilities) : null;
               const key = chosen ? options[agent].key : agent;
+              const revision = config.model_revisions?.[key];
+              // A shown model launches only bound to the revision it was shown with.
+              if (chosen && !isRevision(revision)) await refreshShownModels();
               const result = await startRun({
-                agent: key, ...(chosen ? { model_settings: chosen.settings, model_revision: config.model_revisions?.[key] } : {}),
+                agent: key, ...(chosen ? { model_settings: chosen.settings, model_revision: revision } : {}),
                 offline, deck, stake, seed: seed || null,
                 ...(costOverride === null ? {} : { cost_override: costOverride }),
                 ...(costOverride === "uncapped" ? { confirm_uncapped: true } : {}),
               }).catch(async (error) => {
                 if (!(error instanceof Error) || error.message !== "MODEL_CONFIG_CHANGED") throw error;
                 // The record behind this choice changed after it was shown; show the current one.
-                setConfig((await bootstrap()).config);
-                throw new Error("This model's configuration changed after it was shown. Review the refreshed choice and start again.");
+                await refreshShownModels("This model's configuration changed after it was shown.");
               });
               setCostOverride(null);
               setNotice("Run created: " + result.episode_id.slice(0, 10));

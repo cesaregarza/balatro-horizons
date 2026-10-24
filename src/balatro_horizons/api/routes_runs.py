@@ -29,11 +29,12 @@ def new_seed():
 @router.post("/api/runs", dependencies=[Depends(require_operator)])
 def start_run(request: Request, data: RunInput):
     state = request.app.state
+    # Settings can be replaced concurrently: resolve, check and start from this one copy.
     chosen = state.config.model_copy(deep=True)
-    agent = _configured_agent(state.config.models, data.agent)
+    agent = _configured_agent(chosen.models, data.agent)
     if data.model_revision is not None:
         # The record behind this key must still be the one the operator was shown.
-        model = state.config.models.get(agent)
+        model = chosen.models.get(agent)
         if model is None or model_revision(model) != data.model_revision:
             raise ValueError("MODEL_CONFIG_CHANGED")
     if data.model_settings is not None:

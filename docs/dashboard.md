@@ -78,7 +78,12 @@ model/effort, real versus synthetic mode, deck/stake and both effective dollar
 ceilings. Per-run model settings are validated against the configured model and
 applied to a copy; only **Save model defaults** writes persistent defaults. A launch
 names the exact configured entry shown and its revision; if that entry changed after
-it was shown, the launch is refused, the picker refreshes, and nothing starts. A new
+it was shown, the launch is refused, the picker refreshes, and nothing starts. The
+browser never launches a shown model without its revision: it refreshes first, and if
+the refreshed models still lack revisions it starts nothing and shows an error. The
+server checks one copy of the configuration for the whole launch. `POST /api/runs`
+accepts a launch without `model_revision` only for clients that display no catalog,
+such as the CLI and scripts; they get exactly the named configured entry. A new
 run stays in the library until opened, so launching exposes nothing beyond it; a
 continuation opens its explorer. Worker status is explicitly revealed;
 active/recent cards open runs. Stop stays enabled without worker status: stopping
