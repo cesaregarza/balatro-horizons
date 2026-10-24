@@ -118,3 +118,21 @@ test("a run created after Operator details was chosen is not exposed without an 
   await expect(page.getByRole("heading", { name: "Fresh Model", exact: true })).toBeVisible();
   expect(enrichedCalls).toBe(2);
 });
+
+test("operator details ask only for the runs listed when the operator chose them", async ({ page }) => {
+  const requests: { method: string; body: unknown }[] = [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/bootstrap") return route.fulfill({ json: { operator_token: "mock", config: { workbench: true, models: {}, model_capabilities: {}, budgets: {} }, workbench: true, paid_credentials: {} } });
+    if (path === "/api/episodes") return route.fulfill({ json: rows });
+    if (path === "/api/operator/episodes") { requests.push({ method: route.request().method(), body: route.request().postDataJSON() }); return route.fulfill({ json: enriched }); }
+    if (["/api/panels", "/api/batches"].includes(path)) return route.fulfill({ json: [] });
+    if (path === "/api/operator/status") return route.fulfill({ json: { running: false, active_episode: null, episodes: [], error: null } });
+    return route.fulfill({ json: {} });
+  });
+  await page.goto("/");
+  await expect(page.locator(".episode-card")).toHaveCount(3);
+  await page.getByRole("button", { name: "Operator details" }).click();
+  await expect(page.getByRole("heading", { name: "Luna Max", exact: true })).toBeVisible();
+  expect(requests).toEqual([{ method: "POST", body: { episode_ids: rows.map((row) => row.episode_id) } }]);
+});

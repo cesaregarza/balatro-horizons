@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 from fastapi.testclient import TestClient
 
 from balatro_horizons.api import create_app
@@ -82,3 +84,64 @@ def test_single_operator_projection_is_index_only_and_hides_child_lineage_count(
     assert projection["model_name"] == "random_legal"
     assert projection["committed_actions"] is None
     assert projection["cost_usd"] == 0.5
+
+
+def _finished_run(store, agent):
+    eid = store.create({
+        "evidence_kind": "NATIVE", "agent": agent,
+        "config": {"deck": "RED", "stake": "GOLD", "models": {agent: {"model": agent}}},
+    })
+    store.finish(eid, {"outcome": "WIN", "reason": "TEST_STOP"})
+    return eid
+
+
+def _ledger(store, eid):
+    path = store.root / "review" / f"{eid}-exposure.jsonl"
+    return path.read_text().splitlines() if path.exists() else []
+
+
+@contextmanager
+def _operator_client(store):
+    app = create_app(store.root, Config())
+    with TestClient(app) as client:
+        client.headers["X-BH-Operator"] = client.get("/api/bootstrap").json()["operator_token"]
+        yield app, client
+
+
+def test_operator_details_expose_only_the_runs_chosen_even_when_a_run_lands_mid_request(store):
+    chosen = _finished_run(store, "model-a")
+    with _operator_client(store) as (app, client):
+        listed = app.state.store.list_episodes
+        late = []
+
+        def insert_before_enumeration():
+            if not late:
+                late.append(_finished_run(app.state.store, "model-b"))
+            return listed()
+
+        app.state.store.list_episodes = insert_before_enumeration
+        response = client.post("/api/operator/episodes", json={"episode_ids": [chosen]})
+        blinded = client.get("/api/episodes").json()
+    assert response.status_code == 200
+    assert [row["episode_id"] for row in response.json()] == [chosen]
+    assert {row["episode_id"] for row in blinded} == {chosen, late[0]}
+    assert len(_ledger(store, chosen)) == 1
+    assert _ledger(store, late[0]) == []
+
+
+def test_operator_details_for_an_empty_selection_expose_and_record_nothing(store):
+    run = _finished_run(store, "model-a")
+    with _operator_client(store) as (_, client):
+        response = client.post("/api/operator/episodes", json={"episode_ids": []})
+    assert response.status_code == 200 and response.json() == []
+    assert _ledger(store, run) == []
+
+
+def test_operator_details_ignore_requested_ids_outside_the_library(store):
+    run = _finished_run(store, "model-a")
+    foreign = "f" * 32
+    with _operator_client(store) as (_, client):
+        response = client.post("/api/operator/episodes", json={"episode_ids": [foreign, run]})
+    assert response.status_code == 200
+    assert [row["episode_id"] for row in response.json()] == [run]
+    assert _ledger(store, foreign) == []
