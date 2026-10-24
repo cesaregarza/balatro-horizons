@@ -1,5 +1,9 @@
-import { readdirSync } from "node:fs";
+import type { ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { test, expect } from "@playwright/test";
 import {
   configureModel,
@@ -838,41 +842,116 @@ test.describe("repairing several reserved aliases on a real server", () => {
 test.describe("legacy server startup failures", () => {
   const legacyDirs = () => readdirSync(tmpdir()).filter((name) => name.startsWith("bh-legacy-")).sort();
   const node = process.execPath;
+  // Startup must settle within this bound on every path, so a hang fails an assertion.
+  const settled = <T,>(promise: Promise<T>, ms = 15000) => Promise.race([promise, new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), ms))]);
   async function startFailure(options: Parameters<typeof startLegacyServer>[1]) {
+    // Cleanup must delete only the directory this start created: a same-prefix directory and an
+    // unrelated file nearby both survive it.
+    const sentinelDir = mkdtempSync(join(tmpdir(), "bh-legacy-sentinel-"));
+    const sentinelFile = join(tmpdir(), `bh-sentinel-${process.pid}-${Date.now()}.txt`);
+    writeFileSync(sentinelFile, "keep");
     const before = legacyDirs();
-    const outcome = await startLegacyServer(["human"], options).then(async (server) => { await server.stop(); return "started"; }, (error: Error) => error);
-    return { outcome, before, after: legacyDirs() };
+    const outcome = await settled(startLegacyServer(["human"], options).then(async (server) => { await server.stop(); return "started"; }, (error: Error) => error));
+    const after = legacyDirs();
+    const sentinelsSurvived = existsSync(sentinelDir) && existsSync(sentinelFile);
+    rmSync(sentinelDir, { recursive: true, force: true });
+    rmSync(sentinelFile, { force: true });
+    return { outcome, before, after, sentinelsSurvived };
   }
   const pidIn = (error: Error) => Number(/fake pid (\d+)/.exec(error.message)?.[1]);
   const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   test("a readiness request that hangs fails at the deadline with the server's stderr", async () => {
     // Accepts connections but never answers.
     const hung = `require("net").createServer(() => {}).listen(+process.argv[1], "127.0.0.1", () => console.error("fake pid " + process.pid));`;
     const started = Date.now();
-    const { outcome, before, after } = await startFailure({ command: (_dir, port) => [node, ["-e", hung, String(port)]], readyTimeoutMs: 2000, fetchTimeoutMs: 300 });
+    const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: (_dir, port) => [node, ["-e", hung, String(port)]], readyTimeoutMs: 2000, fetchTimeoutMs: 300 });
     expect(outcome).toBeInstanceOf(Error);
     const error = outcome as Error;
     expect(error.message).toMatch(/did not start within/);
     expect(error.message).toContain("fake pid");
     expect(Date.now() - started).toBeLessThan(10000);
+    expect(Number.isFinite(pidIn(error))).toBe(true);
     expect(alive(pidIn(error))).toBe(false);
     expect(after).toEqual(before);
+    expect(sentinelsSurvived).toBe(true);
   });
 
   test("a server that exits early fails with its stderr and leaves nothing behind", async () => {
     const early = `console.error("fake pid " + process.pid); process.exit(3);`;
-    const { outcome, before, after } = await startFailure({ command: () => [node, ["-e", early]] });
+    const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: () => [node, ["-e", early]] });
     expect(outcome).toBeInstanceOf(Error);
     expect((outcome as Error).message).toMatch(/exited/);
     expect((outcome as Error).message).toContain("fake pid");
     expect(after).toEqual(before);
+    expect(sentinelsSurvived).toBe(true);
   });
 
   test("a server that cannot be spawned fails clearly and leaves no temp dir", async () => {
-    const { outcome, before, after } = await startFailure({ command: () => ["/nonexistent/bh-legacy-python", []] });
+    const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: () => ["/nonexistent/bh-legacy-python", []] });
     expect(outcome).toBeInstanceOf(Error);
     expect((outcome as Error).message).toMatch(/could not be started/);
     expect(after).toEqual(before);
+    expect(sentinelsSurvived).toBe(true);
+  });
+
+  // A real fake server whose own child inherits its stderr: the pipe stays open after it exits.
+  const grandchild = `const { spawn } = require("child_process"); const g = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "ignore", "inherit"] }); require("fs").writeFileSync(process.argv[1], String(g.pid));`;
+  const killGrandchild = (pidFile: string) => { if (existsSync(pidFile)) { try { process.kill(Number(readFileSync(pidFile, "utf8")), "SIGKILL"); } catch { /* already gone */ } rmSync(pidFile, { force: true }); } };
+
+  test("a server that exits while its child holds stderr open still fails startup and cleans up", async () => {
+    const pidFile = join(tmpdir(), `bh-grandchild-${process.pid}-${Date.now()}`);
+    const exits = `${grandchild} console.error("fake pid " + process.pid); process.exit(0);`;
+    try {
+      const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: () => [node, ["-e", exits, pidFile]], stopTimeoutMs: 1000 });
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toMatch(/exited/);
+      expect(after).toEqual(before);
+      expect(sentinelsSurvived).toBe(true);
+    } finally {
+      killGrandchild(pidFile);
+    }
+  });
+
+  test("repeated stops share one shutdown that ends only after cleanup", async () => {
+    const pidFile = join(tmpdir(), `bh-grandchild-${process.pid}-${Date.now()}`);
+    const serves = `${grandchild.replace("process.argv[1]", "process.argv[2]")} require("http").createServer((_q, r) => r.end("{}")).listen(+process.argv[1], "127.0.0.1");`;
+    const server = await startLegacyServer(["human"], { command: (_dir, port) => [node, ["-e", serves, String(port), pidFile]], stopTimeoutMs: 1000 });
+    try {
+      expect(Number.isFinite(server.pid)).toBe(true);
+      const first = server.stop();
+      const second = server.stop();
+      expect(second).toBe(first);
+      const state = () => ({ dir: existsSync(server.dataDir), alive: alive(server.pid!) });
+      const outcome = await settled(Promise.all([first.then(state), second.then(state)]));
+      expect(outcome).toEqual([{ dir: false, alive: false }, { dir: false, alive: false }]);
+    } finally {
+      killGrandchild(pidFile);
+      await settled(server.stop(), 10000);
+    }
+  });
+
+  test("errors from signalling the child never escape and never skip cleanup", async () => {
+    // A real process cannot fail kill() twice on demand, so this one case injects a fake child
+    // whose every kill() emits two errors. It never signals a real process.
+    const escaped: unknown[] = [];
+    const record = (error: unknown) => { escaped.push(error); };
+    process.on("uncaughtException", record);
+    try {
+      const fake = () => Object.assign(new EventEmitter(), {
+        pid: 2147483646, exitCode: null, signalCode: null, stderr: new PassThrough(),
+        kill(this: EventEmitter) { this.emit("error", new Error("kill failed")); this.emit("error", new Error("kill failed again")); return false; },
+      }) as unknown as ChildProcess;
+      const { outcome, before, after, sentinelsSurvived } = await startFailure({ spawn: fake, readyTimeoutMs: 1000, fetchTimeoutMs: 200, stopTimeoutMs: 300 });
+      await sleep(500);
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toMatch(/did not start within/);
+      expect(after).toEqual(before);
+      expect(sentinelsSurvived).toBe(true);
+      expect(escaped).toEqual([]);
+    } finally {
+      process.off("uncaughtException", record);
+    }
   });
 });
