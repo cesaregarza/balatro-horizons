@@ -97,8 +97,15 @@ settings refuse it with `RESERVED_MODEL_ALIAS`, the picker does not offer it and
 a configuration error, and the server refuses a launch that names one with model
 fields or resolves a canonical key to one. An older configuration that already holds
 such an alias is repaired under **Models & budgets**, in **Reserved model
-aliases**: Rename moves that one record to a new, unused, non-reserved key, and Remove
-drops it. Each is one save of the latest configuration. Nothing is migrated
+aliases**: each row records a decision, Rename to a new key or Remove, and sends
+nothing. **Repair aliases** is enabled once every listed alias has a decision and
+repairs them all in one settings save, since the server refuses any save that still
+carries a reserved alias. New names are checked before any request (not empty, no
+surrounding spaces, not a built-in name, all different). After a fresh read of the
+configuration and before the settings PUT, the repair stops if the set of reserved
+aliases has changed or a new name is already configured. Otherwise it saves the latest
+models without any reserved key, each renamed record unchanged under its new key, and
+the latest budgets and skills. Repeated clicks while a repair is in flight send nothing. Nothing is migrated
 automatically, and recorded runs keep their configuration. `POST /api/runs`
 accepts a launch without `model_revision` only for clients that display no catalog,
 such as the CLI and scripts; they get exactly the named configured entry. A new
