@@ -859,7 +859,8 @@ test.describe("legacy server startup failures", () => {
     return { outcome, before, after, sentinelsSurvived };
   }
   const pidIn = (error: Error) => Number(/fake pid (\d+)/.exec(error.message)?.[1]);
-  const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  type Probe = (pid: number, signal: 0) => unknown;
+  const alive = (pid: number, _probe: Probe = process.kill) => { try { process.kill(pid, 0); return true; } catch { return false; } };
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   test("a readiness request that hangs fails at the deadline with the server's stderr", async () => {
@@ -901,7 +902,7 @@ test.describe("legacy server startup failures", () => {
   // Reads a grandchild PID receipt the test itself wrote, signals it, and reports whether it did.
   // Only a canonical decimal above 1 that is neither this process nor its parent is signalled:
   // 0 or a negative id would reach a whole process group.
-  const killGrandchild = (pidFile: string, send: (pid: number, signal: NodeJS.Signals) => unknown = process.kill) => {
+  const killGrandchild = (pidFile: string, send: (pid: number, signal: NodeJS.Signals) => unknown = process.kill, _probe: Probe = process.kill, _boundMs = 3000) => {
     if (!existsSync(pidFile)) return false;
     const text = readFileSync(pidFile, "utf8");
     rmSync(pidFile, { force: true });
@@ -909,6 +910,12 @@ test.describe("legacy server startup failures", () => {
     if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid || pid === process.ppid) return false;
     try { send(pid, "SIGKILL"); } catch { /* already gone */ }
     return true;
+  };
+
+  // Signals the grandchild a test started and removes that test's receipt dir.
+  const releaseReceipts = async (receipts: string, pidFile: string, send?: (pid: number, signal: NodeJS.Signals) => unknown, probe?: Probe) => {
+    expect(["dead", "gone"]).toContain(await killGrandchild(pidFile, send, probe));
+    rmSync(receipts, { recursive: true, force: true });
   };
 
   test("a server that exits while its child holds stderr open still fails startup and cleans up", async () => {
@@ -922,8 +929,7 @@ test.describe("legacy server startup failures", () => {
       expect(after).toEqual(before);
       expect(sentinelsSurvived).toBe(true);
     } finally {
-      expect(killGrandchild(pidFile)).toBe(true);
-      rmSync(receipts, { recursive: true, force: true });
+      await releaseReceipts(receipts, pidFile);
     }
   });
 
@@ -942,8 +948,7 @@ test.describe("legacy server startup failures", () => {
       expect(after).toEqual(before);
       expect(sentinelsSurvived).toBe(true);
     } finally {
-      expect(killGrandchild(pidFile)).toBe(true);
-      rmSync(receipts, { recursive: true, force: true });
+      await releaseReceipts(receipts, pidFile);
     }
   });
 
@@ -961,8 +966,7 @@ test.describe("legacy server startup failures", () => {
       const outcome = await settled(Promise.all([first.then(state), second.then(state)]));
       expect(outcome).toEqual([{ dir: false, alive: false }, { dir: false, alive: false }]);
     } finally {
-      expect(killGrandchild(pidFile)).toBe(true);
-      rmSync(receipts, { recursive: true, force: true });
+      await releaseReceipts(receipts, pidFile);
       await settled(server.stop(), 10000);
     }
   });
@@ -1028,7 +1032,7 @@ test.describe("legacy server startup failures", () => {
     expect(sentinelsSurvived).toBe(true);
   });
 
-  test("grandchild receipts signal only a validated process id", () => {
+  test("grandchild receipts signal only a validated process id", async () => {
     // Recorded, never sent: 0 or a negative id would signal a whole process group.
     const receipts = mkdtempSync(join(tmpdir(), "bh-receipts-"));
     const file = join(receipts, "grandchild.pid");
@@ -1036,15 +1040,88 @@ test.describe("legacy server startup failures", () => {
       for (const text of ["", "0", "-5", "1", "12abc", " 7", String(process.pid), String(process.ppid)]) {
         const sent: unknown[] = [];
         writeFileSync(file, text);
-        expect(killGrandchild(file, (...args) => sent.push(args)), JSON.stringify(text)).toBe(false);
+        const result = await settle(() => killGrandchild(file, (...args) => sent.push(args), gone));
+        expect(result, JSON.stringify(text)).toHaveProperty("error");
         expect(sent, JSON.stringify(text)).toEqual([]);
       }
       const sent: unknown[] = [];
       writeFileSync(file, "424242");
-      expect(killGrandchild(file, (...args) => sent.push(args))).toBe(true);
+      expect(await settle(() => killGrandchild(file, (...args) => sent.push(args), gone))).toEqual({ value: "dead" });
       expect(sent).toEqual([[424242, "SIGKILL"]]);
     } finally {
       rmSync(receipts, { recursive: true, force: true });
     }
+  });
+
+  // Recorders and probes only: none of these cases sends a real signal.
+  const errno = (code: string) => Object.assign(new Error(`simulated ${code}`), { code });
+  const gone: Probe = () => { throw errno("ESRCH"); };
+  const present: Probe = () => true;
+  const settle = (run: () => unknown) => Promise.resolve().then(run).then((value) => ({ value }), (error: Error) => ({ error: error.message }));
+  async function withReceipt<T>(text: string, use: (file: string) => Promise<T>) {
+    const dir = mkdtempSync(join(tmpdir(), "bh-receipts-"));
+    const file = join(dir, "grandchild.pid");
+    writeFileSync(file, text);
+    try { return await use(file); } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+
+  for (const code of ["EPERM", "EINVAL"]) {
+    test(`a grandchild kill that fails with ${code} reports the pid, the code and the receipt`, async () => {
+      await withReceipt("424242", async (file) => {
+        const result = await settle(() => killGrandchild(file, () => { throw errno(code); }, gone, 200));
+        expect(result).toHaveProperty("error");
+        const message = (result as { error: string }).error;
+        expect(message).toContain("424242");
+        expect(message).toContain(code);
+        expect(message).toContain(file);
+      });
+    });
+  }
+
+  test("a grandchild kill that finds no such process reports it gone", async () => {
+    await withReceipt("424242", async (file) => {
+      expect(await settle(() => killGrandchild(file, () => { throw errno("ESRCH"); }, present, 200))).toEqual({ value: "gone" });
+    });
+  });
+
+  test("a delivered grandchild kill reports death only once the probe stops finding it", async () => {
+    await withReceipt("424242", async (file) => {
+      expect(await settle(() => killGrandchild(file, () => true, gone, 200))).toEqual({ value: "dead" });
+    });
+    await withReceipt("424242", async (file) => {
+      const result = await settle(() => killGrandchild(file, () => true, present, 200));
+      expect(result).toHaveProperty("error");
+      expect((result as { error: string }).error).toMatch(/delivered but death unconfirmed/);
+      expect((result as { error: string }).error).toContain("424242");
+    });
+  });
+
+  test("grandchild receipts above the largest process id send nothing", async () => {
+    const sent: unknown[] = [];
+    await withReceipt("2147483648", async (file) => {
+      expect(await settle(() => killGrandchild(file, (...args) => sent.push(args), gone, 200))).toHaveProperty("error");
+    });
+    expect(sent).toEqual([]);
+    await withReceipt("2147483647", async (file) => {
+      expect(await settle(() => killGrandchild(file, (...args) => sent.push(args), gone, 200))).toEqual({ value: "dead" });
+    });
+    expect(sent).toEqual([[2147483647, "SIGKILL"]]);
+  });
+
+  test("liveness counts a process it may not signal as present and rejects other probe errors", () => {
+    expect(alive(2147483646, gone)).toBe(false);
+    expect(alive(2147483646, () => { throw errno("EPERM"); })).toBe(true);
+    expect(() => alive(2147483646, () => { throw errno("EINVAL"); })).toThrow(/EINVAL/);
+  });
+
+  test("an invalid receipt still removes the receipt dir", async () => {
+    const receipts = mkdtempSync(join(tmpdir(), "bh-receipts-"));
+    const pidFile = join(receipts, "grandchild.pid");
+    writeFileSync(pidFile, "0");
+    const sent: unknown[] = [];
+    const outcome = await releaseReceipts(receipts, pidFile, (...args) => sent.push(args), gone).then(() => "released", (error: Error) => error);
+    expect(outcome).toBeInstanceOf(Error);
+    expect(sent).toEqual([]);
+    expect(existsSync(receipts)).toBe(false);
   });
 });
