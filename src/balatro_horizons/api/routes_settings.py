@@ -13,6 +13,8 @@ from .middleware import require_operator
 from .models import SettingsInput
 
 router = APIRouter()
+# Agent names RunService runs as built-in players; a configured model may not use one.
+BUILT_IN_PLAYERS = frozenset({"heuristic", "random_legal", "human"})
 
 
 def model_revision(model):
@@ -45,6 +47,8 @@ def update_settings(request: Request, data: SettingsInput):
     state = request.app.state
     if state.runs.thread and state.runs.thread.is_alive():
         raise ValueError("WORKER_BUSY")
+    if BUILT_IN_PLAYERS & set(data.models):
+        raise ValueError("RESERVED_MODEL_ALIAS")
     state.config = Config.model_validate(
         {**state.config.model_dump(), **data.model_dump(exclude_unset=True)}
     )

@@ -12,7 +12,7 @@ from balatro_horizons.run_configuration import apply_choices, require_native_sel
 
 from .middleware import require_operator
 from .models import RunInput
-from .routes_settings import model_revision
+from .routes_settings import BUILT_IN_PLAYERS, model_revision
 
 router = APIRouter()
 
@@ -32,6 +32,12 @@ def start_run(request: Request, data: RunInput):
     # Settings can be replaced concurrently: resolve, check and start from this one copy.
     chosen = state.config.model_copy(deep=True)
     agent = _configured_agent(chosen.models, data.agent)
+    model_fields = data.model_revision is not None or data.model_settings is not None
+    if agent in BUILT_IN_PLAYERS and agent in chosen.models and (
+        model_fields or data.agent.startswith("model:")
+    ):
+        # RunService would run the built-in player, not the configured model.
+        raise ValueError("RESERVED_MODEL_ALIAS")
     if data.model_revision is not None:
         # The record behind this key must still be the one the operator was shown.
         model = chosen.models.get(agent)

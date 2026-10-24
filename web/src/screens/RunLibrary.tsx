@@ -5,14 +5,12 @@ import { RunSpend } from "../RunSpend";
 import { CostOverrideControls, type CostOverride } from "../CostOverrideControls";
 import { useRunAction } from "./useRunAction";
 import { RuntimeConnection, useRuntimeConnection } from "./RuntimeConnection";
-import { configureModel, EMPTY_CAPABILITIES, effortDefault, modelCatalog, modelKey, modelLabel, modelOptions, supportsCachedHarness } from "../modelSelection";
+import { configureModel, EMPTY_CAPABILITIES, effortDefault, modelCatalog, modelKey, modelLabel, modelOptions, supportsCachedHarness, BUILT_IN_AGENTS } from "../modelSelection";
 import { LibraryTable } from "./run-library/LibraryTable";
 import { RunConfiguration, gameChoiceLabel } from "./run-library/RunConfiguration";
 import "./run-library/library.css";
 
 const isRevision = (value: unknown): value is string => typeof value === "string" && value !== "";
-// The only agents launched without a model revision; any other selection must be a shown model.
-const BASELINES = ["heuristic", "random_legal", "human"];
 const isModelCollection = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -28,6 +26,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
   const options = modelOptions(config.models ?? {});
   const capabilities = config.model_capabilities ?? EMPTY_CAPABILITIES;
   const selectedModel = options[agent]?.model;
+  const reservedAliases = Object.keys(config.models ?? {}).filter((key) => BUILT_IN_AGENTS.includes(key));
   const selectedModelSupported = !selectedModel || selectedModel.provider !== "openai" || supportsCachedHarness(selectedModel, capabilities);
   const action = useRunAction(run);
   const { connection, refresh: refreshConnection } = useRuntimeConnection(!offline);
@@ -67,11 +66,12 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
         <h2>Start a run</h2>
         <div className="form-row">
           <label>Model<select aria-label="Model" value={agent} onChange={(e) => { setAgent(e.target.value); setCostOverride(null); }} disabled={busy}>
-            {!selectedModel && !BASELINES.includes(agent) && <option value={agent} disabled>Choose a model</option>}
+            {!selectedModel && !BUILT_IN_AGENTS.includes(agent) && <option value={agent} disabled>Choose a model</option>}
             <optgroup label="Models">{Object.entries(options).map(([key, option]) => <option key={key} value={key}>{modelLabel(option.model, capabilities)}</option>)}</optgroup>
             <optgroup label="Baselines & human control"><option value="heuristic">Heuristic baseline</option><option value="random_legal">Random legal baseline</option>{workbench && <option value="human">Human player</option>}</optgroup>
           </select></label>
         </div>
+        {reservedAliases.length > 0 && <p className="error">Model alias {reservedAliases.join(", ")} uses a built-in player name, so it is not offered. Rename it in Models & budgets.</p>}
         <RunConfiguration deck={deck} stake={stake} onDeck={setDeck} onStake={setStake} disabled={busy} />
         {selectedModel && <>
           <ModelControls model={selectedModel} effort={effort} onEffort={setEffort} capabilities={capabilities} disabled={busy} />
@@ -95,7 +95,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
             if (startPending.current || busy || !selectedModelSupported || (!offline && connection?.ready !== true)) return;
             startPending.current = true;
             void action(async () => {
-              if (!selectedModel && !BASELINES.includes(agent)) {
+              if (!selectedModel && !BUILT_IN_AGENTS.includes(agent)) {
                 // The selected model is no longer in the catalog: never launch it unbound.
                 setAgent("");
                 await refreshShownModels("The selected model is no longer configured. Choose a model.");

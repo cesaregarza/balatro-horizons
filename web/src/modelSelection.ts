@@ -35,6 +35,9 @@ export function harnessLabel(recordedInterface?: string | null, current = false)
     : "Current harness";
 }
 
+// Agents the server runs as built-in players rather than configured models.
+export const BUILT_IN_AGENTS = ["heuristic", "random_legal", "human"];
+
 export function modelKey(model: Pick<ModelConfig, "provider" | "model">) {
   return `model:${model.provider}:${encodeURIComponent(model.model)}`;
 }
@@ -53,6 +56,8 @@ export function modelLabel(model: ModelConfig, capabilities = EMPTY_CAPABILITIES
 export function modelOptions(models: Record<string, ModelConfig>) {
   const result: Record<string, { key: string; model: ModelConfig }> = {};
   for (const [configured, model] of Object.entries(models)) {
+    // A launch under a built-in player name would run that player, so it never names a model.
+    if (BUILT_IN_AGENTS.includes(configured)) continue;
     const key = modelKey(model);
     if (models[key]) result[key] = { key, model: models[key] };
     else if (!result[key]) result[key] = { key: configured, model };

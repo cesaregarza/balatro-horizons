@@ -87,7 +87,11 @@ model whose revision is absent or empty is refreshed instead of launched. A refr
 catalog is installed only if its model collection is an object with a revision for
 every model; an empty collection is valid and leaves only the baselines, and a null,
 array or other malformed collection shows an error and keeps the previous catalog. The
-server checks one copy of the configuration for the whole launch. `POST /api/runs`
+server checks one copy of the configuration for the whole launch. A configured model
+alias may not use a built-in player name (`heuristic`, `random_legal`, `human`):
+settings refuse it with `RESERVED_MODEL_ALIAS`, the picker does not offer it and shows
+a configuration error, and the server refuses a launch that names one with model
+fields or resolves a canonical key to one. `POST /api/runs`
 accepts a launch without `model_revision` only for clients that display no catalog,
 such as the CLI and scripts; they get exactly the named configured entry. A new
 run stays in the library until opened, so launching exposes nothing beyond it; a
