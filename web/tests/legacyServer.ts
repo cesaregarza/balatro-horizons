@@ -41,36 +41,54 @@ function freePort(): Promise<number> {
 }
 
 export type LegacyServer = { origin: string; seeded: any; persisted: () => any; stop: () => Promise<void> };
+// Tests of the helper's own failure paths replace the server command and shorten the waits.
+type Options = { command?: (dataDir: string, port: number) => [string, string[]]; readyTimeoutMs?: number; fetchTimeoutMs?: number };
 
-export async function startLegacyServer(reserved: string[]): Promise<LegacyServer> {
+export async function startLegacyServer(reserved: string[], options: Options = {}): Promise<LegacyServer> {
   const seed = spawnSync(python, ["-c", SEED], { input: JSON.stringify(reserved), env: childEnv(), encoding: "utf8" });
-  if (seed.status !== 0) throw new Error("Could not build the legacy config:\n" + seed.stderr);
+  if (seed.status !== 0) throw new Error("Could not build the legacy config:\n" + (seed.stderr ?? seed.error));
   const dataDir = mkdtempSync(join(tmpdir(), "bh-legacy-"));
-  const settingsPath = join(dataDir, "operator-settings.json");
-  writeFileSync(settingsPath, seed.stdout);
-  const port = await freePort();
-  const child: ChildProcess = spawn(python, ["-m", "balatro_horizons.cli", "review", "--data-dir", dataDir, "--host", "127.0.0.1", "--port", String(port)], { env: childEnv(), stdio: ["ignore", "ignore", "pipe"] });
-  let stderr = "";
-  child.stderr?.on("data", (chunk) => { stderr += chunk; });
-  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  let child: ChildProcess | undefined;
+  let exited: Promise<void> = Promise.resolve();
+  // Every failure from here on stops the child and removes this helper's own temp dir.
   const stop = async () => {
-    if (child.exitCode === null && child.signalCode === null) {
+    if (child && child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
       child.kill("SIGTERM");
-      const killed = setTimeout(() => child.kill("SIGKILL"), 3000);
+      const killed = setTimeout(() => child?.kill("SIGKILL"), 3000);
       await exited;
       clearTimeout(killed);
     }
     rmSync(dataDir, { recursive: true, force: true });
   };
-  const origin = `http://127.0.0.1:${port}`;
-  const deadline = Date.now() + 30000;
-  while (true) {
-    if (child.exitCode !== null) { await stop(); throw new Error("The legacy server exited:\n" + stderr); }
-    try {
-      if ((await fetch(origin + "/api/bootstrap")).ok) break;
-    } catch { /* not listening yet */ }
-    if (Date.now() > deadline) { await stop(); throw new Error("The legacy server did not start within 30s:\n" + stderr); }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+  try {
+    const settingsPath = join(dataDir, "operator-settings.json");
+    writeFileSync(settingsPath, seed.stdout);
+    const port = await freePort();
+    const [command, args] = options.command?.(dataDir, port) ?? [python, ["-m", "balatro_horizons.cli", "review", "--data-dir", dataDir, "--host", "127.0.0.1", "--port", String(port)]];
+    const spawned = spawn(command, args, { env: childEnv(), stdio: ["ignore", "ignore", "pipe"] });
+    child = spawned;
+    let stderr = "";
+    let spawnError: Error | undefined;
+    spawned.stderr?.on("data", (chunk) => { stderr += chunk; });
+    exited = new Promise<void>((resolve) => spawned.once("close", () => resolve()));
+    spawned.once("error", (error) => { spawnError = error; });
+    const origin = `http://127.0.0.1:${port}`;
+    const deadline = Date.now() + (options.readyTimeoutMs ?? 30000);
+    while (true) {
+      if (spawnError) throw new Error(`The legacy server could not be started: ${spawnError.message}`);
+      if (spawned.exitCode !== null || spawned.signalCode !== null) throw new Error("The legacy server exited:\n" + stderr);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error(`The legacy server did not start within ${options.readyTimeoutMs ?? 30000}ms:\n` + stderr);
+      try {
+        // Bounded, so a request that hangs cannot outlast the deadline.
+        const signal = AbortSignal.timeout(Math.min(options.fetchTimeoutMs ?? 2000, remaining));
+        if ((await fetch(origin + "/api/bootstrap", { signal })).ok) break;
+      } catch { /* not listening or not answering yet */ }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return { origin, seeded: JSON.parse(seed.stdout), persisted: () => JSON.parse(readFileSync(settingsPath, "utf8")), stop };
+  } catch (error) {
+    await stop();
+    throw error;
   }
-  return { origin, seeded: JSON.parse(seed.stdout), persisted: () => JSON.parse(readFileSync(settingsPath, "utf8")), stop };
 }
