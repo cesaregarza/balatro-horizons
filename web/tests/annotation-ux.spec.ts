@@ -81,3 +81,25 @@ test("browser history can inspect another decision without retargeting an unsave
   await expect(detail.locator(".eyebrow")).toContainText("DECISION 21");
   await expect(page.getByLabel("What tradeoff do you see?")).toHaveValue("This draft belongs to decision 21.");
 });
+
+test("on a phone, opening an annotation keeps focus even when a heading focus frame is pending", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockExplorer(page);
+  // Hold animation frames so the mobile heading focus is still pending when the annotation opens.
+  await page.addInitScript(() => {
+    const held: FrameRequestCallback[] = [];
+    (window as any).__heldFrames = held;
+    window.requestAnimationFrame = (callback) => held.push(callback);
+    (window as any).__flushFrames = () => {
+      let ran = 0;
+      while (held.length) { held.splice(0).forEach((callback) => callback(performance.now())); ran++; }
+      return ran;
+    };
+  });
+  await page.goto(`/#explore/${explorerEpisode}/20`);
+  await page.waitForFunction(() => document.querySelector("[data-decision-detail-heading]") && (window as any).__heldFrames.length > 0, null, { polling: 50 });
+  await page.evaluate(() => Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Annotate this decision")!.click());
+  await page.waitForFunction(() => document.querySelector("textarea"), null, { polling: 50 });
+  await page.evaluate(() => (window as any).__flushFrames());
+  await expect(page.getByLabel("What tradeoff do you see?")).toBeFocused();
+});
