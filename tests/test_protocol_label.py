@@ -14,7 +14,7 @@ def test_library_uses_only_a_bounded_genesis_reference_for_old_harness_labels(st
     store.append(eid, "episode_start", {"agent_protocol": {"episode_id": eid, "hash": digest(protocol)}})
     store.append(eid, "note", {"large": "x" * 100_000})
     monkeypatch.setattr(store, "events", lambda *_: (_ for _ in ()).throw(AssertionError("full scan")))
-    row = OperatorLibrary(store, ReviewService(store)).episodes()[0]
+    row = OperatorLibrary(store, ReviewService(store)).episodes([eid])[0]
     assert row["recorded_interface"] == "agent-context-v7"
     assert "not-for-the-browser" not in json.dumps(row)
     atomic_json(path, {**protocol, "interface": "agent-context-v8"})

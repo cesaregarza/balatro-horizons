@@ -211,9 +211,9 @@ export type Episode = {
   branch: boolean;
   evaluation_eligible: boolean;
   fixture: string | null;
-  agent?: string;
 };
 export type OperatorEpisode = Episode & {
+  agent?: string;
   parent_episode_id: string | null;
   model_name: string;
   reasoning_effort: string | null;
@@ -291,7 +291,7 @@ async function request<T>(path: string, method = "GET", body?: unknown, reviewTo
 
 export const bootstrap = () => request<Bootstrap>("/bootstrap");
 export const listEpisodes = () => request<Episode[]>("/episodes");
-export const listOperatorEpisodes = () => request<OperatorEpisode[]>("/operator/episodes");
+export const listOperatorEpisodes = (episodeIds: string[]) => request<OperatorEpisode[]>("/operator/episodes", "POST", { episode_ids: episodeIds });
 export const restorePreview = (episodeId: string) => request<RestorePreview>("/operator/episodes/" + episodeId + "/restore");
 export const restoreRun = (episodeId: string, input: { parent_head: string; plan_hash: string; authorize_paid: boolean; accept_compatible_update: boolean; confirm_uncapped?: boolean }) => request<{ episode_id: string }>("/operator/episodes/" + episodeId + "/restore", "POST", input);
 export const budgetContinuationPreview = (episodeId: string) => request<BudgetContinuationPreview>("/operator/episodes/" + episodeId + "/continue-budget");

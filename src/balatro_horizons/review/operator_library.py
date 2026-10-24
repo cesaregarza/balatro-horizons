@@ -12,15 +12,18 @@ class OperatorLibrary:
         self._exposed = {}
         self._lock = Lock()
 
-    def episodes(self):
-        result = []
+    def episodes(self, chosen):
+        """Project and record exposure only for runs the operator chose to reveal."""
+        chosen, result, present = set(chosen), [], set()
         with self._lock:
             for row in self.store.list_episodes():
+                present.add(row["episode_id"])
+                if row["episode_id"] not in chosen:
+                    continue
                 projection = project_episode(row)
                 projection.update(protocol_metadata(self.store, row["episode_id"]))
                 self._record_exposure(projection)
                 result.append(projection)
-            present = {item["episode_id"] for item in result}
             self._exposed = {eid: key for eid, key in self._exposed.items() if eid in present}
         return result
 
