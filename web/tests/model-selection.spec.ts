@@ -465,3 +465,57 @@ test("a launch refused because the shown alias changed refreshes the picker and 
   await expect(picker.locator("optgroup[label='Models'] option")).toHaveText(["GPT-5.6 Sol · OpenAI"]);
   expect(launches).toHaveLength(1);
 });
+
+for (const [name, revisions] of [
+  ["an absent revision map", undefined],
+  ["an absent revision key", {}],
+  ["a null revision", { "2": null }],
+] as const) {
+  test(`a shown model with ${name} is never launched, even after a refresh`, async ({ page }) => {
+    let bootstraps = 0;
+    await page.route("**/api/bootstrap", async (route) => {
+      bootstraps++;
+      const body = await (await route.fetch()).json();
+      const { model_revisions: _ignored, ...config } = body.config;
+      body.config = { ...config, models: { "2": terra }, model_capabilities: capabilities, ...(revisions === undefined ? {} : { model_revisions: revisions }) };
+      await route.fulfill({ json: body });
+    });
+    const launches: unknown[] = [];
+    await page.route("**/api/runs", async (route) => {
+      launches.push(route.request().postDataJSON());
+      await route.fulfill({ json: { episode_id: "d".repeat(32) } });
+    });
+    await page.route("**/api/episodes", (route) => route.fulfill({ json: [] }));
+    await page.goto("/");
+    await page.getByLabel("Model", { exact: true }).selectOption(modelKey(terra));
+    const before = bootstraps;
+    await page.getByRole("button", { name: /Start test episode/ }).click();
+    await expect(page.getByRole("alert")).toContainText(/confirm/i);
+    expect(bootstraps).toBeGreaterThan(before);
+    expect(launches).toEqual([]);
+  });
+}
+
+test("a refusal whose refresh lacks revisions keeps the shown choice and starts nothing", async ({ page }) => {
+  let current: Record<string, unknown> = { models: { "2": { ...terra, input_usd_per_million: 1 } }, model_revisions: { "2": "revision-terra" } };
+  await page.route("**/api/bootstrap", async (route) => {
+    const body = await (await route.fetch()).json();
+    const { model_revisions: _ignored, ...config } = body.config;
+    body.config = { ...config, ...current, model_capabilities: capabilities };
+    await route.fulfill({ json: body });
+  });
+  const launches: any[] = [];
+  await page.route("**/api/runs", async (route) => {
+    launches.push(route.request().postDataJSON());
+    await route.fulfill({ status: 400, json: { error: "MODEL_CONFIG_CHANGED" } });
+  });
+  await page.route("**/api/episodes", (route) => route.fulfill({ json: [] }));
+  await page.goto("/");
+  const picker = page.getByLabel("Model", { exact: true });
+  await picker.selectOption(modelKey(terra));
+  current = { models: { "2": { ...sol, input_usd_per_million: 9 } } };
+  await page.getByRole("button", { name: /Start test episode/ }).click();
+  await expect(page.getByRole("alert")).toContainText(/confirm/i);
+  await expect(picker.locator("optgroup[label='Models'] option")).toHaveText(["GPT-5.6 Terra · OpenAI"]);
+  expect(launches).toEqual([expect.objectContaining({ agent: "2", model_revision: "revision-terra" })]);
+});

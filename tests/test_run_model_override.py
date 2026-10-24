@@ -161,3 +161,40 @@ def test_launch_of_an_unchanged_shown_alias_starts_that_record(store):
     reply, launched = _launch_shown_alias(store, rebind=False)
     assert reply.status_code == 200, reply.text
     assert launched == [("2", "gpt-5.6-luna", 1.0)]
+
+
+def test_launch_checks_the_same_config_it_starts_when_a_restore_lands_mid_request(store):
+    # Shown: "2" is Luna at 1 (revision A). Settings swap in Sol at 9; the launch copies
+    # that config, then a restore puts A back before the revision is checked.
+    app, client, headers = client_for(store)
+    models = app.state.config.models
+    luna = models.pop("luna")
+    models["2"] = luna.model_copy(update={"input_usd_per_million": 1.0})
+    shown = app.state.config
+    rebound = shown.model_copy(deep=True)
+    rebound.models["2"] = luna.model_copy(update={"model": "gpt-5.6-sol", "input_usd_per_million": 9.0})
+    copy = rebound.model_copy
+
+    def copy_then_restore(*args, **kwargs):
+        captured = copy(*args, **kwargs)
+        app.state.config = shown
+        return captured
+
+    object.__setattr__(rebound, "model_copy", copy_then_restore)
+    started = []
+    app.state.runs.start = lambda config, agent, *_a, **_k: started.append(
+        (agent, config.models[agent].model, config.models[agent].input_usd_per_million),
+    ) or "a" * 32
+    try:
+        revision = client.get("/api/bootstrap").json()["config"]["model_revisions"]["2"]
+        app.state.config = rebound
+        reply = client.post("/api/runs", headers=headers, json={
+            "agent": "2", "offline": True, "model_revision": revision,
+        })
+    finally:
+        client.close()
+    # Either the shown record launches, or nothing does; never check A and start B.
+    assert started in ([], [("2", "gpt-5.6-luna", 1.0)]), started
+    assert (reply.status_code, reply.json().get("error")) == (
+        (400, "MODEL_CONFIG_CHANGED") if not started else (200, None)
+    )
