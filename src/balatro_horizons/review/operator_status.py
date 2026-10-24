@@ -42,11 +42,16 @@ class OperatorStatus:
         # Multiple tabs share one refresh; they cannot all reparse the same journal.
         self._lock = Lock()
 
-    def episodes(self):
+    def episodes(self, chosen):
+        """Aggregate and record exposure only for runs the operator chose to watch."""
+        chosen, present = set(chosen), set()
         with self._lock:
             result = []
             for row in self.store.list_episodes():
                 eid = row["episode_id"]
+                present.add(eid)
+                if eid not in chosen:
+                    continue
                 directory = self.store.episode_path(eid)
                 path = directory / "events.jsonl"
                 stamp = journal_stamp(path)
@@ -72,7 +77,6 @@ class OperatorStatus:
                     )
                     self._exposed[eid] = exposure
                 result.append({"episode_id": eid, "agent": row["manifest"]["agent"], **data})
-            present = {row["episode_id"] for row in result}
             for eid in self._cache.keys() - present:
                 del self._cache[eid]
                 self._exposed.pop(eid, None)

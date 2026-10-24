@@ -33,7 +33,7 @@ async function fixture(page: Page) {
   await expect
     .poll(async () => {
       const status = await (
-        await page.request.get("/api/operator/status", { headers })
+        await page.request.post("/api/operator/status", { headers, data: { episode_ids: [episode_id] } })
       ).json();
       return status.episodes.find(
         (episode: any) => episode.episode_id === episode_id,

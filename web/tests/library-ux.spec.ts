@@ -204,3 +204,69 @@ test("operator details reveal only the runs on screen when a refresh lands mid-c
   expect(ledger(a)).toHaveLength(1);
   expect(ledger(b)).toEqual([]);
 });
+
+test("live status watches only the runs on screen when a refresh lands mid-click", async ({ page }) => {
+  // Two real synthetic runs: the screen shows A; a held refresh then resolves with A and B.
+  const { operator_token } = await (await page.request.get("/api/bootstrap")).json();
+  const headers = { "X-BH-Operator": operator_token };
+  const ids: string[] = [];
+  for (let index = 0; index < 2; index++) {
+    await awaitIdleWorker(page, operator_token);
+    const created = await page.request.post("/api/runs", { headers, data: { agent: "heuristic", offline: true } });
+    expect(created.ok(), await created.text()).toBe(true);
+    ids.push((await created.json()).episode_id);
+  }
+  await awaitIdleWorker(page, operator_token);
+  const [a, b] = ids;
+  let listed = [a];
+  await page.route("**/api/episodes", async (route) => {
+    const rows = await (await route.fetch()).json();
+    await route.fulfill({ json: rows.filter((row: { episode_id: string }) => listed.includes(row.episode_id)) });
+  });
+  await page.addInitScript(() => {
+    const realFetch = window.fetch.bind(window);
+    const state = window as any;
+    state.pendingFetches = 0;
+    window.fetch = (input, init) => {
+      const path = new URL(String(input instanceof Request ? input.url : input), location.href).pathname;
+      if (state.holdEpisodes && path === "/api/episodes") {
+        state.holdEpisodes = false;
+        return realFetch(input, init).then(async (response) => {
+          const body = await response.json();
+          return new Promise((resolve) => { state.releaseEpisodes = () => resolve({ ok: true, json: async () => body }); });
+        });
+      }
+      state.pendingFetches++;
+      return realFetch(input, init).finally(() => { state.pendingFetches--; });
+    };
+  });
+  const bodies: unknown[] = [];
+  page.on("request", (request) => { if (new URL(request.url()).pathname === "/api/operator/status") bodies.push(request.postDataJSON()); });
+  await page.goto("/");
+  await expect(page.locator(".episode-card")).toHaveCount(1);
+  listed = [a, b];
+  await page.evaluate(() => { (window as any).holdEpisodes = true; });
+  await page.locator("header").getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => typeof (window as any).releaseEpisodes === "function" && (window as any).pendingFetches === 0)).toBe(true);
+  // Resolve the refresh, let its promise chain hand the list to React, then click before React commits it.
+  const shownAtClick = await page.evaluate(async () => {
+    (window as any).releaseEpisodes();
+    for (let turn = 0; turn < 50; turn++) await Promise.resolve();
+    const shown = document.querySelectorAll(".episode-card").length;
+    Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Watch live status")!.click();
+    return shown;
+  });
+  expect(shownAtClick).toBe(1);
+  const statusResponse = await page.waitForResponse((response) => new URL(response.url()).pathname === "/api/operator/status");
+  expect(statusResponse.ok()).toBe(true);
+  await expect(page.locator(".episode-card")).toHaveCount(2);
+  expect(bodies.length).toBeGreaterThan(0);
+  expect(bodies.every((body) => JSON.stringify(body) === JSON.stringify({ episode_ids: [a] }))).toBe(true);
+  // The real server's exposure ledger: watching revealed A, never B.
+  const ledger = (eid: string) => {
+    const path = fileURLToPath(new URL(`../.e2e-data-dashboard/review/${eid}-exposure.jsonl`, import.meta.url));
+    return existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)).filter((record) => record.kind === "operator_status") : [];
+  };
+  expect(ledger(a).length).toBeGreaterThan(0);
+  expect(ledger(b)).toEqual([]);
+});
