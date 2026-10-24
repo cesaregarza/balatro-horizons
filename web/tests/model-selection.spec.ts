@@ -914,15 +914,33 @@ test.describe("legacy server startup failures", () => {
     }
   });
 
+  test("a server that exits on shutdown while its child holds stderr open still fails startup within a bound", async () => {
+    // It never answers, so startup times out and stops it; it exits on SIGTERM, but its own
+    // child keeps the inherited stderr pipe open, so the pipe never closes.
+    const pidFile = join(tmpdir(), `bh-grandchild-${process.pid}-${Date.now()}`);
+    const hangs = `${grandchild.replace("process.argv[1]", "process.argv[2]")} require("net").createServer(() => {}).listen(+process.argv[1], "127.0.0.1", () => console.error("fake pid " + process.pid));`;
+    try {
+      const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: (_dir, port) => [node, ["-e", hangs, String(port), pidFile]], readyTimeoutMs: 1500, fetchTimeoutMs: 300, stopTimeoutMs: 1000 });
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toMatch(/did not start within/);
+      expect(Number.isFinite(pidIn(outcome as Error))).toBe(true);
+      expect(alive(pidIn(outcome as Error))).toBe(false);
+      expect(after).toEqual(before);
+      expect(sentinelsSurvived).toBe(true);
+    } finally {
+      killGrandchild(pidFile);
+    }
+  });
+
   test("repeated stops share one shutdown that ends only after cleanup", async () => {
     const pidFile = join(tmpdir(), `bh-grandchild-${process.pid}-${Date.now()}`);
     const serves = `${grandchild.replace("process.argv[1]", "process.argv[2]")} require("http").createServer((_q, r) => r.end("{}")).listen(+process.argv[1], "127.0.0.1");`;
     const server = await startLegacyServer(["human"], { command: (_dir, port) => [node, ["-e", serves, String(port), pidFile]], stopTimeoutMs: 1000 });
     try {
-      expect(Number.isFinite(server.pid)).toBe(true);
       const first = server.stop();
       const second = server.stop();
       expect(second).toBe(first);
+      expect(Number.isFinite(server.pid)).toBe(true);
       const state = () => ({ dir: existsSync(server.dataDir), alive: alive(server.pid!) });
       const outcome = await settled(Promise.all([first.then(state), second.then(state)]));
       expect(outcome).toEqual([{ dir: false, alive: false }, { dir: false, alive: false }]);
