@@ -99,7 +99,7 @@ def test_explorer_and_operator_refresh_the_same_private_safe_episode_costs(store
         response = client.get("/api/explore/decisions", headers=headers)
         assert response.status_code == 200
         paid = response.json()
-        operator = next(row for row in status.episodes() if row["episode_id"] == eid)
+        operator = next(row for row in status.episodes([eid]) if row["episode_id"] == eid)
         assert paid["spend"] == operator["spend"] == {
             "accounted_usd": 0.003, "response_usd": 0.003, "reserved_usd": 0,
         }
@@ -110,5 +110,5 @@ def test_explorer_and_operator_refresh_the_same_private_safe_episode_costs(store
         store.finish(eid, {"outcome": "PROVIDER_FAILURE", "committed_actions": 0,
                            "cost_usd": 0.003})
         final = client.get("/api/explore/decisions", headers=headers).json()
-        operator = next(row for row in status.episodes() if row["episode_id"] == eid)
+        operator = next(row for row in status.episodes([eid]) if row["episode_id"] == eid)
         assert final["spend"] == operator["spend"] == paid["spend"]
