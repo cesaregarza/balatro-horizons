@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { test, expect } from "@playwright/test";
 import {
   configureModel,
@@ -829,5 +831,48 @@ test.describe("repairing several reserved aliases on a real server", () => {
     await repair.getByRole("button", { name: "Remove human" }).click();
     await expect(repair.getByRole("button", { name: "Repair aliases" })).toBeDisabled();
     expect(puts).toEqual([]);
+  });
+});
+
+// The legacy-server helper itself: every startup failure must leave no process and no temp dir.
+test.describe("legacy server startup failures", () => {
+  const legacyDirs = () => readdirSync(tmpdir()).filter((name) => name.startsWith("bh-legacy-")).sort();
+  const node = process.execPath;
+  async function startFailure(options: Parameters<typeof startLegacyServer>[1]) {
+    const before = legacyDirs();
+    const outcome = await startLegacyServer(["human"], options).then(async (server) => { await server.stop(); return "started"; }, (error: Error) => error);
+    return { outcome, before, after: legacyDirs() };
+  }
+  const pidIn = (error: Error) => Number(/fake pid (\d+)/.exec(error.message)?.[1]);
+  const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+  test("a readiness request that hangs fails at the deadline with the server's stderr", async () => {
+    // Accepts connections but never answers.
+    const hung = `require("net").createServer(() => {}).listen(+process.argv[1], "127.0.0.1", () => console.error("fake pid " + process.pid));`;
+    const started = Date.now();
+    const { outcome, before, after } = await startFailure({ command: (_dir, port) => [node, ["-e", hung, String(port)]], readyTimeoutMs: 2000, fetchTimeoutMs: 300 });
+    expect(outcome).toBeInstanceOf(Error);
+    const error = outcome as Error;
+    expect(error.message).toMatch(/did not start within/);
+    expect(error.message).toContain("fake pid");
+    expect(Date.now() - started).toBeLessThan(10000);
+    expect(alive(pidIn(error))).toBe(false);
+    expect(after).toEqual(before);
+  });
+
+  test("a server that exits early fails with its stderr and leaves nothing behind", async () => {
+    const early = `console.error("fake pid " + process.pid); process.exit(3);`;
+    const { outcome, before, after } = await startFailure({ command: () => [node, ["-e", early]] });
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toMatch(/exited/);
+    expect((outcome as Error).message).toContain("fake pid");
+    expect(after).toEqual(before);
+  });
+
+  test("a server that cannot be spawned fails clearly and leaves no temp dir", async () => {
+    const { outcome, before, after } = await startFailure({ command: () => ["/nonexistent/bh-legacy-python", []] });
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toMatch(/could not be started/);
+    expect(after).toEqual(before);
   });
 });
