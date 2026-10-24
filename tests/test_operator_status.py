@@ -1,6 +1,7 @@
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -90,3 +91,56 @@ def test_status_endpoint_preserves_operator_boundary_and_cached_response(store, 
         assert first.status_code == 200 and second.json() == first.json()
         assert first.json()["episodes"][0]["episode_id"] == eid
         assert not first.json()["running"]
+
+
+def _status_ledger(store, eid):
+    path = store.root / "review" / f"{eid}-exposure.jsonl"
+    lines = path.read_text().splitlines() if path.exists() else []
+    return [record for record in map(json.loads, lines) if record["kind"] == "operator_status"]
+
+
+@contextmanager
+def _status_client(store, config):
+    with TestClient(create_app(store.root, config)) as client:
+        client.headers["X-BH-Operator"] = client.get("/api/bootstrap").json()["operator_token"]
+        yield client
+
+
+def test_watching_exposes_only_the_frozen_runs_even_when_one_launches_mid_watch(store, config):
+    watched = live_episode(store)
+    with _status_client(store, config) as client:
+        status = client.app.state.operator_status
+        listed = status.store.list_episodes
+        launched = []
+
+        def launch_before_enumeration():
+            if not launched:
+                launched.append(live_episode(status.store))
+            return listed()
+
+        status.store.list_episodes = launch_before_enumeration
+        first = client.post("/api/operator/status", json={"episode_ids": [watched]})
+        second = client.post("/api/operator/status", json={"episode_ids": [watched]})
+    assert first.status_code == 200 and second.status_code == 200
+    assert [row["episode_id"] for row in first.json()["episodes"]] == [watched]
+    assert [row["episode_id"] for row in second.json()["episodes"]] == [watched]
+    assert len(_status_ledger(store, watched)) == 1
+    assert _status_ledger(store, launched[0]) == []
+
+
+def test_watching_an_empty_set_records_nothing(store, config):
+    run = live_episode(store)
+    with _status_client(store, config) as client:
+        reply = client.post("/api/operator/status", json={"episode_ids": []})
+    assert reply.status_code == 200
+    assert reply.json() == {"running": False, "active_episode": None, "error": None, "episodes": []}
+    assert _status_ledger(store, run) == []
+
+
+def test_worker_state_needs_no_run_ids_and_records_no_exposure(store, config):
+    run = live_episode(store)
+    with _status_client(store, config) as client:
+        reply = client.get("/api/operator/status")
+    assert reply.status_code == 200
+    assert reply.json() == {"running": False, "active_episode": None, "error": None}
+    assert _status_ledger(store, run) == []
