@@ -14,7 +14,7 @@ def test_operator_library_is_authenticated_and_blinded_library_stays_unchanged(s
         blinded = client.get("/api/episodes", headers=headers).json()[0]
         assert set(blinded) == {
             "episode_id", "created_at", "evidence_kind", "evaluation_eligible", "fixture",
-            "deck", "stake", "agent", "branch",
+            "deck", "stake", "branch",
         }
         response = client.get("/api/operator/episodes", headers=headers)
         assert response.status_code == 200
@@ -28,6 +28,20 @@ def test_operator_library_is_authenticated_and_blinded_library_stays_unchanged(s
         initial_records = exposure_path.read_text().splitlines()
         client.get("/api/operator/episodes", headers=headers)
         assert exposure_path.read_text().splitlines() == initial_records
+
+
+def test_blinded_library_carries_no_model_identity(store):
+    # The blinded list must not reveal which model ran, even in fields the UI does not render.
+    store.create({
+        "evidence_kind": "NATIVE", "agent": "model:openai:gpt-6-luna",
+        "config": {"deck": "RED", "stake": "GOLD",
+                   "models": {"model:openai:gpt-6-luna": {"provider": "openai", "model": "gpt-6-luna"}}},
+    })
+    app = create_app(store.root, Config())
+    with TestClient(app) as client:
+        headers = {"X-BH-Operator": client.get("/api/bootstrap").json()["operator_token"]}
+        body = client.get("/api/episodes", headers=headers).text
+    assert "gpt-6-luna" not in body and '"agent"' not in body
 
 
 def test_operator_library_projects_frozen_model_lineage_and_unknowns(store, episode):
