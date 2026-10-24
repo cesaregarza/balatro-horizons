@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listOperatorEpisodes, type Episode, type OperatorEpisode } from "../../api/client";
 import { modelCatalog, modelLabel, EMPTY_CAPABILITIES } from "../../modelSelection";
 
@@ -23,6 +23,14 @@ export function LibraryTable(props: Props) {
   const [selected, setSelected] = useState<string[]>([]);
 
   useEffect(() => { setPage(0); setSelected([]); }, [mode, props.episodes]);
+  // Operator details reveal the runs listed when the operator chose them. A changed list may
+  // hold later runs, so fall back to Blinded review rather than exposing them implicitly.
+  const revealedList = useRef<Episode[] | null>(null);
+  useEffect(() => {
+    if (mode !== "operator") { revealedList.current = null; return; }
+    if (revealedList.current === null) revealedList.current = props.episodes;
+    else if (revealedList.current !== props.episodes) setMode("blinded");
+  }, [mode, props.episodes]);
 
   useEffect(() => {
     if (mode !== "operator") return;
@@ -30,7 +38,7 @@ export function LibraryTable(props: Props) {
     setLoadingOperatorRows(true);
     listOperatorEpisodes().then((rows) => { if (active) { setOperatorRows(rows); setLoadError(""); } }).catch((error) => { if (active) setLoadError(error instanceof Error ? error.message : "Could not load operator episode details."); }).finally(() => { if (active) setLoadingOperatorRows(false); });
     return () => { active = false; };
-  }, [mode, props.episodes]);
+  }, [mode]);
 
   const source = mode === "operator" ? operatorRows : props.episodes;
   const catalog = modelCatalog(props.config.models ?? {});
