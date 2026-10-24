@@ -103,7 +103,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
               }).catch(async (error) => {
                 if (!(error instanceof Error) || error.message !== "MODEL_CONFIG_CHANGED") throw error;
                 // The record behind this choice changed after it was shown; show the current one.
-                await refreshShownModels("This model's configuration changed after it was shown.");
+                return refreshShownModels("This model's configuration changed after it was shown.");
               });
               setCostOverride(null);
               setNotice("Run created: " + result.episode_id.slice(0, 10));
