@@ -898,10 +898,17 @@ test.describe("legacy server startup failures", () => {
 
   // A real fake server whose own child inherits its stderr: the pipe stays open after it exits.
   const grandchild = `const { spawn } = require("child_process"); const g = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "ignore", "inherit"] }); require("fs").writeFileSync(process.argv[1], String(g.pid));`;
-  const killGrandchild = (pidFile: string) => { if (existsSync(pidFile)) { try { process.kill(Number(readFileSync(pidFile, "utf8")), "SIGKILL"); } catch { /* already gone */ } rmSync(pidFile, { force: true }); } };
+  // Reads a grandchild PID receipt the test itself wrote, signals it, and reports whether it did.
+  const killGrandchild = (pidFile: string, send: (pid: number, signal: NodeJS.Signals) => unknown = process.kill) => {
+    if (!existsSync(pidFile)) return false;
+    try { send(Number(readFileSync(pidFile, "utf8")), "SIGKILL"); } catch { /* already gone */ }
+    rmSync(pidFile, { force: true });
+    return true;
+  };
 
   test("a server that exits while its child holds stderr open still fails startup and cleans up", async () => {
-    const pidFile = join(tmpdir(), `bh-grandchild-${process.pid}-${Date.now()}`);
+    const receipts = mkdtempSync(join(tmpdir(), "bh-receipts-"));
+    const pidFile = join(receipts, "grandchild.pid");
     const exits = `${grandchild} console.error("fake pid " + process.pid); process.exit(0);`;
     try {
       const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: () => [node, ["-e", exits, pidFile]], stopTimeoutMs: 1000 });
@@ -910,14 +917,16 @@ test.describe("legacy server startup failures", () => {
       expect(after).toEqual(before);
       expect(sentinelsSurvived).toBe(true);
     } finally {
-      killGrandchild(pidFile);
+      expect(killGrandchild(pidFile)).toBe(true);
+      rmSync(receipts, { recursive: true, force: true });
     }
   });
 
   test("a server that exits on shutdown while its child holds stderr open still fails startup within a bound", async () => {
     // It never answers, so startup times out and stops it; it exits on SIGTERM, but its own
     // child keeps the inherited stderr pipe open, so the pipe never closes.
-    const pidFile = join(tmpdir(), `bh-grandchild-${process.pid}-${Date.now()}`);
+    const receipts = mkdtempSync(join(tmpdir(), "bh-receipts-"));
+    const pidFile = join(receipts, "grandchild.pid");
     const hangs = `${grandchild.replace("process.argv[1]", "process.argv[2]")} require("net").createServer(() => {}).listen(+process.argv[1], "127.0.0.1", () => console.error("fake pid " + process.pid));`;
     try {
       const { outcome, before, after, sentinelsSurvived } = await startFailure({ command: (_dir, port) => [node, ["-e", hangs, String(port), pidFile]], readyTimeoutMs: 1500, fetchTimeoutMs: 300, stopTimeoutMs: 1000 });
@@ -928,12 +937,14 @@ test.describe("legacy server startup failures", () => {
       expect(after).toEqual(before);
       expect(sentinelsSurvived).toBe(true);
     } finally {
-      killGrandchild(pidFile);
+      expect(killGrandchild(pidFile)).toBe(true);
+      rmSync(receipts, { recursive: true, force: true });
     }
   });
 
   test("repeated stops share one shutdown that ends only after cleanup", async () => {
-    const pidFile = join(tmpdir(), `bh-grandchild-${process.pid}-${Date.now()}`);
+    const receipts = mkdtempSync(join(tmpdir(), "bh-receipts-"));
+    const pidFile = join(receipts, "grandchild.pid");
     const serves = `${grandchild.replace("process.argv[1]", "process.argv[2]")} require("http").createServer((_q, r) => r.end("{}")).listen(+process.argv[1], "127.0.0.1");`;
     const server = await startLegacyServer(["human"], { command: (_dir, port) => [node, ["-e", serves, String(port), pidFile]], stopTimeoutMs: 1000 });
     try {
@@ -945,7 +956,8 @@ test.describe("legacy server startup failures", () => {
       const outcome = await settled(Promise.all([first.then(state), second.then(state)]));
       expect(outcome).toEqual([{ dir: false, alive: false }, { dir: false, alive: false }]);
     } finally {
-      killGrandchild(pidFile);
+      expect(killGrandchild(pidFile)).toBe(true);
+      rmSync(receipts, { recursive: true, force: true });
       await settled(server.stop(), 10000);
     }
   });
@@ -965,11 +977,69 @@ test.describe("legacy server startup failures", () => {
       await sleep(500);
       expect(outcome).toBeInstanceOf(Error);
       expect((outcome as Error).message).toMatch(/did not start within/);
+      // Its fake child never exits, so shutdown cannot confirm termination and must say so.
+      expect((outcome as Error).message).toMatch(/termination unconfirmed/);
       expect(after).toEqual(before);
       expect(sentinelsSurvived).toBe(true);
       expect(escaped).toEqual([]);
     } finally {
       process.off("uncaughtException", record);
+    }
+  });
+
+  // Fake children for kill outcomes no real process produces on demand. Their pid is never a
+  // real target: kill() is the fake's own method.
+  const fakeChild = (kill: (child: EventEmitter) => boolean, stderr: PassThrough = new PassThrough()) => () =>
+    Object.assign(new EventEmitter(), { pid: 2147483646, exitCode: null, signalCode: null, stderr, kill(this: EventEmitter) { return kill(this); } }) as unknown as ChildProcess;
+  const unconfirmed: [string, (child: EventEmitter) => boolean][] = [
+    ["returns false", () => false],
+    ["throws", () => { throw new Error("kill threw"); }],
+    ["reports EPERM", (child) => { child.emit("error", Object.assign(new Error("kill EPERM"), { code: "EPERM" })); return false; }],
+  ];
+  for (const [name, kill] of unconfirmed) {
+    test(`a child whose kill ${name} and never exits fails startup with termination unconfirmed`, async () => {
+      const { outcome, before, after, sentinelsSurvived } = await startFailure({ spawn: fakeChild(kill), readyTimeoutMs: 1000, fetchTimeoutMs: 200, stopTimeoutMs: 300 });
+      expect(outcome).toBeInstanceOf(Error);
+      const error = outcome as Error & { pid?: number; dataDir?: string };
+      expect(error.message).toMatch(/did not start within/);
+      expect(error.message).toMatch(/termination unconfirmed/);
+      expect(error.message).toContain("2147483646");
+      expect(error.pid).toBe(2147483646);
+      expect(typeof error.dataDir).toBe("string");
+      expect(existsSync(error.dataDir!)).toBe(false);
+      expect(after).toEqual(before);
+      expect(sentinelsSurvived).toBe(true);
+    });
+  }
+
+  test("a stderr that throws on destroy still removes the dir and keeps the startup cause", async () => {
+    const stderr = Object.assign(new PassThrough(), { destroy(): never { throw new Error("destroy failed"); } });
+    const exits = (child: EventEmitter) => { setImmediate(() => child.emit("exit", null, "SIGTERM")); return true; };
+    const { outcome, before, after, sentinelsSurvived } = await startFailure({ spawn: fakeChild(exits, stderr), readyTimeoutMs: 1000, fetchTimeoutMs: 200, stopTimeoutMs: 300 });
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toMatch(/did not start within/);
+    expect((outcome as Error).message).toContain("destroy failed");
+    expect(after).toEqual(before);
+    expect(sentinelsSurvived).toBe(true);
+  });
+
+  test("grandchild receipts signal only a validated process id", () => {
+    // Recorded, never sent: 0 or a negative id would signal a whole process group.
+    const receipts = mkdtempSync(join(tmpdir(), "bh-receipts-"));
+    const file = join(receipts, "grandchild.pid");
+    try {
+      for (const text of ["", "0", "-5", "1", "12abc", " 7", String(process.pid), String(process.ppid)]) {
+        const sent: unknown[] = [];
+        writeFileSync(file, text);
+        expect(killGrandchild(file, (...args) => sent.push(args)), JSON.stringify(text)).toBe(false);
+        expect(sent, JSON.stringify(text)).toEqual([]);
+      }
+      const sent: unknown[] = [];
+      writeFileSync(file, "424242");
+      expect(killGrandchild(file, (...args) => sent.push(args))).toBe(true);
+      expect(sent).toEqual([[424242, "SIGKILL"]]);
+    } finally {
+      rmSync(receipts, { recursive: true, force: true });
     }
   });
 });
