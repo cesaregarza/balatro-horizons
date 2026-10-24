@@ -40,53 +40,78 @@ function freePort(): Promise<number> {
   });
 }
 
-export type LegacyServer = { origin: string; seeded: any; persisted: () => any; stop: () => Promise<void> };
-// Tests of the helper's own failure paths replace the server command and shorten the waits.
-type Options = { command?: (dataDir: string, port: number) => [string, string[]]; readyTimeoutMs?: number; fetchTimeoutMs?: number };
+export type LegacyServer = { origin: string; dataDir: string; pid: number | undefined; seeded: any; persisted: () => any; stop: () => Promise<void> };
+type Spawn = (command: string, args: string[], options: { env: NodeJS.ProcessEnv; stdio: ["ignore", "ignore", "pipe"] }) => ChildProcess;
+// Tests of the helper's own failure paths replace the server command, shorten the waits, or
+// (for kill errors no real process produces on demand) inject a fake child.
+type Options = { command?: (dataDir: string, port: number) => [string, string[]]; readyTimeoutMs?: number; fetchTimeoutMs?: number; stopTimeoutMs?: number; spawn?: Spawn };
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export async function startLegacyServer(reserved: string[], options: Options = {}): Promise<LegacyServer> {
   const seed = spawnSync(python, ["-c", SEED], { input: JSON.stringify(reserved), env: childEnv(), encoding: "utf8" });
   if (seed.status !== 0) throw new Error("Could not build the legacy config:\n" + (seed.stderr ?? seed.error));
   const dataDir = mkdtempSync(join(tmpdir(), "bh-legacy-"));
+  const stopTimeoutMs = options.stopTimeoutMs ?? 3000;
   let child: ChildProcess | undefined;
-  let exited: Promise<void> = Promise.resolve();
-  // Every failure from here on stops the child and removes this helper's own temp dir.
-  const stop = async () => {
-    if (child && child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGTERM");
-      const killed = setTimeout(() => child?.kill("SIGKILL"), 3000);
-      await exited;
-      clearTimeout(killed);
+  let exited = false;
+  let markExited = () => {};
+  const exit = new Promise<void>((resolve) => { markExited = resolve; });
+  // Wait for the child's exit, not its stdio: a process it started may keep stderr open.
+  const awaitExit = (ms: number) => (exited ? Promise.resolve() : Promise.race([exit, sleep(ms)]));
+  const signal = (name: NodeJS.Signals) => { try { child?.kill(name); } catch { /* reported as an error event, if at all */ } };
+  let stopping: Promise<void> | undefined;
+  // One shutdown however often it is called, bounded at every step, and it always removes
+  // this call's own temp dir and nothing else.
+  const stop = () => (stopping ??= (async () => {
+    try {
+      if (child?.pid !== undefined && !exited) {
+        signal("SIGTERM");
+        await awaitExit(stopTimeoutMs);
+        if (!exited) {
+          signal("SIGKILL");
+          await awaitExit(stopTimeoutMs);
+        }
+      }
+    } finally {
+      child?.stderr?.destroy();
+      rmSync(dataDir, { recursive: true, force: true });
     }
-    rmSync(dataDir, { recursive: true, force: true });
-  };
+  })());
   try {
     const settingsPath = join(dataDir, "operator-settings.json");
     writeFileSync(settingsPath, seed.stdout);
     const port = await freePort();
     const [command, args] = options.command?.(dataDir, port) ?? [python, ["-m", "balatro_horizons.cli", "review", "--data-dir", dataDir, "--host", "127.0.0.1", "--port", String(port)]];
-    const spawned = spawn(command, args, { env: childEnv(), stdio: ["ignore", "ignore", "pipe"] });
+    const spawned = (options.spawn ?? (spawn as Spawn))(command, args, { env: childEnv(), stdio: ["ignore", "ignore", "pipe"] });
     child = spawned;
     let stderr = "";
     let spawnError: Error | undefined;
     spawned.stderr?.on("data", (chunk) => { stderr += chunk; });
-    exited = new Promise<void>((resolve) => spawned.once("close", () => resolve()));
-    spawned.once("error", (error) => { spawnError = error; });
+    spawned.once("exit", () => { exited = true; markExited(); });
+    // Kept for the child's whole life: the first error fails startup, later ones (for example
+    // from kill during shutdown) are absorbed.
+    spawned.on("error", (error) => { spawnError ??= error; });
     const origin = `http://127.0.0.1:${port}`;
-    const deadline = Date.now() + (options.readyTimeoutMs ?? 30000);
+    const readyTimeoutMs = options.readyTimeoutMs ?? 30000;
+    const deadline = Date.now() + readyTimeoutMs;
     while (true) {
       if (spawnError) throw new Error(`The legacy server could not be started: ${spawnError.message}`);
-      if (spawned.exitCode !== null || spawned.signalCode !== null) throw new Error("The legacy server exited:\n" + stderr);
+      if (exited) {
+        // Let what it already wrote arrive, without waiting on a pipe something else holds.
+        await sleep(200);
+        throw new Error("The legacy server exited:\n" + stderr);
+      }
       const remaining = deadline - Date.now();
-      if (remaining <= 0) throw new Error(`The legacy server did not start within ${options.readyTimeoutMs ?? 30000}ms:\n` + stderr);
+      if (remaining <= 0) throw new Error(`The legacy server did not start within ${readyTimeoutMs}ms:\n` + stderr);
       try {
         // Bounded, so a request that hangs cannot outlast the deadline.
-        const signal = AbortSignal.timeout(Math.min(options.fetchTimeoutMs ?? 2000, remaining));
-        if ((await fetch(origin + "/api/bootstrap", { signal })).ok) break;
+        const abort = AbortSignal.timeout(Math.min(options.fetchTimeoutMs ?? 2000, remaining));
+        if ((await fetch(origin + "/api/bootstrap", { signal: abort })).ok) break;
       } catch { /* not listening or not answering yet */ }
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await sleep(200);
     }
-    return { origin, seeded: JSON.parse(seed.stdout), persisted: () => JSON.parse(readFileSync(settingsPath, "utf8")), stop };
+    return { origin, dataDir, pid: spawned.pid, seeded: JSON.parse(seed.stdout), persisted: () => JSON.parse(readFileSync(settingsPath, "utf8")), stop };
   } catch (error) {
     await stop();
     throw error;
