@@ -87,3 +87,34 @@ test("continuations stay grouped across pages and retain their own actions", asy
   await childCard.getByRole("button", { name: "Explore decisions" }).click();
   expect((await opened).postDataJSON()).toMatchObject({ episode_id: childId, retrospective: true });
 });
+
+test("a run created after Operator details was chosen is not exposed without an explicit action", async ({ page }) => {
+  let enrichedCalls = 0;
+  let current = rows;
+  const fresh = { episode_id: "d".repeat(32), created_at: "2026-09-23T12:00:00Z", evidence_kind: "NATIVE", deck: "Red", stake: "Gold", branch: false, evaluation_eligible: true, fixture: null };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/bootstrap") return route.fulfill({ json: { operator_token: "mock", config: { workbench: true, models: {}, model_capabilities: {}, budgets: {} }, workbench: true, paid_credentials: {} } });
+    if (path === "/api/episodes") return route.fulfill({ json: current });
+    if (path === "/api/operator/episodes") {
+      enrichedCalls++;
+      return route.fulfill({ json: [...enriched, ...(current.includes(fresh) ? [{ ...fresh, parent_episode_id: null, model_name: "Fresh Model", reasoning_effort: null, recorded_interface: "harness-v1", outcome: null, reason: null }] : [])] });
+    }
+    if (["/api/panels", "/api/batches"].includes(path)) return route.fulfill({ json: [] });
+    return route.fulfill({ json: {} });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Operator details" }).click();
+  await expect(page.getByRole("heading", { name: "Luna Max", exact: true })).toBeVisible();
+  expect(enrichedCalls).toBe(1);
+  // A new run appears in the list while Operator details is still selected.
+  current = [...rows, fresh];
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Blinded review" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Fresh Model")).toHaveCount(0);
+  expect(enrichedCalls).toBe(1);
+  // Choosing Operator details again is the explicit action that reveals the new run.
+  await page.getByRole("button", { name: "Operator details" }).click();
+  await expect(page.getByRole("heading", { name: "Fresh Model", exact: true })).toBeVisible();
+  expect(enrichedCalls).toBe(2);
+});
