@@ -620,3 +620,80 @@ test("a model configured only under a built-in player name is not offered", asyn
   await expect(picker.locator("optgroup[label='Models'] option")).toHaveCount(0);
   await expect(page.getByText(/built-in player name/)).toBeVisible();
 });
+
+// A validated legacy config from before reserved names were refused: one Luna model under
+// the built-in name "human" and under "luna2".
+async function legacyAliasApp(page: import("@playwright/test").Page) {
+  let stored: Record<string, any> = { human: { ...luna, input_usd_per_million: 1 }, luna2: { ...luna, input_usd_per_million: 2 } };
+  const saves: any[] = [];
+  const configFor = (base: any) => ({
+    ...base, models: stored, skills: "none", model_capabilities: capabilities,
+    model_revisions: Object.fromEntries(Object.keys(stored).map((key) => [key, "revision-" + key])),
+  });
+  await page.route("**/api/bootstrap", async (route) => {
+    const body = await (await route.fetch()).json();
+    body.config = configFor(body.config);
+    await route.fulfill({ json: body });
+  });
+  await page.route("**/api/settings", async (route) => {
+    const body = route.request().postDataJSON();
+    saves.push(body);
+    stored = body.models;
+    await route.fulfill({ json: configFor({ budgets: body.budgets, skills: body.skills, models: body.models }) });
+  });
+  await page.route("**/api/episodes", (route) => route.fulfill({ json: [] }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Models & budgets", exact: true }).click();
+  return { saves, repair: page.getByRole("region", { name: "Aliases using built-in player names" }) };
+}
+
+test("the repair lists each model alias that uses a built-in player name", async ({ page }) => {
+  const { repair } = await legacyAliasApp(page);
+  await expect(repair.getByRole("listitem")).toHaveCount(1);
+  await expect(repair.getByRole("listitem")).toContainText("human");
+  await expect(repair.getByRole("listitem")).toContainText("gpt-5.6-luna");
+});
+
+test("renaming a reserved alias moves its record to the new key and leaves other models alone", async ({ page }) => {
+  const { saves, repair } = await legacyAliasApp(page);
+  await expect(repair.getByRole("listitem")).toHaveCount(1);
+  await repair.getByLabel("New alias for human").fill("luna-legacy");
+  await repair.getByRole("button", { name: "Rename human" }).click();
+  await expect.poll(() => saves.length).toBe(1);
+  expect(Object.keys(saves[0].models).sort()).toEqual(["luna-legacy", "luna2"]);
+  expect(saves[0].models["luna-legacy"]).toEqual({ ...luna, input_usd_per_million: 1 });
+  expect(saves[0].models.luna2).toEqual({ ...luna, input_usd_per_million: 2 });
+  await expect(repair.getByRole("listitem")).toHaveCount(0);
+});
+
+test("removing a reserved alias saves the models without it", async ({ page }) => {
+  const { saves, repair } = await legacyAliasApp(page);
+  await expect(repair.getByRole("listitem")).toHaveCount(1);
+  await repair.getByRole("button", { name: "Remove human" }).click();
+  await expect.poll(() => saves.length).toBe(1);
+  expect(Object.keys(saves[0].models)).toEqual(["luna2"]);
+});
+
+for (const [name, value] of [["a built-in name", "random_legal"], ["a configured alias", "luna2"], ["an empty name", ""], ["a padded name", " luna-legacy"]]) {
+  test(`renaming a reserved alias to ${name} sends nothing`, async ({ page }) => {
+    const { saves, repair } = await legacyAliasApp(page);
+    await expect(repair.getByRole("listitem")).toHaveCount(1);
+    await repair.getByLabel("New alias for human").fill(value);
+    await repair.getByRole("button", { name: "Rename human" }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    expect(saves).toEqual([]);
+  });
+}
+
+test("after a rename, ordinary saves carry no reserved alias", async ({ page }) => {
+  const { saves, repair } = await legacyAliasApp(page);
+  await expect(repair.getByRole("listitem")).toHaveCount(1);
+  await repair.getByLabel("New alias for human").fill("luna-legacy");
+  await repair.getByRole("button", { name: "Rename human" }).click();
+  await expect.poll(() => saves.length).toBe(1);
+  await page.getByRole("button", { name: "Save spending limits", exact: true }).click();
+  await expect.poll(() => saves.length).toBe(2);
+  await page.getByRole("button", { name: "Save skill access", exact: true }).click();
+  await expect.poll(() => saves.length).toBe(3);
+  for (const save of saves.slice(1)) expect(Object.keys(save.models).sort()).toEqual(["luna-legacy", "luna2"]);
+});
