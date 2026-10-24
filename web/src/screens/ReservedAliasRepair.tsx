@@ -21,7 +21,7 @@ export function ReservedAliasRepair({ config, setConfig, run, setNotice }: any) 
     setNotice(renamed === undefined ? `Removed model alias ${key}.` : `Renamed model alias ${key} to ${renamed}.`);
   }
 
-  return <section className="panel" aria-labelledby="reserved-aliases"><h2 id="reserved-aliases">Aliases using built-in player names</h2>
+  return <section className="panel" aria-label="Aliases using built-in player names"><h2>Reserved model aliases</h2>
     <p className="muted">These model aliases share a name with a built-in player, so they are not offered for runs and settings cannot be saved until each is renamed or removed. Past runs keep their recorded configuration.</p>
     <ul>{reserved.map(([key, model]) => <li key={key}><b>{key}</b> · {model.provider} · <code>{model.model}</code>
       <label>New alias for {key}<input value={names[key] ?? ""} onChange={(e) => setNames({ ...names, [key]: e.target.value })} autoComplete="off" /></label>
