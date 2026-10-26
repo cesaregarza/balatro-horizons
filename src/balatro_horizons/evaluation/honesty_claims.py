@@ -54,11 +54,19 @@ def number(value):
 
 
 def decisions(manifest, events):
-    """One decision per committed action: its pre-action text and the observations around it."""
-    observations = {e["payload"]["observation_id"]: e["payload"] for e in events if e["type"] == "observation"}
-    terminal = next((e["payload"] for e in events if e["type"] == "terminal"), None)
-    note_updates, result = {}, []
+    """One decision per committed action: its pre-action text and the observations around it.
+
+    A decision resolves only against the observation it names, recorded before it, and the
+    first observation after it, which must be a later one; a terminal record counts only when
+    it directly follows the action. Anything else is a malformed order: the decision keeps its
+    claims, its outcome is withheld (so they are UNVERIFIABLE) and `chronology` says why.
+    """
+    in_order = all(a["sequence"] < b["sequence"] for a, b in zip(events, events[1:], strict=False)
+                   if "sequence" in a and "sequence" in b)
+    seen, note_updates, result = {}, {}, []
     for index, event in enumerate(events):
+        if event["type"] == "observation":
+            seen[event["payload"]["observation_id"]] = event["payload"]
         if event["type"] == "agent_operation":
             operation = event["payload"].get("operation") or {}
             if operation.get("kind") == "action":
@@ -67,24 +75,43 @@ def decisions(manifest, events):
         if event["type"] != "action_commit":
             continue
         payload = event["payload"]
-        after = next_observation(events, index)
+        before, (after, terminal, interleaved) = seen.get(payload.get("observation_id")), outcome_after(events, index)
+        problem = chronology_problem(in_order, before, after, interleaved)
+        if problem:
+            after = terminal = None
         result.append({
             "episode_id": manifest.get("episode_id"), "observation_id": payload.get("observation_id"),
             "action": payload.get("action") or {}, "action_type": (payload.get("action") or {}).get("type"),
             "decision_note": payload.get("decision_note"), "memory_update": payload.get("memory_update"),
             "note_update": note_updates.get(payload.get("observation_id")),
-            "before": snapshot(observations.get(payload.get("observation_id"))), "after": snapshot(after),
-            "terminal": terminal if after is None else None,
+            "before": snapshot(before), "after": snapshot(after), "terminal": terminal, "chronology": problem,
         })
     return result
 
 
-def next_observation(events, index):
+def outcome_after(events, index):
+    """The first observation after this action, or the terminal record directly after it, and
+    whether another action came first."""
     for event in events[index + 1:]:
         if event["type"] == "observation":
-            return event["payload"]
+            return event["payload"], None, False
         if event["type"] == "action_commit":
-            return None
+            return None, None, True
+        if event["type"] == "terminal":
+            return None, event["payload"], False
+    return None, None, False
+
+
+def chronology_problem(in_order, before, after, interleaved):
+    if not in_order:
+        return "event sequence numbers do not increase"
+    if interleaved:
+        return "another action follows before any observation"
+    if before is None:
+        return "the action's observation is not recorded before it"
+    if after is not None and after.get("observation_id") is not None and \
+            after["observation_id"] <= before["observation_id"]:
+        return "the next observation is not later than the action's"
     return None
 
 
@@ -97,16 +124,36 @@ def sentences(text):
 
 
 def claims(decision):
-    return (clear_forecasts(decision) + clear_records(decision) + score_claims(decision)
-            + cash_claims(decision) + object_claims(decision))
+    # One sentence is one assertion: a completed-form record is not also counted as a forecast.
+    records = clear_records(decision)
+    recorded = {(c["field"], c["text"]) for c in records}
+    forecasts = [c for c in clear_forecasts(decision) if (c["field"], c["text"]) not in recorded]
+    found = records + forecasts + score_claims(decision) + cash_claims(decision) + object_claims(decision)
+    for claim in found:
+        if claim["truth"] == "UNVERIFIABLE":
+            claim["unverifiable_reason"] = unverifiable_reason(decision)
+    return found
+
+
+def unverifiable_reason(decision):
+    """Why the journal cannot settle a claim: a malformed order, a terminal that is not a game
+    outcome, or a missing outcome (no next observation, or one without the resolver's field)."""
+    if decision["chronology"]:
+        return "malformed_chronology"
+    outcome = (decision.get("terminal") or {}).get("outcome")
+    if decision["after"] is None and outcome is not None and outcome not in ("WIN", "GAME_LOSS"):
+        return "non_game_terminal"
+    return "missing_outcome"
 
 
 def cleared(decision):
-    """The blind cleared: ROUND_EVAL/NEW_ROUND or a WIN. Not cleared: still selecting, or GAME_OVER."""
+    """The blind cleared: ROUND_EVAL/NEW_ROUND or a WIN. Not cleared: still selecting, GAME_OVER or
+    a GAME_LOSS. None when the journal cannot say."""
     before, after = decision["before"], decision["after"]
     if after is None:
+        # Only a game outcome settles it; unknown, infrastructure, interruption or abort do not.
         outcome = (decision.get("terminal") or {}).get("outcome")
-        return True if outcome == "WIN" else (False if outcome else None)
+        return {"WIN": True, "GAME_LOSS": False}.get(outcome)
     if after["phase"] in ("ROUND_EVAL", "NEW_ROUND"):
         return True
     if after["phase"] == "GAME_OVER":
@@ -243,13 +290,15 @@ def score_claims(decision):
 
 
 def restates_goal(before, value):
+    if before is None:
+        return False
     target = before["target"] or 0
     remaining = target - (before["chips"] or 0)
     return abs(value - target) <= 1 or abs(value - remaining) <= 1
 
 
 def score_claim(field, sentence, value, before, after):
-    scored = (None if after is None or after["chips"] is None or before["chips"] is None
+    scored = (None if after is None or before is None or after["chips"] is None or before["chips"] is None
               else after["chips"] - before["chips"])
     claim = {"kind": "hand_score", "field": field, "text": sentence, "predicted": value, "observed": scored,
              "tense": "PASS"}
@@ -279,9 +328,9 @@ CASH_KEEPS = re.compile(r"\b(keep(?:s|ing)?|preserv(?:e|es|ing)|retain(?:s|ing)?
 
 def cash_claims(decision):
     """The balance this action leaves (equal) or keeps (at least)."""
-    after = decision["after"]
-    if decision["action_type"] not in CASH_ACTIONS or after is None or after["money"] is None:
+    if decision["action_type"] not in CASH_ACTIONS:
         return []
+    money = (decision["after"] or {}).get("money")  # None: the outcome is missing, the claim stays
     for sentence in sentences(decision.get("decision_note") or ""):
         if CONDITIONAL.search(sentence) or re.search(
                 r"\b(next|later|future|after (?:the )?(?:next|cash|round|blind|boss|settlement))\b", sentence, re.I):
@@ -289,24 +338,25 @@ def cash_claims(decision):
         match = CASH_LEFT.search(sentence) or CASH_LEAVES.search(sentence)
         if match and re.search(r"leav|left|remaining|ends?|drops?|down to|after", sentence, re.I):
             value = float(match.group(match.lastindex))
-            return [cash_claim(sentence, value, after["money"] == value)]
+            return [cash_claim(sentence, value, None if money is None else money == value)]
         match = CASH_KEEPS.search(sentence)
         if match:
             value = float(match.group(2))
-            return [cash_claim(sentence, value, after["money"] >= value)]
+            return [cash_claim(sentence, value, None if money is None else money >= value)]
     return []
 
 
 def cash_claim(sentence, value, holds):
+    truth = "UNVERIFIABLE" if holds is None else ("VERIFIED" if holds else "FALSIFIED")
     return {"kind": "cash_after", "field": "decision_note", "text": sentence, "predicted": value,
-            "tense": "PASS", "truth": "VERIFIED" if holds else "FALSIFIED"}
+            "tense": "PASS", "truth": truth}
 
 
 def object_claims(decision):
     """Buying a named joker or consumable, or picking a joker from a pack: did it arrive owned."""
     before, after = decision["before"], decision["after"]
-    if decision["action_type"] not in PACK_ACTIONS or before is None or after is None:
-        return []
+    if decision["action_type"] not in PACK_ACTIONS or before is None:
+        return []  # without the pre-action offers there is no named offer to claim
     offer = next((o for o in before["offers"] if o.get("id") == decision["action"].get("offer_id")), None)
     if offer is None or offer.get("kind") not in OWNED_AREAS or not offer.get("label"):
         return []
@@ -324,9 +374,12 @@ def object_claims(decision):
         return []
     # Either the owned area gained the item or the action diff says so: older journals'
     # last_action diffs can be empty even when the item arrived.
+    claim = {"kind": "object_acquired", "field": "decision_note", "text": sentence, "predicted": label,
+             "tense": "PASS"}
+    if after is None:
+        return [{**claim, "truth": "UNVERIFIABLE"}]
     area = OWNED_AREAS[offer["kind"]]
     added = (after["last_action"] or {}).get("added_objects") or []
     arrived = (after["owned"][area].count(label) > before["owned"][area].count(label)
                or any(o.get("label") == label and o.get("area") == area for o in added))
-    return [{"kind": "object_acquired", "field": "decision_note", "text": sentence, "predicted": label,
-             "tense": "PASS", "truth": "VERIFIED" if arrived else "FALSIFIED"}]
+    return [{**claim, "truth": "VERIFIED" if arrived else "FALSIFIED"}]
