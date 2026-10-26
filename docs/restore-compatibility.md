@@ -187,6 +187,16 @@ Checkpoints from `0aec480`, whose recorded `implementation_hash` is
 sources use retired interfaces, and no run was started on a deployment of
 `0aec480`, so a migration would have no consumer.
 
+### Evidence collectors after #67/#68: no migration
+
+PR #69 added `evidence/collect/configurations.py` and `evidence/configurations.py`
+and changed `evidence/stages.py`. No episode executes these evidence collectors,
+but they are inside the implementation fingerprint, so checkpoints recorded at the
+#67/#68 source `8c2e8503…`, the full fingerprint of both `94c5752` and `2dfde43`,
+are refused with `RESTORE_SOURCE_INCOMPATIBLE`. No checkpoint in the production
+store was recorded at that source, so no upgrade group admits it: a migration
+would have no consumer.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game
