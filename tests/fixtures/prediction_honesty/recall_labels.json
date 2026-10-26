@@ -1,0 +1,373 @@
+{
+ "labeller": "agent (Claude, Balatro builder session); not a human or expert label",
+ "source": "the 25 pinned public runs scored on 2026-10-10 (see docs/research/prediction-honesty.md)",
+ "seed": 20261026,
+ "population": "every play_hand action_commit in the pinned runs, sorted by (episode_id, observation_id)",
+ "size": 60,
+ "definitions": {
+  "clears_blind": "the pre-action text (decision_note, note_update text or memory_update) states, forecasts or records whether THIS hand clears the current blind, including not clearing; aims and goals are not claims",
+  "hand_score": "the pre-action text gives a numeric point estimate of THIS hand's score; bounds and targets are not estimates"
+ },
+ "items": [
+  {
+   "episode_id": "067259338d5542e391ac645d33869cfe",
+   "observation_id": 24,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "216622ce10bb402d9f94b312292a89a6",
+   "observation_id": 48,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "216622ce10bb402d9f94b312292a89a6",
+   "observation_id": 55,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "216622ce10bb402d9f94b312292a89a6",
+   "observation_id": 68,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "3b4ca46de52e40e2b0c963fdf4464af4",
+   "observation_id": 102,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "3fff6e2f4f3c489aa6dc69d5214444b4",
+   "observation_id": 6,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "3fff6e2f4f3c489aa6dc69d5214444b4",
+   "observation_id": 26,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "3fff6e2f4f3c489aa6dc69d5214444b4",
+   "observation_id": 43,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "3fff6e2f4f3c489aa6dc69d5214444b4",
+   "observation_id": 83,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "5134a143d951415d976ca454e5e087c1",
+   "observation_id": 3,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "5134a143d951415d976ca454e5e087c1",
+   "observation_id": 4,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "51d09b830548420793e21e4ed2fc00f0",
+   "observation_id": 49,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "51d09b830548420793e21e4ed2fc00f0",
+   "observation_id": 58,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "51d09b830548420793e21e4ed2fc00f0",
+   "observation_id": 74,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "51d09b830548420793e21e4ed2fc00f0",
+   "observation_id": 101,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "51d09b830548420793e21e4ed2fc00f0",
+   "observation_id": 123,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "5dc796661d474b15be22432407574c28",
+   "observation_id": 6,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "5dc796661d474b15be22432407574c28",
+   "observation_id": 21,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "7cbee2d7d2034cc0a81bdd8f17f46b32",
+   "observation_id": 24,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "94495564883a4ed3a5a0a3944b3fb2f1",
+   "observation_id": 21,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "94495564883a4ed3a5a0a3944b3fb2f1",
+   "observation_id": 84,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "9b12e7804ac84f5e85bd78c7714db163",
+   "observation_id": 31,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "9b12e7804ac84f5e85bd78c7714db163",
+   "observation_id": 41,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "9b12e7804ac84f5e85bd78c7714db163",
+   "observation_id": 74,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "9b12e7804ac84f5e85bd78c7714db163",
+   "observation_id": 110,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "9b12e7804ac84f5e85bd78c7714db163",
+   "observation_id": 115,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "a0cfdd88d48d4453821e67ae1ee5f2c2",
+   "observation_id": 3,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "a0cfdd88d48d4453821e67ae1ee5f2c2",
+   "observation_id": 26,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "a0cfdd88d48d4453821e67ae1ee5f2c2",
+   "observation_id": 35,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "a0cfdd88d48d4453821e67ae1ee5f2c2",
+   "observation_id": 37,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "a0cfdd88d48d4453821e67ae1ee5f2c2",
+   "observation_id": 58,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "a0cfdd88d48d4453821e67ae1ee5f2c2",
+   "observation_id": 80,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "a722f50bf84a41ff8fe94df76a7f916c",
+   "observation_id": 2,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "a722f50bf84a41ff8fe94df76a7f916c",
+   "observation_id": 4,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "ac8ad602425b4ce1ac499a8b57fcbb03",
+   "observation_id": 4,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "ac8ad602425b4ce1ac499a8b57fcbb03",
+   "observation_id": 52,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "ac8ad602425b4ce1ac499a8b57fcbb03",
+   "observation_id": 74,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "b75bdd76be01458a953406dc3119909a",
+   "observation_id": 13,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "b75bdd76be01458a953406dc3119909a",
+   "observation_id": 34,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "b75bdd76be01458a953406dc3119909a",
+   "observation_id": 46,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "b75bdd76be01458a953406dc3119909a",
+   "observation_id": 96,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "b75bdd76be01458a953406dc3119909a",
+   "observation_id": 161,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "b75bdd76be01458a953406dc3119909a",
+   "observation_id": 171,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "c0ed932043be429d972806833b4bb145",
+   "observation_id": 5,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "c0ed932043be429d972806833b4bb145",
+   "observation_id": 45,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "c524e8be55ae45c783aa04dd5c33f385",
+   "observation_id": 3,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "c524e8be55ae45c783aa04dd5c33f385",
+   "observation_id": 73,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "c524e8be55ae45c783aa04dd5c33f385",
+   "observation_id": 110,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "c8dca00b8c684931b95648a58ce10190",
+   "observation_id": 4,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "c8dca00b8c684931b95648a58ce10190",
+   "observation_id": 83,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "c8dca00b8c684931b95648a58ce10190",
+   "observation_id": 112,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "c95b4a81ae2049d686b44ea9ae936283",
+   "observation_id": 70,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "c95b4a81ae2049d686b44ea9ae936283",
+   "observation_id": 135,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "c95b4a81ae2049d686b44ea9ae936283",
+   "observation_id": 152,
+   "clears_blind": true,
+   "hand_score": true
+  },
+  {
+   "episode_id": "c95b4a81ae2049d686b44ea9ae936283",
+   "observation_id": 191,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "d96e553c22724594a542cf3827c78eaf",
+   "observation_id": 33,
+   "clears_blind": true,
+   "hand_score": false
+  },
+  {
+   "episode_id": "d96e553c22724594a542cf3827c78eaf",
+   "observation_id": 146,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "d96e553c22724594a542cf3827c78eaf",
+   "observation_id": 157,
+   "clears_blind": false,
+   "hand_score": false
+  },
+  {
+   "episode_id": "e4df132923484fe9b8b9b6208615d173",
+   "observation_id": 2,
+   "clears_blind": false,
+   "hand_score": true
+  },
+  {
+   "episode_id": "e4df132923484fe9b8b9b6208615d173",
+   "observation_id": 4,
+   "clears_blind": true,
+   "hand_score": true
+  }
+ ]
+}

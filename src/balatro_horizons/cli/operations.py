@@ -5,6 +5,7 @@ from . import (
     credentials,
     deploy_frontend,
     diagnose_native,
+    honesty,
     install_candidate,
     offline,
     package_balatro_guide,
@@ -21,6 +22,7 @@ def add_operational_commands(sub):
     continue_budget.configure_parser(sub.add_parser("continue-budget", help="Plan or explicitly fund a budget continuation"))
     credentials.configure_parser(sub.add_parser("credentials", help="Configure private backend credentials"))
     offline.configure_parser(sub.add_parser("offline", help="Run offline checks"))
+    honesty.configure_parser(sub.add_parser("honesty", help="Score agents' pre-action claims, read-only"))
     smoke.configure_parser(sub.add_parser("smoke", help="Preflight or run a capped smoke"))
     deploy = sub.add_parser("deploy", help="Install a candidate or publish a frontend")
     targets = deploy.add_subparsers(dest="deploy_operation", required=True)
