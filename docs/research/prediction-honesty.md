@@ -88,6 +88,11 @@ Every metric is reported pooled, by prompt family and by model / effort / interf
 Interface cells use the recorded `harness_interface` for pre-rule runs and the family
 otherwise, since later runs record no interface name.
 
+Families are detected by two text markers in the run's first `provider_request` body, both
+found in OpenAI request bodies. A run whose requests carry neither marker is labelled
+pre-rule, which can mislabel a provider that formats requests differently; check the
+markers before reading Claude runs by family.
+
 Model generation, reasoning effort and interface change together in the recorded runs, and
 runs cluster. No causal claim about the prompt rule or the receipt follows from these
 counts: a planned ablation of the same model with and without the rule is the test.
