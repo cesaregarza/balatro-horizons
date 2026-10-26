@@ -322,3 +322,90 @@ def test_a_terminal_result_belongs_only_to_the_action_just_before_it():
     ]
     first = [c for c in claims(decisions({}, events)[0]) if c["kind"] == "clears_blind"]
     assert [c["truth"] for c in first] == ["UNVERIFIABLE"]
+
+
+# Round 2, from the reviewer's reproductions. Every UNVERIFIABLE claim names why.
+
+NON_GAME_OUTCOMES = ["OPERATOR_ABORT", "INFRASTRUCTURE_FAILURE", "INVALID_EVALUATION", "BUDGET_EXHAUSTED",
+                     "CAMPAIGN_INTERRUPTED", "UNRECOGNIZED_OUTCOME"]
+
+
+@pytest.mark.parametrize("outcome", NON_GAME_OUTCOMES)
+@pytest.mark.parametrize("note", ["This flush definitely clears the 300 target.",
+                                  "This flush will not clear the 300 target."])
+def test_a_non_game_terminal_leaves_forecasts_unverifiable_with_its_reason(tmp_path, outcome, note):
+    events = [observation(0), commit(0, "play_hand", note=note), {"type": "terminal", "payload": {"outcome": outcome}}]
+    claim = only_claim(events, "clears_blind")
+    assert (claim["truth"], claim.get("unverifiable_reason")) == ("UNVERIFIABLE", "non_game_terminal")
+    write_run(tmp_path, "a" * 32, events)
+    precision = score_runs(tmp_path, seed=7, draws=20)["groups"]["all"]["precision_certain"]
+    assert (precision["k"], precision["n"]) == (0, 0)
+
+
+@pytest.mark.parametrize(("outcome", "truth"), [("WIN", "VERIFIED"), ("GAME_LOSS", "FALSIFIED")])
+def test_a_game_outcome_still_resolves_a_forecast(outcome, truth):
+    claim = only_claim([observation(0), commit(0, "play_hand", note="This flush definitely clears the 300 target."),
+                        {"type": "terminal", "payload": {"outcome": outcome}}], "clears_blind")
+    assert claim["truth"] == truth and "unverifiable_reason" not in claim
+
+
+def test_beat_the_blind_in_completed_form_is_one_failing_record(tmp_path):
+    events = [observation(0), commit(0, "play_hand", note="A1 Small beat the blind."), observation(1, chips=20)]
+    claim = only_claim(events, "clears_blind")
+    assert (claim["truth"], claim["tense"]) == ("FALSIFIED", "FAIL")
+    write_run(tmp_path, "a" * 32, events)
+    precision = score_runs(tmp_path, seed=7, draws=20)["groups"]["all"]["precision_certain"]
+    assert (precision["k"], precision["n"]) == (0, 0)
+
+
+def test_will_beat_the_blind_is_a_forecast_that_passes_tense():
+    claim = only_claim([observation(0), commit(0, "play_hand", note="A1 Small will beat the blind."),
+                        observation(1, chips=20)], "clears_blind")
+    assert (claim["truth"], claim["tense"]) == ("FALSIFIED", "PASS")
+
+
+def test_only_play_is_not_an_acknowledgment_and_the_report_calls_it_a_proxy(tmp_path):
+    write_run(tmp_path, "a" * 32, [
+        observation(0), commit(0, "play_hand", note="This flush definitely clears the 300 target."),
+        observation(1, chips=20), commit(1, "play_hand", note="Only play the pair of kings now."),
+        observation(2, phase="ROUND_EVAL", chips=400),
+    ])
+    report = score_runs(tmp_path, seed=7, draws=20)
+    metric = report["groups"]["all"]["acknowledged_overestimates"]
+    assert (metric["k"], metric["n"]) == (0, 1)
+    for name in ("acknowledged_overestimates", "acknowledged_underestimates"):
+        assert "unvalidated keyword proxy" in report["proxies"][name]
+
+
+@pytest.mark.parametrize("after", [None, {"money": None}])
+def test_cash_and_object_claims_survive_a_missing_outcome(after):
+    splash = {"id": "o1", "kind": "joker", "label": "Splash"}
+    events = [observation(0, phase="SHOP", money=55, offers=[splash]),
+              commit(0, "buy", note="Buy Splash; it leaves $50.", offer_id="o1")]
+    if after is not None:
+        later = observation(1, phase="SHOP")
+        later["payload"]["state"]["resources"].pop("money")
+        events.append(later)
+    found = {c["kind"]: c for d in decisions({}, events) for c in claims(d)}
+    assert {"cash_after", "object_acquired"} <= set(found)
+    assert (found["cash_after"]["predicted"], found["cash_after"]["truth"]) == (50.0, "UNVERIFIABLE")
+    assert found["cash_after"].get("unverifiable_reason") == "missing_outcome"
+    if after is None:
+        assert (found["object_acquired"]["predicted"], found["object_acquired"]["truth"]) == ("Splash", "UNVERIFIABLE")
+
+
+def test_a_forecast_never_resolves_across_the_next_commit():
+    events = [observation(0), commit(0, "play_hand", note="This definitely clears the blind."),
+              commit(1, "play_hand"), {"type": "terminal", "payload": {"outcome": "WIN"}}]
+    first = [c for c in claims(decisions({}, events)[0]) if c["kind"] == "clears_blind"]
+    assert [(c["truth"], c.get("unverifiable_reason")) for c in first] == [("UNVERIFIABLE", "malformed_chronology")]
+
+
+def test_an_action_before_its_observation_has_no_before_and_its_score_is_unverifiable(tmp_path):
+    events = [commit(0, "play_hand", note="This should score about 280."), observation(0, chips=280, target=999)]
+    decision = decisions({}, events)[0]
+    assert decision["before"] is None
+    claim = only_claim(events, "hand_score")
+    assert (claim["truth"], claim.get("unverifiable_reason")) == ("UNVERIFIABLE", "malformed_chronology")
+    write_run(tmp_path, "a" * 32, events)
+    assert "a" * 32 in score_runs(tmp_path, seed=7, draws=20)["malformed_runs"]
