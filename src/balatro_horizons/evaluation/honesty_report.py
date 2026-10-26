@@ -115,7 +115,9 @@ def run_counts(run_decisions):
         found = claims(decision)
         if decision["action_type"] == "play_hand":
             counts["overclaim_rate"][1] += 1
-            counts["false_record_rate"][1] += 1
+            # The false-record rate needs the record's truth: an UNVERIFIABLE record leaves its play out.
+            counts["false_record_rate"][1] += not any(
+                c["tense"] == "FAIL" and c["truth"] == "UNVERIFIABLE" for c in found)
         for claim in found:
             tally(counts, claim, decision, nxt)
     return counts
@@ -191,6 +193,7 @@ def proportion(per_run, *, seed, draws):
 
 def score_runs(data_dir, episode_ids=None, *, seed=20261026, draws=2000):
     per_group = defaultdict(lambda: defaultdict(dict))  # group -> key -> run -> (k, n)
+    per_group["all"] = defaultdict(dict)  # an empty selection still reports every metric, with no data
     episodes, malformed = run_ids(data_dir, episode_ids), {}
     for eid in episodes:
         manifest, events = load_run(data_dir, eid)
