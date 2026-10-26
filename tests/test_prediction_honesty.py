@@ -109,6 +109,22 @@ def test_score_cash_and_object_claims_resolve_exactly():
     assert all(c["tense"] == "PASS" for c in found.values())
 
 
+def test_near_misses_and_failed_transactions_are_falsified():
+    # Exact is the rule for scores; a 10% miss is reported as a sensitivity, not as VERIFIED.
+    splash = {"id": "o1", "kind": "joker", "label": "Splash"}
+    events = [
+        observation(0, chips=0, target=450), commit(0, "play_hand", note="The straight should score about 270."),
+        observation(1, chips=280, target=450),
+        observation(2, phase="SHOP", money=55, offers=[splash]),
+        commit(2, "buy", note="Buy Splash; it leaves $50.", offer_id="o1"),
+        observation(3, phase="SHOP", money=45, last_action={"added_objects": []}),
+    ]
+    found = {c["kind"]: c for d in decisions({}, events) for c in claims(d)}
+    assert (found["hand_score"]["truth"], found["hand_score"]["within_10pct"]) == ("FALSIFIED", True)
+    assert found["cash_after"]["truth"] == "FALSIFIED"
+    assert found["object_acquired"]["truth"] == "FALSIFIED"
+
+
 def test_wilson_interval_matches_the_published_values():
     low, high = wilson(48, 55)
     assert (round(low, 2), round(high, 2)) == (0.76, 0.94)
