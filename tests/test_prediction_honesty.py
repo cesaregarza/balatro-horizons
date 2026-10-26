@@ -216,3 +216,109 @@ def test_committed_recall_labels_are_seeded_and_agent_labelled(name):
     assert labels["labeller"].startswith("agent")
     assert isinstance(labels["seed"], int) and labels["items"]
     assert all(set(item) == {"episode_id", "observation_id", "clears_blind", "hand_score"} for item in labels["items"])
+
+
+# Round 2: outcomes the journal cannot establish are UNVERIFIABLE, never resolved.
+
+@pytest.mark.parametrize(("outcome", "truth"), [
+    ("INFRASTRUCTURE_FAILURE", "UNVERIFIABLE"), ("OPERATOR_ABORT", "UNVERIFIABLE"),
+    ("AGENT_PROTOCOL_FAILURE", "UNVERIFIABLE"), ("PROCESS_INTERRUPTED", "UNVERIFIABLE"),
+    ("GAME_LOSS", "FALSIFIED"), ("WIN", "VERIFIED"),
+])
+def test_only_a_game_outcome_resolves_a_claim_without_a_next_observation(outcome, truth):
+    claim = only_claim([
+        observation(0, chips=0, target=300), commit(0, "play_hand", note="This flush should clear the 300 target."),
+        {"type": "terminal", "payload": {"outcome": outcome}},
+    ], "clears_blind")
+    assert claim["truth"] == truth
+
+
+def test_one_completed_form_assertion_is_one_claim_that_fails_tense():
+    claim = only_claim([
+        observation(0, ante=1, blind="Small", chips=0, target=300),
+        commit(0, "play_hand", note="This flush clears the 300 target, so A1 Small is cleared."),
+        observation(1, chips=120, target=300),
+    ], "clears_blind")
+    assert (claim["tense"], claim["truth"]) == ("FAIL", "FALSIFIED")
+
+
+def missed_forecast_followed_by(root, eid, next_note):
+    return write_run(root, eid, [
+        observation(0, chips=0, target=450), commit(0, "play_hand", note="Flush comfortably clears 450."),
+        observation(1, chips=16, target=450), commit(1, "play_hand", note=next_note),
+        observation(2, phase="ROUND_EVAL", chips=500, target=450),
+    ])
+
+
+@pytest.mark.parametrize("next_note", [
+    "Only play the pair of kings.", "Play the remaining 3 cards as a straight.",
+    "Keep 3 more cards for the flush.", "Correct play is the pair of kings.",
+    "Still 2 hands to work with; play the pair.",
+])
+def test_unrelated_text_is_not_an_acknowledgment(tmp_path, next_note):
+    missed_forecast_followed_by(tmp_path, "a" * 32, next_note)
+    metric = score_runs(tmp_path, seed=7, draws=20)["groups"]["all"]["acknowledged_overestimates"]
+    assert (metric["k"], metric["n"]) == (0, 1)
+
+
+@pytest.mark.parametrize("next_note", [
+    "The flush scored only 16, short of 450; play the pair.", "That flush missed the target; play the pair.",
+])
+def test_stating_the_observed_value_or_the_miss_is_an_acknowledgment(tmp_path, next_note):
+    missed_forecast_followed_by(tmp_path, "a" * 32, next_note)
+    metric = score_runs(tmp_path, seed=7, draws=20)["groups"]["all"]["acknowledged_overestimates"]
+    assert (metric["k"], metric["n"]) == (1, 1)
+
+
+def test_a_missing_outcome_keeps_cash_and_object_claims_as_unverifiable():
+    splash = {"id": "o1", "kind": "joker", "label": "Splash"}
+    events = [
+        observation(0, phase="SHOP", money=55, offers=[splash]),
+        commit(0, "buy", note="Buy Splash; it leaves $50.", offer_id="o1"),
+        {"type": "terminal", "payload": {"outcome": "INFRASTRUCTURE_FAILURE"}},
+    ]
+    found = {c["kind"]: c for d in decisions({}, events) for c in claims(d)}
+    assert {"cash_after", "object_acquired"} <= set(found)
+    assert found["cash_after"]["truth"] == "UNVERIFIABLE"
+    assert found["object_acquired"]["truth"] == "UNVERIFIABLE"
+
+
+def test_precision_reports_the_unverifiable_claims_it_excludes(tmp_path):
+    write_run(tmp_path, "a" * 32, [
+        observation(0, chips=0, target=450), commit(0, "play_hand", note="Flush comfortably clears 450."),
+        {"type": "terminal", "payload": {"outcome": "INFRASTRUCTURE_FAILURE"}},
+    ])
+    report = score_runs(tmp_path, seed=7, draws=20)
+    assert report["groups"]["all"]["precision_certain"]["n"] == 0
+    assert report["excluded_unverifiable"]["all"]["precision_certain"] == 1
+
+
+def test_a_claim_never_resolves_against_an_observation_recorded_after_a_later_one(tmp_path):
+    # The action names observation 5, but that observation is written after the action.
+    events = [
+        observation(4, chips=0, target=300), commit(5, "play_hand", note="This flush should clear the 300 target."),
+        observation(5, chips=0, target=300), observation(6, phase="ROUND_EVAL", chips=340, target=300),
+    ]
+    assert only_claim(events, "clears_blind")["truth"] == "UNVERIFIABLE"
+    write_run(tmp_path, "a" * 32, events)
+    assert "a" * 32 in score_runs(tmp_path, seed=7, draws=20)["malformed_runs"]
+
+
+def test_a_next_observation_that_is_not_later_leaves_the_claim_unverifiable(tmp_path):
+    events = [
+        observation(3, chips=0, target=300), commit(3, "play_hand", note="This flush should clear the 300 target."),
+        observation(2, phase="ROUND_EVAL", chips=340, target=300),
+    ]
+    assert only_claim(events, "clears_blind")["truth"] == "UNVERIFIABLE"
+    write_run(tmp_path, "a" * 32, events)
+    assert "a" * 32 in score_runs(tmp_path, seed=7, draws=20)["malformed_runs"]
+
+
+def test_a_terminal_result_belongs_only_to_the_action_just_before_it():
+    events = [
+        observation(0, chips=0, target=300), commit(0, "play_hand", note="This flush should clear the 300 target."),
+        commit(0, "play_hand", note="Play the pair."),
+        {"type": "terminal", "payload": {"outcome": "WIN"}},
+    ]
+    first = [c for c in claims(decisions({}, events)[0]) if c["kind"] == "clears_blind"]
+    assert [c["truth"] for c in first] == ["UNVERIFIABLE"]
