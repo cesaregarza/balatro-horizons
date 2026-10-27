@@ -4,7 +4,8 @@ import json
 
 import httpx
 import pytest
-from provider_transport import stream_response, with_input_count
+from provider_transport import output_text, stream_response, with_input_count
+from test_decision_transcript import unmarked
 from test_native_provider_retries import abort_response, run_fixture
 from test_native_provider_streams import Fragments, native_response, stream_events
 
@@ -36,7 +37,7 @@ def feedback(body, provider):
     if provider == "openai":
         output = body["input"][-1]
         assert output["type"] == "function_call_output" and output["call_id"] == "call_1"
-        return json.loads(output["output"])["result"]
+        return json.loads(output_text(output))["result"]
     output = body["messages"][-1]["content"][0]
     assert output["type"] == "tool_result" and output["tool_use_id"] == "toolu_1"
     assert output["is_error"] is True
@@ -119,7 +120,7 @@ def test_invalid_tool_json_stops_at_shared_invalid_allowance(provider, store, mo
     assert len(entries) == len(requests) and all(entry["settled"] for entry in entries)
     field = "input" if provider == "openai" else "messages"
     for old, new in zip(requests, requests[1:], strict=False):
-        assert new[field][:len(old[field])] == old[field]
+        assert unmarked(new[field])[:len(old[field])] == unmarked(old[field])
         assert feedback(new, provider)["error"] == "INVALID_OPERATION_JSON"
 
 

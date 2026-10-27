@@ -5,9 +5,10 @@ from copy import deepcopy
 
 import httpx
 import pytest
-from provider_transport import with_input_count
+from provider_transport import output_text, with_input_count
 from runner_support import episode_spending
 from test_boundary import project
+from test_decision_transcript import unmarked
 from test_harness_tools import config_for
 from test_provider_continuations import model
 
@@ -501,9 +502,9 @@ def test_provider_parity_dynamic_notes_and_bounded_helper_feedback(store, monkey
             assert view["working_memory"]["frames"][0]["action"]["type"] == "select_blind"
         else:
             previous = requests[index - 1].get("input", requests[index - 1].get("messages"))
-            assert messages[:len(previous)] == previous
+            assert unmarked(messages)[:len(previous)] == unmarked(previous)
             assert view["run_notebook"]["entries"] == {}  # The initial snapshot never changes.
-            latest = (messages[-1]["output"] if provider == "openai"
+            latest = (output_text(messages[-1]) if provider == "openai"
                       else messages[-1]["content"][0]["content"])
             update = json.loads(latest)["context_update"]
             if index == 1:
