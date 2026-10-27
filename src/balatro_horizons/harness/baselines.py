@@ -5,7 +5,8 @@ from copy import deepcopy
 from itertools import combinations
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
-from balatro_horizons.contracts import ActionEnvelope, Observation
+from balatro_horizons.contracts import ActionEnvelope, Objective, Observation
+from balatro_horizons.harness.context.conventions import PUBLIC_CONTRACT_VERSION
 from balatro_horizons.harness.contract import Context
 
 
@@ -75,11 +76,12 @@ def baseline_observation(presented):
             card.pop("counter_defaults_apply", None)
     return Observation.model_validate(
         {
-            "schema_version": presented["public_contract_version"],
+            # The layered prefix states these once; the message omits them at their values.
+            "schema_version": presented.get("public_contract_version", PUBLIC_CONTRACT_VERSION),
             "episode_id": "baseline-public-view",
             "observation_id": presented["observation_id"],
             "public_state_hash": "baseline-public-view",
-            "objective": presented["objective"],
+            "objective": presented.get("objective", Objective().model_dump(mode="json")),
             "phase": presented["phase"],
             "state": state,
             "available_action_types": presented["available_action_types"],

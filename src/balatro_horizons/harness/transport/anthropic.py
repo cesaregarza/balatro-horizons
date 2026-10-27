@@ -22,6 +22,9 @@ CAPABILITIES = {
 }
 
 
+CACHE_CONTROL = {"type": "ephemeral", "ttl": "5m"}
+
+
 def headers(key):
     values = {"x-api-key": key, "anthropic-version": "2023-06-01"}
     if workspace := os.environ.get("ANTHROPIC_WORKSPACE_ID"):
@@ -75,7 +78,7 @@ def native_messages(items, result):
 
 def synthetic_messages(call, result, index):
     if not call:
-        return [{"role": "user", "content": encode({"tool_error": result})}]
+        return [{"role": "user", "content": [{"type": "text", "text": encode({"tool_error": result})}]}]
     call_id = f"harness_exchange_{index}"
     return [
         {
@@ -150,12 +153,12 @@ def request_body(transport, ctx, exchanges):
     if "temperature" in settings:
         body["temperature"] = settings["temperature"]
     if transport.model.cache_write_input_usd_per_million is not None:
-        # Cache tools + the frozen system prefix, never per-decision observations.
-        body["system"] = [{
-            "type": "text",
-            "text": body["system"],
-            "cache_control": {"type": "ephemeral", "ttl": "5m"},
-        }]
+        # The prefix breakpoint covers tools and the frozen system text. A follow-up adds
+        # one rolling block on its latest user turn; lookback (20 positions) finds the
+        # previous follow-up's write. Two of the four allowed breakpoints at most.
+        body["system"] = [{"type": "text", "text": body["system"], "cache_control": dict(CACHE_CONTROL)}]
+        if exchanges:
+            body["messages"][-1]["content"][-1]["cache_control"] = dict(CACHE_CONTROL)
     return body
 
 

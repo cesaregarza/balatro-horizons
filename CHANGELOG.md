@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-27 — Layered request layout (CES-1214, CES-1215)
+
+- Freeze `layered_decision_v1` with wire policies `openai_responses_v2` and
+  `anthropic_messages_v2`. Requests run L0 (prompt, kernel, tools) → L1 (run
+  configuration) → L2 (sealed decision message) → L3 (follow-up exchanges).
+- State run-invariant request fields once in the rules kernel; decision messages and
+  follow-up updates omit them while they hold the stated value.
+- Keep the prefix breakpoint on first requests and add a rolling breakpoint on
+  follow-ups, placed by each provider's rules: OpenAI keeps the previous exchange
+  end marked for lookup; Claude marks only the latest user turn. OpenAI tool
+  results are `input_text` blocks. `append_only_decision_v1` runs are not migrated.
+
 ## 2026-10-10 — Provider-runtime review corrections (CES-1222)
 
 - Send only changed follow-up context fields, comparing with the last delivered

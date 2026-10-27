@@ -9,14 +9,14 @@ from balatro_horizons.harness.context.build import (
     _helper_status,
     context_bound,
 )
+from balatro_horizons.harness.context.conventions import CONTEXT_POLICY, omit_stated
 from balatro_horizons.harness.context.memory import maintenance
 from balatro_horizons.harness.context.model_view import same_value
 from balatro_horizons.harness.failures import HarnessFailure
 
-CONTEXT_POLICY = "append_only_decision_v1"
 WIRE_POLICIES = {
-    "openai": "openai_responses_v1",
-    "anthropic": "anthropic_messages_v1",
+    "openai": "openai_responses_v2",
+    "anthropic": "anthropic_messages_v2",
 }
 PARTIAL_UPDATE_FIELDS = ("remaining_budget", "helper_status", "notebook_maintenance")
 
@@ -89,11 +89,11 @@ class DecisionConversation:
             self.exchanges.append(sealed)
 
     def _update(self, ctx, provider_attempts):
-        current = ctx.model_references.project({
+        current = omit_stated(ctx.model_references.project({
             "remaining_budget": ctx.observation["remaining_budget"],
             "permitted_tools": ctx.allowed_tools, "helper_status": ctx.helper_status,
             "run_notebook": ctx.run_notebook, "notebook_maintenance": ctx.notebook_maintenance,
-        })
+        }))
         update = {"as_of_provider_attempt": provider_attempts}
         for key, value in current.items():
             previous = self.last_delivered[key]

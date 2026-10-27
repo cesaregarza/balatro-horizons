@@ -124,7 +124,8 @@ def test_visible_playing_offer_identity_reaches_final_request(
     )
     validate_action(envelope, obs)
     assert raw == original  # Formatting does not edit the engine state/mechanics.
-    assert view.get("public_contract_version", view.get("schema_version")) == "1.1"
+    # The frozen prefix states the contract version once; the message omits it at that value.
+    assert "public_contract_version" not in view and "schema_version" not in view
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
@@ -297,7 +298,9 @@ def test_last_action_preserves_departed_labels_without_promoting_agent_claims(st
     for provider in ("openai", "anthropic"):
         delivered = delivered_observation(request(after_play, provider), provider)
         references = decision_context(after_play, [])[0].model_references
-        assert delivered["last_action"] == references.project(delta.model_dump(mode="json"))
+        expected = references.project(delta.model_dump(mode="json"))
+        del expected["version"]  # stated once in the frozen prefix
+        assert delivered["last_action"] == expected
         page = helper(
             Operation.validate_python(
                 {"kind": "inspect_page", "section": "last_action", "offset": 0}

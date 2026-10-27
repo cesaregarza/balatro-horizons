@@ -87,20 +87,27 @@ def public_capabilities(model, settings):
     }
 
 
+BREAKPOINT = {"mode": "explicit"}
+
+
+def text_blocks(text):
+    # Tool results are always blocks, so marking one later never changes its rendering.
+    return [{"type": "input_text", "text": text}]
+
+
 def native_messages(items, result):
     calls = [item for item in items if item.get("type") == "function_call"]
     if not calls:
-        return items + [{"role": "user", "content": encode({"tool_error": result})}]
-    output = encode(result)
+        return items + [{"role": "user", "content": text_blocks(encode({"tool_error": result}))}]
     return items + [
-        {"type": "function_call_output", "call_id": call["call_id"], "output": output}
+        {"type": "function_call_output", "call_id": call["call_id"], "output": text_blocks(encode(result))}
         for call in calls
     ]
 
 
 def synthetic_messages(call, result, index):
     if not call:
-        return [{"role": "user", "content": encode({"tool_error": result})}]
+        return [{"role": "user", "content": text_blocks(encode({"tool_error": result}))}]
     call_id = f"harness_exchange_{index}"
     return [
         {
@@ -112,23 +119,36 @@ def synthetic_messages(call, result, index):
         {
             "type": "function_call_output",
             "call_id": call_id,
-            "output": encode(result),
+            "output": text_blocks(encode(result)),
         },
     ]
 
 
-def tool_messages(ctx, exchanges):
+def tool_messages(ctx, exchanges, ends=None):
+    """The decision message, then each exchange; `ends` collects each exchange's last index."""
     messages = canonical_messages(ctx)
     for index, exchange in enumerate(exchanges):
         result = exchange_result(ctx, exchange)
         items = native_items(exchange, "openai")
         messages.extend(native_messages(items, result) if items is not None else
                         synthetic_messages(exchange.get("tool_call"), result, index))
+        if ends is not None:
+            ends.append(len(messages) - 1)
     return messages
 
 
 def payload(ctx, exchanges):
     instructions = ctx.prompt + "\n\n" + ctx.rules_kernel
+    ends = []
+    messages = tool_messages(ctx, exchanges, ends)
+    # A follow-up writes through its newest exchange. Lookups check only boundaries this
+    # request marks, so the previous end (the last write) stays marked: at most three
+    # breakpoints, within the four writes a request may create. A first request writes
+    # only the prefix, since most decisions have no follow-up to read it.
+    for end in ends[-2:]:
+        item = messages[end]
+        (item["output"] if item.get("type") == "function_call_output" else item["content"])[-1][
+            "prompt_cache_breakpoint"] = dict(BREAKPOINT)
     return {
         "input": [
             {
@@ -137,12 +157,12 @@ def payload(ctx, exchanges):
                     {
                         "type": "input_text",
                         "text": instructions,
-                        "prompt_cache_breakpoint": {"mode": "explicit"},
+                        "prompt_cache_breakpoint": dict(BREAKPOINT),
                     }
                 ],
             }
         ]
-        + tool_messages(ctx, exchanges),
+        + messages,
         "tools": [{"type": "function", **tool, "strict": True} for tool in ctx.tools],
         "tool_choice": "auto",
     }

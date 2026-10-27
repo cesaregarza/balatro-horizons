@@ -77,7 +77,8 @@ def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly():
     assert output == {
         "type": "function_call_output",
         "call_id": "call_1",
-        "output": json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+        "output": [{"type": "input_text", "text": json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+                    "prompt_cache_breakpoint": {"mode": "explicit"}}],  # the follow-up's rolling breakpoint
     }
     assert json.dumps(followup).count("opaque-openai-state") == 1
 

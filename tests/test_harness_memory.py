@@ -372,8 +372,9 @@ def test_dynamic_history_and_action_notes_keep_fixed_prefix(provider, store, con
     assert len(view["working_memory"]["frames"]) == 2
     assert view["run_notebook"]["entries"] == {"plan": "I expect this hand to win"}
     ctx = policy.contexts[-1]
-    assert view["previous_action_outcome"] == ctx.model_references.project(
-        ctx["previous_action_outcome"])
+    expected = ctx.model_references.project(ctx["previous_action_outcome"])
+    del expected["version"]  # stated once in the frozen prefix
+    assert view["previous_action_outcome"] == expected
     assert view["previous_action_outcome"]["action_type"] == "play_hand"
     assert view["previous_action_outcome"]["recorded_note_update"]["text"] == "I expect this hand to win"
     guidance = last["input"][0]["content"][0]["text"] if provider == "openai" else last["system"]

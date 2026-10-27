@@ -6,7 +6,8 @@ from pydantic import ValidationError
 
 from balatro_horizons.actions.validation import InvalidAction, validate_action
 from balatro_horizons.evidence.provenance import implementation_fingerprint
-from balatro_horizons.harness.context.build import HELPER_EXHAUSTED_MESSAGE, decision_context
+from balatro_horizons.harness.context.build import decision_context
+from balatro_horizons.harness.context.conventions import HELPER_EXHAUSTED_MESSAGE
 from balatro_horizons.harness.context.conversation import DecisionConversation
 from balatro_horizons.harness.contract import Operation, Policy, ProviderPolicy
 from balatro_horizons.harness.failures import HarnessFailure
