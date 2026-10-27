@@ -6,7 +6,7 @@ from copy import deepcopy
 
 import httpx
 import pytest
-from provider_transport import with_input_count
+from provider_transport import output_text, with_input_count
 from runner_support import episode_spending
 from test_boundary import project
 from test_harness_tools import config_for
@@ -149,7 +149,7 @@ def test_feedback_exchange_ids_are_projected_for_both_provider_formats(store, pr
         body = policy.request(ctx, [item])
         delivered_view(body, provider)
     if provider == "openai":
-        result = json.loads(next(m["output"] for m in body["input"] if m.get("type") == "function_call_output"))
+        result = json.loads(next(output_text(m) for m in body["input"] if m.get("type") == "function_call_output"))
     else:
         result = json.loads(body["messages"][-1]["content"][0]["content"])
     ids = [ctx.model_references.objects[card.id] for card in obs.state.hand]

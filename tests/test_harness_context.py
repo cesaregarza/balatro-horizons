@@ -125,7 +125,8 @@ def test_cache_prefix_stays_identical_across_phases_ids_and_helper_calls():
     assert first["input"][0]["content"][0]["prompt_cache_breakpoint"] == {"mode": "explicit"}
     assert "previous_response_id" not in third
     assert "instructions" not in third
-    assert json.dumps(third).count('"prompt_cache_breakpoint"') == 1
+    # The prefix breakpoint plus the rolling one that ends this follow-up.
+    assert json.dumps(third).count('"prompt_cache_breakpoint"') == 2
     assert (
         len(json.dumps(third, ensure_ascii=False).encode())
         + CONTEXT_FRAMING_BYTES

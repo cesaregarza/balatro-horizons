@@ -9,6 +9,11 @@ from balatro_horizons.config import (
     DEFAULT_REQUEST_BYTE_LIMIT,
     ROOT,
 )
+from balatro_horizons.harness.context.conventions import (
+    CONTEXT_POLICY,
+    HELPER_EXHAUSTED_MESSAGE,
+    HELPER_MESSAGE,
+)
 from balatro_horizons.harness.context.game_quotes import current_costs
 from balatro_horizons.harness.context.memory import (
     RunNotebook,
@@ -94,18 +99,11 @@ def _allowed_tools(tools, original, helper_remaining):
     return allowed
 
 
-HELPER_EXHAUSTED_MESSAGE = (
-    "Helper allowance exhausted. Choose a permitted gameplay action or abort_run."
-)
-
-
 def _helper_status(helper_remaining):
     return {
         "remaining": helper_remaining,
         "message": (
-            HELPER_EXHAUSTED_MESSAGE
-            if helper_remaining == 0 else
-            "Helper calls share this allowance. Action-attached note_update uses no helper call."
+            HELPER_EXHAUSTED_MESSAGE if helper_remaining == 0 else HELPER_MESSAGE
         ),
     }
 
@@ -176,7 +174,7 @@ class _DeliveryWindow:
         if self.context.working_memory is not None:
             maintenance(self.context)
         metadata = {
-            "policy": "append_only_decision_v1",
+            "policy": CONTEXT_POLICY,
             "cleared": [],
             "loaded_exchange_indices": list(range(len(self.delivered))),
         }

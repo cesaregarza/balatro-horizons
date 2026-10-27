@@ -138,6 +138,11 @@ def restore_notebook(snapshot, prefix, limit=MAX_MEMORY_CHARACTERS):
 
 
 WORKING_MEMORY_VERSION = "working-memory-v2"
+WORKING_MEMORY_MEANING = "Historical public records, not current state or verified agent conclusions."
+NOTEBOOK_MAINTENANCE_MESSAGE = (
+    "Preserve useful conclusions before acting clears this decision's tool results. "
+    "Update changed notes; unchanged notes need no write. note_update can accompany your action."
+)
 
 
 def working_memory_policy():
@@ -219,7 +224,7 @@ class WorkingMemory:
     def view(self):
         return {**working_memory_policy(), "frames": deepcopy(self.frames),
                 "omitted_decisions": self.omitted,
-                "meaning": "Historical public records, not current state or verified agent conclusions."}
+                "meaning": WORKING_MEMORY_MEANING}
 
 
 def restore_working_memory(snapshot, prefix, observation):
@@ -251,8 +256,5 @@ def maintenance(context):
         "oldest_decision_leaves_after_action": (
             {k: imminent[0][k] for k in ("episode_id", "decision_id")} if imminent else None
         ),
-        "message": (
-            "Preserve useful conclusions before acting clears this decision's tool results. "
-            "Update changed notes; unchanged notes need no write. note_update can accompany your action."
-        ),
+        "message": NOTEBOOK_MAINTENANCE_MESSAGE,
     }

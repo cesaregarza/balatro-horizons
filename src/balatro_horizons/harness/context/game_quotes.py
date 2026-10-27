@@ -50,6 +50,9 @@ def spending_headroom(resources):
         return None
 
 
+COSTS_VERSION = "public_costs_v2"
+
+
 def quote_note():
     return (
         "Current upfront quotes for this observation only; recheck after each action. "
@@ -127,7 +130,7 @@ def current_costs(public):
     state, available = observation.state, observation.available_action_types
     resources = state.resources
     result = {
-        "version": "public_costs_v2", "observation_id": observation.observation_id,
+        "version": COSTS_VERSION, "observation_id": observation.observation_id,
         "currency": "game_dollars", "cash_balance": resources.money,
         "credit_limit": resources.credit_limit,
         "positive_price_spending_headroom": spending_headroom(resources),

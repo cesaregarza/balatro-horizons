@@ -50,7 +50,10 @@ def delivered_results(body):
         if not isinstance(message, dict):
             continue
         if message.get("type") == "function_call_output":
-            yield message.get("call_id"), message.get("output")
+            output = message.get("output")
+            if isinstance(output, list):  # the layered wire policy sends text blocks
+                output = "".join(block.get("text", "") for block in output if isinstance(block, dict))
+            yield message.get("call_id"), output
         content = message.get("content")
         if isinstance(content, list):
             for block in content:

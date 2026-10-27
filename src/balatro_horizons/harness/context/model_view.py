@@ -4,6 +4,7 @@ import json
 from copy import deepcopy
 
 from balatro_horizons.config import EVENT_SUMMARY_CHARACTERS
+from balatro_horizons.harness.context.conventions import omit_stated
 
 LAST_ACTION_REF = "/observation/last_action"
 
@@ -73,4 +74,4 @@ def compact_context(content):
     observation.pop("retrieval_context", None)
     _inline_quotes(observation, view.get("current_costs", {}))
     _deduplicate_receipt(observation, view.get("working_memory") or {})
-    return view
+    return omit_stated(view)

@@ -197,6 +197,16 @@ are refused with `RESTORE_SOURCE_INCOMPATIBLE`. No checkpoint in the production
 store was recorded at that source, so no upgrade group admits it: a migration
 would have no consumer.
 
+### Layered request layout: no migration
+
+`layered_decision_v1` changes model-facing input (fields stated once in the kernel
+and omitted from decision messages) and both provider wire formats (follow-up cache
+breakpoints, OpenAI tool results as text blocks). Frozen `append_only_decision_v1`
+snapshots are refused with `AGENT_PROTOCOL_CONTEXT_POLICY_CHANGED` and are never
+rewritten. No upgrade group admits them: no production checkpoint was recorded
+under `append_only_decision_v1` (the newest native run predates it), so a
+migration would have no consumer.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game

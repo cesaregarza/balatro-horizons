@@ -5,7 +5,7 @@ import json
 
 import httpx
 import pytest
-from provider_transport import model_choice, stream_response, with_input_count
+from provider_transport import model_choice, output_text, stream_response, with_input_count
 from pydantic import ValidationError
 from test_boundary import project
 
@@ -181,7 +181,7 @@ def test_mock_luna_full_runner_helpers_memory_summary_and_prospective_review(sto
     helper_output = next(
         item for item in received[1]["input"] if item.get("type") == "function_call_output"
     )
-    assert json.loads(helper_output["output"])["result"] == {"result": "4"}
+    assert json.loads(output_text(helper_output))["result"] == {"result": "4"}
     assert "MOCK_MEMORY" in json.dumps(received[2])
     assert "MOCK_SUMMARY" in json.dumps(received[1])
     assert "MOCK_SUMMARY" not in json.dumps(received[2])

@@ -3,7 +3,7 @@ from copy import deepcopy
 
 import httpx
 import pytest
-from provider_transport import with_input_count
+from provider_transport import output_text, with_input_count
 from runner_support import episode_spending
 from test_boundary import project
 from test_harness_tools import config_for
@@ -77,7 +77,8 @@ def test_openai_stateless_reasoning_and_call_are_round_tripped_exactly():
     assert output == {
         "type": "function_call_output",
         "call_id": "call_1",
-        "output": json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+        "output": [{"type": "input_text", "text": json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+                    "prompt_cache_breakpoint": {"mode": "explicit"}}],  # the follow-up's rolling breakpoint
     }
     assert json.dumps(followup).count("opaque-openai-state") == 1
 
@@ -203,7 +204,7 @@ def test_multiple_openai_calls_are_all_resolved_with_specific_feedback():
     followup = policy.request(ctx, delivered)
     outputs = [item for item in followup["input"] if item.get("type") == "function_call_output"]
     assert [item["call_id"] for item in outputs] == ["call_1", "call_2"]
-    assert all("MULTIPLE_OPERATIONS" in item["output"] for item in outputs)
+    assert all("MULTIPLE_OPERATIONS" in output_text(item) for item in outputs)
 
 
 def test_invalid_openai_arguments_get_linked_json_feedback():
@@ -234,7 +235,7 @@ def test_invalid_openai_arguments_get_linked_json_feedback():
     followup = policy.request(ctx, delivered)
     result = next(item for item in followup["input"] if item.get("type") == "function_call_output")
     assert result["call_id"] == "call_bad_json"
-    assert "INVALID_OPERATION_JSON" in result["output"]
+    assert "INVALID_OPERATION_JSON" in output_text(result)
 
 
 def test_unavailable_anthropic_call_gets_linked_error_feedback():

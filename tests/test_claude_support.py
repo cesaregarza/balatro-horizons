@@ -134,7 +134,8 @@ def test_signed_thinking_count_and_tool_result_are_exact_with_caching(monkeypatc
     assert followup["system"] == first["system"] and followup["tools"] == first["tools"]
     assert followup["messages"][-2] == {"role": "assistant", "content": blocks}
     assert followup["messages"][-1]["content"] == [
-        {"type": "tool_result", "tool_use_id": "toolu_one", "content": '{"result":"4"}'},
+        {"type": "tool_result", "tool_use_id": "toolu_one", "content": '{"result":"4"}',
+         "cache_control": {"type": "ephemeral", "ttl": "5m"}},  # the follow-up's rolling breakpoint
     ]
     policy.check_input(followup)
     expected = {key: followup[key] for key in

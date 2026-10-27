@@ -24,6 +24,15 @@ def delivery(conversation, exchanges, *, attempts=0, notebook=None, byte_limit=2
     )
 
 
+def unmarked(value):
+    """Cache markers move between requests; they are directives, not model input."""
+    if isinstance(value, dict):
+        return {k: unmarked(v) for k, v in value.items() if k not in ("prompt_cache_breakpoint", "cache_control")}
+    if isinstance(value, list):
+        return [unmarked(item) for item in value]
+    return value
+
+
 def response(provider, index):
     if provider == "openai":
         return {"status": "completed", "output": [
@@ -56,7 +65,7 @@ def test_five_helper_prefix_is_immutable_with_notebook_budget_and_reference_upda
             body = policy.request(current, delivered)
             if snapshots:
                 old = snapshots[-1]
-                assert body[field][:len(old[field])] == old[field]
+                assert unmarked(body[field])[:len(old[field])] == unmarked(old[field])
                 assert body["tools"] == old["tools"]
                 if provider == "anthropic":
                     assert body["system"] == old["system"]
@@ -102,7 +111,7 @@ def test_context_deltas_compare_to_last_delivery_including_initial_notebook(prov
                                           notebook=book.view())
             body = policy.request(current, delivered)
             if previous is not None:
-                assert body[field][:len(previous[field])] == previous[field]
+                assert unmarked(body[field])[:len(previous[field])] == unmarked(previous[field])
                 update = delivered[-1]["model_result"]["context_update"]
                 assert update["as_of_provider_attempt"] == index
                 assert update["remaining_budget"]["provider_calls"] == 100 - index

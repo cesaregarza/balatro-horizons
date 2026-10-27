@@ -8,6 +8,12 @@ import httpx
 from balatro_horizons.harness.baselines import Baseline
 
 
+def output_text(item):
+    """A tool result's text: one string before the layered wire policy, input_text blocks after."""
+    output = item["output"]
+    return output if isinstance(output, str) else "".join(part["text"] for part in output)
+
+
 def model_choice(context):
     """Mock a model using only delivered integers, never runner/backend handles."""
     scalars = {"id", "blind_id", "offer_id", "owned_id", "consumable_id", "current_blind_id"}

@@ -47,13 +47,7 @@ def focused_observation(observation):
     if view["phase"] == "BLIND_SELECT" and view["state"]["revealed_blinds"]:
         view["current_blind_id"] = view["state"]["revealed_blinds"][0]["id"]
     state = view["state"]
-    view["presentation"] = {
-        "version": "harness",
-        "card_defaults": deepcopy(CARD_DEFAULTS),
-        "counter_defaults": deepcopy(COUNTER_DEFAULTS),
-        "empty_effects_and_counters_omitted": True,
-        "deferred_sections": ["public_deck_knowledge"],
-    }
+    view["presentation"] = presentation(hand_levels_deferred=view["phase"] != "SELECTING_HAND")
     # Preserve every nondefault counter, active effect, concealed-card flag and
     # ordering. This is field compression, never a ranking of strategic choices.
     for area in ("hand", "jokers", "consumables"):
@@ -73,8 +67,17 @@ def focused_observation(observation):
                     card.pop(key)
     if view["phase"] != "SELECTING_HAND":
         state.pop("hand_levels")
-        view["presentation"]["deferred_sections"].append("hand_levels")
     return view, omitted
+
+
+def presentation(*, hand_levels_deferred):
+    return {
+        "version": "harness",
+        "card_defaults": deepcopy(CARD_DEFAULTS),
+        "counter_defaults": deepcopy(COUNTER_DEFAULTS),
+        "empty_effects_and_counters_omitted": True,
+        "deferred_sections": ["public_deck_knowledge"] + (["hand_levels"] if hand_levels_deferred else []),
+    }
 
 
 def focused_tools(definitions):

@@ -10,13 +10,57 @@ may accept older source through an explicit immutable compatibility receipt: the
 the accepted executor separately, preserving historical source identity, model, knowledge and limits.
 Prior calls and retained reservations count across every restoration attempt.
 
-New runs record `context_policy: append_only_decision_v1` and a provider-native
-wire policy (`openai_responses_v1` or `anthropic_messages_v1`). Because this
-changes within-decision retention and the provider runtimes, the interface is
-`tools_v8.5`. `tools_v8` runs are retired for execution, as v7 was: they fail
+New runs record `context_policy: layered_decision_v1` and a provider-native
+wire policy (`openai_responses_v2` or `anthropic_messages_v2`); see
+[Layered prompt](#layered-prompt). Runs frozen under `append_only_decision_v1`
+are refused with `AGENT_PROTOCOL_CONTEXT_POLICY_CHANGED` and are not migrated.
+Because `append_only_decision_v1` changed within-decision retention and the
+provider runtimes, the interface is `tools_v8.5`. `tools_v8` runs are retired for execution, as v7 was: they fail
 with `AGENT_PROTOCOL_INTERFACE_RETIRED`, need their retained executor, and are
 never shown as the current harness. Native evidence reuse does not make their
 model conversation compatible with this release.
+
+## Layered prompt
+
+Every request is ordered from the least to the most changeable content, so each
+provider can cache the longest stable prefix:
+
+| Layer | Holds | Changes |
+| --- | --- | --- |
+| L0, protocol-static | frozen prompt, rules kernel, tool catalog, and the fixed request fields below | never within a protocol |
+| L1, run-static | `Run configuration: deck=…; stake=….` at the end of the kernel | never within a run |
+| L2, decision-static | the decision message, sealed once per decision | never within a decision |
+| L3, per-call | follow-up exchanges; counters arrive in each result's `context_update` | every helper call |
+
+The kernel states the fixed request fields once (`- <path>: <value>` lines):
+the objective, public contract version, inspectable sections, presentation
+defaults, receipt and cost versions, the quote note, notebook and working-memory
+versions and limits, the working-memory meaning, the maintenance and helper
+messages, and the outcome version. A decision message omits each field while it
+holds exactly a stated value and keeps any other value. `retrieval_context` is
+not model input at all. Strategy-guide delivery is unchanged.
+
+Breakpoints follow each provider's own caching rules; the layout is the same at
+every effort:
+
+- **First request of a decision:** only B1, which ends L0+L1. A write on L2 would
+  be wasted whenever no follow-up comes, which is most decisions.
+- **OpenAI follow-up:** B1, the end of the newest exchange (a write), and the end
+  of the previous exchange. Explicit lookups check only boundaries the request
+  marks, so the previous write stays marked: at most three breakpoints, within the
+  four cache writes a request may create. Tool results are always `input_text`
+  blocks, so marking one never changes its rendering. Explicit mode caches only
+  marked prefixes; the default 30-minute retention applies (writes 1.25× input,
+  reads 0.1×; GPT-5.6 and later need at least 1,024 tokens, which B1 alone exceeds).
+- **Claude follow-up:** B1 on the system block plus one `cache_control` block on
+  the latest user turn, with the existing five-minute TTL. Its lookback (20
+  positions) reaches the previous follow-up's write: two of the four allowed
+  breakpoints. The presets' 512-token minimum is below B1's length.
+
+No B0 between L0 and L1: it would only help a run starting within the TTL of
+another run's prefix write, saving one prefix write per run. Reservations,
+settlement and the spend guard are unchanged; cache reads and writes remain
+billed per category.
 
 ## What the model receives
 
@@ -171,8 +215,8 @@ ordinary input, cache reads, cache writes, output, reservations, and settlement
 remain distinct categories. A cache diagnostic comparison is metadata-only and
 must use an episode-local baseline; it does not authorize a live probe or expose
 opaque provider content.
-The stable-prefix breakpoint precedes dynamic state, budgets, memory, and helper
-outputs. OpenAI's `comparison_response_id` advances only after a completed response with
+The prefix breakpoint precedes dynamic state, budgets, memory, and helper
+outputs; follow-up breakpoints are described in [Layered prompt](#layered-prompt). OpenAI's `comparison_response_id` advances only after a completed response with
 a nonempty ID; a new episode or branch starts without a baseline. Diagnostics
 are best effort; actual usage establishes cache read/write charges. Reserve the
 highest configured input rate, and keep the full reservation on inconsistent
@@ -245,7 +289,8 @@ The full worst-case reservation must fit the chosen dollar cap; for example,
 Fable's default per-call reservation is $2.048. Saving a model never raises a cap.
 
 Both cache prices enable a five-minute breakpoint on the frozen system prefix,
-after tools and before dynamic observations, money, memory and helper outputs.
+after tools and before dynamic observations, money, memory and helper outputs, and
+a rolling breakpoint on each follow-up's latest user turn ([Layered prompt](#layered-prompt)).
 There is no warmup request or promised hit rate. Leaving both cache rates blank
 keeps the legacy uncached request. Anthropic's reported `input_tokens` are ordinary
 uncached input; reads and writes are separate, disjoint categories. Signed and
