@@ -95,10 +95,22 @@ still requires checkpoint replay evidence; it can bootstrap release evidence
 without requiring the release certificate it is about to produce. That path
 is not exposed by the ordinary branch API and cannot run a paid or human policy.
 
-Every non-calibration launch needs a certificate matching source, environment,
-deck, stake, injector, bridge, and full mod tree. Filename classification alone
-cannot establish scope: the manifest's explicit runtime/source scope and
-fingerprint must be checked. Absent evidence is named as skipped, never counted
+Every non-calibration launch needs a passed certificate matching the native
+implementation hash, the environment lock (game executable, injector, bridge, full
+mod tree and pins), and the deck and stake. The native implementation hash covers
+`contracts.py`, `game/` (except `fake.py`), `observations/`, `actions/`, `storage/`
+and `evidence/continuation_probe.py`, so a change to the layer that talks to the
+game still needs new evidence. A certificate does not bind the rest of the
+harness: prompts, policies, tools, the service, the workbench and other evidence
+code can change without re-certification or `bh evidence reuse`, because they do
+not change the game and code review covers them. A certificate without a native
+implementation hash predates this split and still requires the full
+implementation fingerprint. Run preflight, game creation, `bh doctor`,
+`bh native diagnose` and recovery all apply this one check; recovery still also
+requires the checkpoint's frozen implementation, as described above.
+
+Filename classification alone cannot establish scope: the manifest's explicit
+runtime/source scope and fingerprint must be checked. Absent evidence is named as skipped, never counted
 as passing; a passed record naming a missing artifact fails as corrupt.
 The launcher uses visible 16× game speed, without headless or fast/animation-skip
 mode. New capability records explicitly report `gamespeed: 16`, `accelerated:
