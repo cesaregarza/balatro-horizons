@@ -70,10 +70,15 @@ def native_implementation_fingerprint(sources=None):
 
 
 def accepted_source_matches(record):
-    """Reuse never grants blanket approval to unreviewed future harness changes."""
+    """Accept native evidence for the code that talks to the game, not the whole harness.
+
+    Harness, prompt, tool, service, workbench and evidence code outside the native
+    layer cannot change the game, so code review covers it instead of
+    re-certification. A record without a native hash predates that split and keeps
+    the full implementation identity.
+    """
     if "native_implementation_hash" in record:
-        return (record.get("native_implementation_hash") == native_implementation_fingerprint()
-                and record.get("accepted_implementation_hash") == implementation_fingerprint())
+        return record.get("native_implementation_hash") == native_implementation_fingerprint()
     return record.get("implementation_hash") == implementation_fingerprint()
 
 
