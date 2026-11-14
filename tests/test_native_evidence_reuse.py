@@ -188,7 +188,7 @@ def test_reuse_fails_closed_without_changing_active_certificate(migration, failu
     assert (root/'private/capability-certificate.json').read_bytes() == before
 
 
-def test_native_gate_requires_both_native_identity_and_explicit_harness_acceptance(migration, monkeypatch):
+def test_native_gate_admits_a_reused_certificate_on_native_identity(migration, monkeypatch):
     root, candidate, report, _ = migration
     cert, _ = reuse.prepare(root, candidate, 'baseline', report)
     monkeypatch.setattr(certification, 'ROOT', root)
@@ -196,16 +196,11 @@ def test_native_gate_requires_both_native_identity_and_explicit_harness_acceptan
     path = root/'private/capability-certificate.json'
     path.write_text(json.dumps(cert))
     certification.require_environment_certificate({'test': 'runtime'}, Environment())
-    for field in ('native_implementation_hash', 'accepted_implementation_hash', 'environment_hash'):
+    for field in ('native_implementation_hash', 'environment_hash'):
         bad = {**cert, field: 'wrong'}
         path.write_text(json.dumps(bad))
         with pytest.raises(NativeFailure, match='NATIVE_CAPABILITY_CERTIFICATE_MISMATCH'):
             certification.require_environment_certificate({'test': 'runtime'}, Environment())
-    path.write_text(json.dumps(cert))
-    agent = candidate/'src/balatro_horizons/harness/context/memory.py'
-    agent.write_bytes(agent.read_bytes() + b'\n# another unaccepted harness change\n')
-    with pytest.raises(NativeFailure, match='NATIVE_CAPABILITY_CERTIFICATE_MISMATCH'):
-        certification.require_environment_certificate({'test': 'runtime'}, Environment())
 
 
 def test_old_checkpoint_source_identity_still_fails_closed(migration, monkeypatch):

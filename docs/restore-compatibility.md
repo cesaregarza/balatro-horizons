@@ -207,6 +207,20 @@ rewritten. No upgrade group admits them: no production checkpoint was recorded
 under `append_only_decision_v1` (the newest native run predates it), so a
 migration would have no consumer.
 
+### Native run gate
+
+The run gate now binds a capability certificate to its native implementation
+hash, lock digest, deck/stake pair and passed status, and no longer to the
+whole-harness fingerprint. This edits one execution module,
+`evidence/provenance.py`, and changes nothing a run executes once admitted.
+Checkpoints recorded at `68fe9fa`, whose full fingerprint is `a0f8e2cc…`, may
+adopt it: the group pins that exact source and the old and accepted whole-module
+ASTs. The native manifest is byte-identical. A capability certificate is being
+produced at `68fe9fa`, so runs started under it are this migration's consumer.
+Unlisted fingerprints, reverts and further edits of the target module refuse with
+`RESTORE_SOURCE_INCOMPATIBLE`. The receipt, operator consent, release/environment
+and single-replay gates still apply.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game

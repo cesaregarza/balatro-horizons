@@ -154,6 +154,15 @@ WORKSPACE_UPGRADES = {
 }
 
 
+# The run gate binds certificates to native identity from 68fe9fa onward; run
+# execution is unchanged. Only that exact source adopts the new gate rule.
+NATIVE_GATE_SOURCE = "a0f8e2cc5bef01e771c72fc102c3bdaf775792f2a132c7ef8c966ee9545f753a"
+NATIVE_GATE_UPGRADES = {
+    "evidence/provenance.py": (
+        "36cb2ee8347bd6cfa0655b3246d543089fe58b0e88c77a82e880d8bf74997025",
+        "8edec6bf5151174f1463ce0f783b53c7eca3ce5a4b3f4e597ffbf14dfa511ce8"),
+}
+
 def upgrade_historical_manifest(manifest, source_hash, *, preserved_provider=None):
     result = dict(manifest)
     prefix = "src/balatro_horizons/"
@@ -164,7 +173,8 @@ def upgrade_historical_manifest(manifest, source_hash, *, preserved_provider=Non
     for path, accepted in SOURCE_ADDITIONS.get(source_hash, {}).items():
         result.setdefault(prefix + path, accepted)
     upgrades = {FUNDING_SOURCE: FUNDING_UPGRADES,
-                RUN_CONFIGURATION_SOURCE: RUN_CONFIGURATION_UPGRADES}.get(source_hash, {})
+                RUN_CONFIGURATION_SOURCE: RUN_CONFIGURATION_UPGRADES,
+                NATIVE_GATE_SOURCE: NATIVE_GATE_UPGRADES}.get(source_hash, {})
     preserved_claude_upgrade = (preserved_provider in ("openai", "baseline")
                                and source_hash in (CLAUDE_SOURCE, RUN_CONFIGURATION_SOURCE))
     if preserved_claude_upgrade:
