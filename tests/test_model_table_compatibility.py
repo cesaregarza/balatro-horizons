@@ -1,5 +1,11 @@
 """Runs recorded before the model tables restore only across that exact change."""
 
+import io
+import json
+import os
+import subprocess
+import sys
+import tarfile
 from copy import deepcopy
 
 import pytest
@@ -125,3 +131,143 @@ def test_unknown_historical_fingerprint_cannot_use_model_table_mapping(
             {"implementation_hash": source},
             game_kind="native",
         )
+
+
+# Previously declared models, each restored exactly as before the model tables.
+DECLARED = [
+    *(
+        {"provider": "anthropic", "model": model}
+        for model in (
+            "claude-fable-5-1",
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-haiku-5-5",
+        )
+    ),
+    *(
+        {"provider": "openai", "model": model}
+        for model in (
+            "gpt-6-sol",
+            "gpt-6-luna",
+            "gpt-6-terra",
+            "gpt-6-astra",
+            "gpt-5.6-luna",
+            "gpt-5.6-terra",
+            "gpt-5.6-sol",
+            "gpt-5.6-astra",
+        )
+    ),
+    None,
+]
+NEW_OPENAI = ["gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6.1-sol"]
+FABLE_5_2 = {"provider": "anthropic", "model": "claude-fable-5-2"}
+# Builds each first request offline, with no client, for settings both sources accept.
+FIRST_REQUESTS = """
+import hashlib, json
+from balatro_horizons.config import Limits, ModelConfig
+from balatro_horizons.contracts import RemainingBudget
+from balatro_horizons.game.fake import FakeGame
+from balatro_horizons.harness.context.build import context
+from balatro_horizons.harness.transport import DirectProvider
+from balatro_horizons.observations.projection import HandleIssuer, project_public
+
+view = project_public(FakeGame().observe_private(), episode_id="e" * 32, observation_id=0,
+                      issuer=HandleIssuer(b"a" * 32), memory="",
+                      remaining_budget=RemainingBudget(game_actions=1500, provider_calls=2000))
+low = ["low", "medium", "high", "xhigh", "max"]
+rows = {"gpt-6.2-astra": low, "gpt-6.2-sol": low, "gpt-6.1-sol": low,
+        "gpt-6.1-terra": ["none", *low]}
+out = {}
+for model, efforts in rows.items():
+    cases = [{}, *({"reasoning_effort": e} for e in efforts),
+             *({"reasoning_effort": "medium", "reasoning_summary": s}
+               for s in ("concise", "detailed"))]
+    if "none" in efforts:
+        cases.append({"reasoning_effort": "none", "temperature": 0.5})
+    for settings in cases:
+        config = ModelConfig(provider="openai", model=model, input_usd_per_million=1,
+                             output_usd_per_million=2, cached_input_usd_per_million=0.1,
+                             cache_write_input_usd_per_million=1.25,
+                             pricing_date="2026-11-22", settings=settings)
+        body = DirectProvider(config, Limits()).request(context(view), [])
+        out[model + json.dumps(settings, sort_keys=True)] = hashlib.sha256(
+            json.dumps(body, sort_keys=True).encode()).hexdigest()
+print(json.dumps(out, sort_keys=True))
+"""
+
+
+def admission(source, model, game_kind="native"):
+    protocol = {"implementation_hash": source, "model": model}
+    try:
+        receipt = compatibility.prepare_compatibility({source}, protocol, game_kind=game_kind)
+        compatibility.validate_compatibility(receipt)
+    except ValueError as error:
+        return str(error)
+    return "admitted"
+
+
+def first_requests(source_root):
+    result = subprocess.run(
+        [sys.executable, "-c", FIRST_REQUESTS],
+        cwd=source_root,
+        check=True,
+        capture_output=True,
+        env={**os.environ, "PYTHONPATH": str(source_root / "src")},
+    )
+    return json.loads(result.stdout)
+
+
+@pytest.mark.parametrize("game_kind", ["native", "synthetic"])
+def test_frozen_fable_5_2_run_is_refused_before_any_request(deployed, approved_target, game_kind):
+    _, sources = deployed
+    outcome = admission(fingerprint_sources(sources), FABLE_5_2, game_kind)
+    assert outcome == "RESTORE_MODEL_REQUEST_CHANGED"
+
+
+def test_execution_refuses_a_fable_5_2_receipt(deployed, monkeypatch):
+    commit, sources = deployed
+    bundle = {"implementation_hash": fingerprint_sources(sources), "model": FABLE_5_2}
+    record = {
+        "protocol_hash": digest(bundle),
+        "preserved_provider": None,
+        "source_revisions": {bundle["implementation_hash"]: commit},
+    }
+    monkeypatch.setattr(compatibility, "read_compatibility", lambda *_: record)
+    try:
+        compatibility.require_protocol_compatibility(None, {}, bundle)
+        outcome = "admitted"
+    except ValueError as error:
+        outcome = str(error)
+    assert outcome == "RESTORE_MODEL_REQUEST_CHANGED"
+
+
+@pytest.mark.parametrize("model", DECLARED, ids=lambda model: model and model["model"])
+def test_previously_declared_models_and_baselines_restore_as_before(
+    deployed, approved_target, model
+):
+    _, sources = deployed
+    assert admission(fingerprint_sources(sources), model) == "admitted"
+
+
+@pytest.mark.parametrize("model", NEW_OPENAI)
+def test_new_openai_runs_restore_because_their_requests_are_unchanged(
+    deployed, approved_target, model
+):
+    _, sources = deployed
+    assert admission(fingerprint_sources(sources), {"provider": "openai", "model": model}) == (
+        "admitted"
+    )
+
+
+@pytest.mark.parametrize("commit", [CERTIFIED, MAIN])
+def test_new_openai_first_requests_are_byte_identical_at_each_source(commit, tmp_path):
+    archive = subprocess.run(
+        ["git", "-C", str(ROOT), "archive", commit, "src", "configs"],
+        check=True,
+        capture_output=True,
+    ).stdout
+    with tarfile.open(fileobj=io.BytesIO(archive)) as contents:
+        contents.extractall(tmp_path, filter="data")
+    historical, current = first_requests(tmp_path), first_requests(ROOT)
+    assert len(current) == 34
+    assert historical == current
