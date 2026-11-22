@@ -46,12 +46,17 @@ def approved_target(monkeypatch):
 
 
 def changes(before, after):
-    return {name.removeprefix(PREFIX): (before.get(name), after.get(name))
-            for name in before.keys() | after.keys() if before.get(name) != after.get(name)}
+    return {
+        name.removeprefix(PREFIX): (before.get(name), after.get(name))
+        for name in before.keys() | after.keys()
+        if before.get(name) != after.get(name)
+    }
 
 
 def test_both_deployed_sources_are_listed():
-    sources = {fingerprint_sources(revision_sources(ROOT, commit)[1]) for commit in (CERTIFIED, MAIN)}
+    sources = {
+        fingerprint_sources(revision_sources(ROOT, commit)[1]) for commit in (CERTIFIED, MAIN)
+    }
     assert sources == set(MODEL_TABLE_SOURCES)
     assert NATIVE_GATE_SOURCE in MODEL_TABLE_SOURCES
 
@@ -79,7 +84,11 @@ def test_model_tables_are_the_only_execution_delta(deployed, approved_target, pr
 @pytest.mark.parametrize("path", list(MODEL_TABLE_UPGRADES))
 @pytest.mark.parametrize("mutation", ["revert", "extra_statement", "missing"])
 def test_unreviewed_target_cannot_inherit_model_table_approval(
-    deployed, approved_target, monkeypatch, path, mutation,
+    deployed,
+    approved_target,
+    monkeypatch,
+    path,
+    mutation,
 ):
     _, sources = deployed
     source = fingerprint_sources(sources)
@@ -102,7 +111,9 @@ def test_unreviewed_target_cannot_inherit_model_table_approval(
 
 
 def test_unknown_historical_fingerprint_cannot_use_model_table_mapping(
-    deployed, approved_target, monkeypatch,
+    deployed,
+    approved_target,
+    monkeypatch,
 ):
     commit, sources = deployed
     altered = {**sources, PREFIX + "config.py": sources[PREFIX + "config.py"] + b"\n# unlisted\n"}
@@ -110,5 +121,7 @@ def test_unknown_historical_fingerprint_cannot_use_model_table_mapping(
     monkeypatch.setattr(compatibility, "revision_sources", lambda *_: (commit, altered))
     with pytest.raises(ValueError, match="^RESTORE_SOURCE_INCOMPATIBLE$"):
         compatibility.prepare_compatibility(
-            {source}, {"implementation_hash": source}, game_kind="native",
+            {source},
+            {"implementation_hash": source},
+            game_kind="native",
         )
