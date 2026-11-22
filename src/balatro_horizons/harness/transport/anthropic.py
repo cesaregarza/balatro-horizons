@@ -4,7 +4,7 @@ import os
 
 from balatro_horizons.harness.transport import anthropic_stream
 from balatro_horizons.harness.transport.base import Transport, response_items, single_call
-from balatro_horizons.harness.transport.claude_models import EFFORTS, HAIKU_INPUT_CEILING, MODELS
+from balatro_horizons.harness.transport.claude_models import EFFORTS, MODELS, input_ceiling
 from balatro_horizons.harness.transport.conversation import (
     canonical_messages,
     encode,
@@ -35,13 +35,13 @@ def headers(key):
 def public_capabilities(model, settings):
     current = model in MODELS
     return {
-        "display_name": MODELS[model][0] if current else model,
+        "display_name": MODELS[model].name if current else model,
         "prompt_cache_diagnostics": current,
         "explicit_cache_mode": current,
         "supported_settings": ["reasoning_effort"] if current else ["temperature", "thinking_budget"],
         "unsupported_settings": {},
         "reasoning_efforts": list(EFFORTS) if current else [],
-        "default_reasoning_effort": MODELS[model][1] if current else None,
+        "default_reasoning_effort": MODELS[model].default_effort if current else None,
     }
 
 
@@ -145,7 +145,8 @@ def request_body(transport, ctx, exchanges):
     }
     if model in MODELS:
         body["thinking"] = {"type": "adaptive", "display": "summarized"}
-        body["output_config"] = {"effort": settings.get("reasoning_effort", MODELS[model][1])}
+        effort = settings.get("reasoning_effort", MODELS[model].default_effort)
+        body["output_config"] = {"effort": effort}
     if "thinking_budget" in settings:
         if settings["thinking_budget"] >= body["max_tokens"]:
             raise ProviderFailure("THINKING_BUDGET_MUST_BE_BELOW_OUTPUT_LIMIT")
@@ -163,7 +164,8 @@ def request_body(transport, ctx, exchanges):
 
 
 def validate_config(model, limits):
-    if model.model == "claude-haiku-5-5" and limits.max_input_tokens_per_call > HAIKU_INPUT_CEILING:
+    ceiling = input_ceiling(model.model)
+    if ceiling is not None and limits.max_input_tokens_per_call > ceiling:
         raise ProviderFailure("CLAUDE_LONG_CONTEXT_PRICING_NOT_CONFIGURED")
     if "thinking_budget" in model.settings:
         budget = model.settings["thinking_budget"]
@@ -179,8 +181,9 @@ def usage_cost(model, response, reserved):
     if totals is None:
         return reserved
     ordinary, output, cached, writes = totals
-    if model.model == "claude-haiku-5-5" and ordinary + cached + writes > HAIKU_INPUT_CEILING:
-        return reserved  # This release does not configure Haiku's long-context tier.
+    ceiling = input_ceiling(model.model)
+    if ceiling is not None and ordinary + cached + writes > ceiling:
+        return reserved  # This release does not configure the long-context tier.
     if model.cached_input_usd_per_million is None:
         if writes:
             return reserved

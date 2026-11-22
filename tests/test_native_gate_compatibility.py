@@ -7,13 +7,19 @@ import pytest
 from balatro_horizons.config import ROOT
 from balatro_horizons.evidence import compatibility
 from balatro_horizons.evidence.execution_identity import execution_manifest
-from balatro_horizons.evidence.identity_migrations import NATIVE_GATE_SOURCE, NATIVE_GATE_UPGRADES
+from balatro_horizons.evidence.identity_migrations import (
+    MODEL_TABLE_UPGRADES,
+    NATIVE_GATE_SOURCE,
+    NATIVE_GATE_UPGRADES,
+)
 from balatro_horizons.evidence.provenance import fingerprint_sources, native_component_manifest
 from balatro_horizons.evidence.reuse import revision_sources
 from balatro_horizons.storage.journal import digest
 
 DEPLOYED = "68fe9fa25844eb23836292ab89de0cb594d4a1f2"
-APPROVED_TARGET = "7d0165c5f2b8fb78652e8c199b93ee7e50c454bd"
+GATE_TARGET = "7d0165c5f2b8fb78652e8c199b93ee7e50c454bd"
+# The model-table group composes with this one; runs at 68fe9fa now restore at its target.
+APPROVED_TARGET = "640a198a4ca3ce210c03377bfe92b1a256d1ba07"
 PREFIX = "src/balatro_horizons/"
 
 
@@ -36,12 +42,15 @@ def approved_target(monkeypatch):
 
 @pytest.mark.parametrize("game_kind", ["native", "synthetic"])
 def test_native_gate_rule_is_the_only_execution_delta(deployed, approved_target, game_kind):
-    before, after = execution_manifest(deployed), execution_manifest(approved_target)
+    _, gate = revision_sources(ROOT, GATE_TARGET)
+    before, after = execution_manifest(deployed), execution_manifest(gate)
     changed = {name.removeprefix(PREFIX): (before.get(name), after.get(name))
                for name in before.keys() | after.keys() if before.get(name) != after.get(name)}
     assert changed == NATIVE_GATE_UPGRADES
-    assert native_component_manifest(deployed) == native_component_manifest(approved_target)
-    assert execution_manifest(deployed, historical=True) == after
+    assert native_component_manifest(deployed) == native_component_manifest(gate)
+    tables = {PREFIX + path: target for path, (_, target) in MODEL_TABLE_UPGRADES.items()}
+    assert execution_manifest(deployed, historical=True) == {**after, **tables}
+    assert execution_manifest(approved_target) == {**after, **tables}
     protocol = {"implementation_hash": NATIVE_GATE_SOURCE}
     original = deepcopy(protocol)
     receipt = compatibility.prepare_compatibility({NATIVE_GATE_SOURCE}, protocol, game_kind=game_kind)

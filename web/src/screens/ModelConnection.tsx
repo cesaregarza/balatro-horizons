@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { bootstrap, saveSettings } from "../api/client";
-import { modelCatalog, modelKey, modelLabel, supportedSettings, type ModelConfig } from "../modelSelection";
+import { modelCatalog, modelKey, modelLabel, providerName, supportedSettings, type ModelConfig } from "../modelSelection";
 
 type Draft = {
   provider: ModelConfig["provider"];
@@ -56,11 +56,11 @@ export function ModelConnection({ config, setConfig, run, setNotice, credentials
   return <section className="panel">
     <h2>Model connection & pricing</h2>
     {Object.keys(presets).length > 0 && <>
-      <label>Claude preset<select aria-label="Claude preset" value="" onChange={(e) => edit(presets[e.target.value])}>
-        <option value="" disabled>Choose a Claude preset…</option>
-        {Object.keys(presets).map((name) => <option key={name} value={name}>{name}</option>)}
+      <label>Preset<select aria-label="Preset" value="" onChange={(e) => edit(presets[e.target.value])}>
+        <option value="" disabled>Choose a preset…</option>
+        {Object.entries(presets).map(([name, preset]) => <option key={name} value={name}>{`${name} · ${providerName(preset.provider)}`}</option>)}
       </select></label>
-      <p className="muted">Prefills standard API pricing and adaptive thinking; nothing changes until you save. Review the pricing date. Haiku presets cover inputs up to 100k tokens.</p>
+      <p className="muted">Prefills standard API pricing and a reasoning effort; nothing changes until you save. Review the pricing date. Claude Haiku presets cover inputs up to 100k tokens; OpenAI presets cover inputs up to 272K tokens.</p>
     </>}
     <form onSubmit={(e) => { e.preventDefault(); run(save); }}>
       <label>Provider<select aria-label="Provider" value={draft.provider} onChange={(e) => update("provider", e.target.value)}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></label>

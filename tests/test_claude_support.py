@@ -20,13 +20,14 @@ from balatro_horizons.harness.context.build import decision_context
 from balatro_horizons.harness.loop import Runner
 from balatro_horizons.harness.money import Spending
 from balatro_horizons.harness.transport import DirectProvider, ProviderFailure
-from balatro_horizons.harness.transport.claude_models import presets
 
-NAMES = ("Fable 5.1", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5")
+NAMES = ("Fable 5.2", "Fable 5.1", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5")
 
 
 def claude(name="Sonnet 5.5", **settings):
-    value = presets()[f"Claude {name}"]
+    presets = Config().public()["model_presets"]
+    assert f"Claude {name}" in presets
+    value = presets[f"Claude {name}"]
     if settings:
         value["settings"] = settings
     return ModelConfig.model_validate(value)
@@ -58,7 +59,7 @@ def test_adaptive_request_preserves_v8_tools_and_caches_only_stable_prefix(name,
     assert body["system"] == policy.request(ctx, [])["system"]
 
 
-@pytest.mark.parametrize("name,default", zip(NAMES, ("high", "medium", "high", "medium"), strict=True))
+@pytest.mark.parametrize("name,default", zip(NAMES, ("high", "high", "medium", "high", "medium"), strict=True))
 def test_explicit_model_defaults_and_public_capabilities(name, default):
     values = claude(name).model_dump()
     values["settings"] = {}
@@ -204,7 +205,7 @@ def test_presets_are_read_only_until_explicit_settings_save_and_run_effort_is_sc
     app.state.runs.start = Mock(return_value="a" * 32)
     with TestClient(app) as client:
         initial = client.get("/api/bootstrap").json()
-        assert len(initial["config"]["model_presets"]) == 4
+        assert len(initial["config"]["model_presets"]) == 11
         assert list(initial["config"]["models"]) == ["existing"]
         assert not app.state.settings_path.exists()
         chosen = initial["config"]["model_presets"]["Claude Haiku 5.5"]

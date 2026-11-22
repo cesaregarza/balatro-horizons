@@ -2,7 +2,7 @@
 
 from urllib.parse import quote
 
-from balatro_horizons.harness.transport import anthropic, openai
+from balatro_horizons.harness.transport import anthropic, claude_models, openai, openai_models
 from balatro_horizons.harness.transport.anthropic import (
     CAPABILITIES as ANTHROPIC_CAPABILITIES,
 )
@@ -71,6 +71,37 @@ def validate_settings(provider, model, settings):
         anthropic_validate(model, settings)
 
 
+# Both providers' preset prices were read from their docs on this date.
+PRESET_PRICING_DATE = "2026-11-22"
+
+
+def model_presets():
+    """Settings' preset list: every declared model with a preset, keyed by display name."""
+    rows = [
+        ("anthropic", model, row.name, row.default_effort, row.rates)
+        for model, row in claude_models.MODELS.items()
+    ]
+    rows += [
+        ("openai", model, row.name, *row.preset)
+        for model, row in openai_models.MODELS.items()
+        if row.preset
+    ]
+    # Fresh dictionaries: choosing a preset must not mutate saved defaults.
+    return {
+        name: {
+            "provider": provider,
+            "model": model,
+            "input_usd_per_million": rates[0],
+            "output_usd_per_million": rates[1],
+            "cache_write_input_usd_per_million": rates[2],
+            "cached_input_usd_per_million": rates[3],
+            "pricing_date": PRESET_PRICING_DATE,
+            "settings": {"reasoning_effort": effort},
+        }
+        for provider, model, name, effort, rates in rows
+    }
+
+
 def public_capability_table(models):
     providers = {
         name: {"supported_settings": sorted(table["supported_settings"])}
@@ -92,6 +123,7 @@ __all__ = [
     "Transport",
     "canonical_messages",
     "context_payload",
+    "model_presets",
     "public_capability_table",
     "tool_messages",
     "validate_settings",

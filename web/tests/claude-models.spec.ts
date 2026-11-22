@@ -54,7 +54,7 @@ async function mockApp(page: Page, options: { savedClaude?: boolean; rejectSave?
 test("Claude preset is opt-in and explicit save preserves existing models and caps", async ({ page }) => {
   const { settings, starts } = await mockApp(page);
   await page.getByRole("button", { name: "Models & budgets", exact: true }).click();
-  await page.getByLabel("Claude preset").selectOption("Claude Sonnet 5.5");
+  await page.getByLabel("Preset", { exact: true }).selectOption("Claude Sonnet 5.5");
   await expect(page.getByLabel("Provider", { exact: true })).toHaveValue("anthropic");
   await expect(page.getByLabel("Exact model identifier")).toHaveValue("claude-sonnet-5-5");
   await expect(page.getByLabel("Input $ / million tokens", { exact: true })).toHaveValue("2");
@@ -97,7 +97,7 @@ test("manually configured Claude uses its declared default effort", async ({ pag
 test("Claude cache pricing must be paired and can be explicitly cleared", async ({ page }) => {
   const { settings } = await mockApp(page, { savedClaude: true });
   await page.getByRole("button", { name: "Models & budgets", exact: true }).click();
-  await page.getByLabel("Claude preset").selectOption("Claude Sonnet 5.5");
+  await page.getByLabel("Preset", { exact: true }).selectOption("Claude Sonnet 5.5");
   await page.getByLabel("Cache read $ / million tokens").fill("");
   await expect(page.getByRole("button", { name: "Save model", exact: true })).toBeDisabled();
   await page.getByLabel("Cache write $ / million tokens").fill("");
@@ -110,7 +110,7 @@ test("Claude cache pricing must be paired and can be explicitly cleared", async 
 test("invalid settings JSON and server refusal surface without losing the form", async ({ page }) => {
   const { settings } = await mockApp(page, { rejectSave: true });
   await page.getByRole("button", { name: "Models & budgets", exact: true }).click();
-  await page.getByLabel("Claude preset").selectOption("Claude Sonnet 5.5");
+  await page.getByLabel("Preset", { exact: true }).selectOption("Claude Sonnet 5.5");
   await page.getByLabel("Additional model settings (JSON)").fill("[]");
   await page.getByRole("button", { name: "Save model", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Model settings must be a JSON object.");

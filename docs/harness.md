@@ -222,6 +222,36 @@ are best effort; actual usage establishes cache read/write charges. Reserve the
 highest configured input rate, and keep the full reservation on inconsistent
 usage rather than double-counting disjoint cache categories.
 
+### Presets
+
+In **Models & budgets**, one **Preset** list offers every declared model, labelled
+with its provider. Choosing one fills the provider, exact model ID, all four prices,
+pricing date 2026-11-22 and a reasoning effort; nothing changes until **Save model**.
+OpenAI presets fill both cache rates because the run screen refuses an OpenAI model
+without them. Claude Haiku presets cover inputs up to 100k tokens; OpenAI presets
+cover standard short-context inputs up to 272K tokens. Each provider's model facts
+live in one table keyed by model ID (`harness/transport/claude_models.py`,
+`harness/transport/openai_models.py`); settings rules, display names and presets all
+read it. Claude presets are listed under [Claude](#claude). OpenAI presets use
+standard short-context USD/million, verified 2026-11-22, with the 30-minute cache write:
+
+| Model | Input | Cache read | Cache write | Output | Efforts | Preset | Temperature |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+| `gpt-6.2-astra` | 8.00 | 0.40 | 10.00 | 40.00 | `low`–`max` | `medium` | refused |
+| `gpt-6.2-sol` | 2.00 | 0.10 | 2.50 | 10.00 | `low`–`max` | `medium` | refused |
+| `gpt-6.1-terra` | 1.00 | 0.05 | 1.25 | 5.00 | `none`–`max` | `medium` | only with `none` |
+| `gpt-6.1-sol` | 2.00 | 0.10 | 2.50 | 10.00 | `low`–`max` | `medium` | refused |
+| `gpt-6-sol` | 2.00 | 0.20 | 2.50 | 10.00 | `none`–`max` | `medium` | only with `none` |
+| `gpt-6-luna` | 0.10 | 0.01 | 0.125 | 0.50 | `none`–`max` | `medium` | only with `none` |
+
+`low`–`max` is `low`, `medium`, `high`, `xhigh`, `max`; `none`–`max` adds `none`.
+All six refuse `minimal`, and the `low`–`max` models refuse `none`, before any paid
+request. OpenAI states no default effort for GPT-6.2; its guide says to start with
+`medium`. Other OpenAI models keep their earlier rules. Sources:
+[pricing](https://developers.openai.com/api/docs/pricing),
+[model pages](https://developers.openai.com/api/docs/models/),
+[GPT-6.2 guide](https://developers.openai.com/api/docs/guides/latest-model).
+
 ### GPT-6 Sol and Luna
 
 Opt-in [gpt6-sol-smoke.yaml](../configs/gpt6-sol-smoke.yaml) and [gpt6-luna-smoke.yaml](../configs/gpt6-luna-smoke.yaml)
@@ -243,8 +273,8 @@ Use `bh human register` with a new alias, an existing model to clone and all fou
 
 ### Claude
 
-In **Models & budgets**, choose a Claude preset, review its dated prices, then
-**Save model**. This does not change existing models, paid-execution permission,
+In **Models & budgets**, choose a Claude model from the **Preset** list, review its
+dated prices, then **Save model**. This does not change existing models, paid-execution permission,
 or spending caps. Configure `ANTHROPIC_API_KEY` in the backend using the credential
 workflow above, not the browser. In **Start a run**, choose the saved Claude model
 and reasoning effort. Launch choices are run-only unless explicitly saved as defaults.
@@ -267,16 +297,17 @@ The offline-check command strips all three values before running checks.
 
 The presets use the direct Messages API, standard global capacity
 (`service_tier: standard_only`), adaptive thinking, and efforts `low`, `medium`,
-`high`, `xhigh`, `max`. Fable and Sonnet default to `high`; Opus and Haiku to
-`medium`. These exact model IDs reject `temperature` and manual `thinking_budget`
+`high`, `xhigh`, `max`. Fable 5.2, Fable 5.1 and Sonnet default to `high`; Opus and
+Haiku to `medium`. These exact model IDs reject `temperature` and manual `thinking_budget`
 settings locally. Older/custom identifiers retain manual thinking, whose budget
 must be smaller than the output ceiling; undeclared adaptive effort is refused.
 The shared output ceiling stays 32,768 and the harness stays `tools_v8.5`.
 
-Standard global API USD/million, verified 2026-10-08:
+Standard global API USD/million, verified 2026-11-22:
 
 | Exact model | Input | Cache read | 5-minute cache write | Output |
 | --- | ---: | ---: | ---: | ---: |
+| `claude-fable-5-2` | 8.00 | 0.20 | 10.00 | 40.00 |
 | `claude-fable-5-1` | 10.00 | 0.25 | 12.50 | 50.00 |
 | `claude-opus-5-5` | 4.00 | 0.20 | 5.00 | 20.00 |
 | `claude-sonnet-5-5` | 2.00 | 0.10 | 2.50 | 10.00 |
@@ -286,7 +317,7 @@ Haiku's preset covers at most 100,000 total input tokens (including cached input
 Larger input ceilings refuse before counting or generation because long-context
 pricing is unconfigured. All presets keep the existing 32,768 input ceiling.
 The full worst-case reservation must fit the chosen dollar cap; for example,
-Fable's default per-call reservation is $2.048. Saving a model never raises a cap.
+Fable 5.1's default per-call reservation is $2.048 and Fable 5.2's is $1.638. Saving a model never raises a cap.
 
 Both cache prices enable a five-minute breakpoint on the frozen system prefix,
 after tools and before dynamic observations, money, memory and helper outputs, and

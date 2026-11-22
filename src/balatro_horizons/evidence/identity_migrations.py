@@ -163,6 +163,49 @@ NATIVE_GATE_UPGRADES = {
         "8edec6bf5151174f1463ce0f783b53c7eca3ce5a4b3f4e597ffbf14dfa511ce8"),
 }
 
+
+# One model table per provider, five added models and presets for every model. Existing
+# models keep their rules, so runs of every provider recorded at the certified 68fe9fa
+# or at main 6b95c0c adopt it. Only those two exact sources are listed.
+MODEL_TABLE_SOURCES = (
+    NATIVE_GATE_SOURCE,
+    "e9b5120a1ed107c41580ba5bcf9eeed19de83df2e811e36303445545b7907399",
+)
+MODEL_TABLE_UPGRADES = {
+    "config.py": (
+        "dafa707728a327b23726193e5742854cb8f07254991a11cbe15764fa9801f15c",
+        "4ffa79bd55f2737ef5f9ea85f90ae1c8600c4de94432181a484b3acb2420b792"),
+    "harness/transport/__init__.py": (
+        "723c5986a3e4b7874eae958415ba6ba0774f6335d6404568bf1b2a352df1b2b1",
+        "52271f75bd61d7168fe9633637deb040a00843bcebc8f6286fbe5f39547beac8"),
+    "harness/transport/anthropic.py": (
+        "c4ca5c00736b69f61a4cb019e4b6fb392d5bb3426ab1bc63755004dcfe4821fb",
+        "b493f996bd05989735c70c284d5a1983151fda7fbadadbfedf2ab66fd1c563bd"),
+    "harness/transport/claude_models.py": (
+        "1f30411336a6055292d54285ca90483defc06992a96071ebb5b27f1e2a604b27",
+        "a6a744f3675a0254bd2d263726e602e5b1851736f4adf07317e84255609713c7"),
+    "harness/transport/openai.py": (
+        "fef1e74b74f87d7a886c3db97336bc6abb18d2522ef0b822727d19de304f0dd0",
+        "dd2e505883de659e6d38785ef6ac754a58662b582fa7dc2bba2a02e888865069"),
+    "harness/transport/openai_models.py": (
+        None, "9307d6c0e3bf45194aeeb57f689dcfd5d7d1dfcd0a49d7a6211a57c96063384f"),
+}
+# Newly declared models whose request differs from the one a run built when it named
+# them at these sources. Its earlier request omitted thinking and effort; it now asks for
+# adaptive thinking with a summarized display. The new OpenAI models build identical
+# requests, so they restore.
+MODEL_TABLE_REFUSED = frozenset({("anthropic", "claude-fable-5-2")})
+REFUSED_FROZEN_MODELS = dict.fromkeys(MODEL_TABLE_SOURCES, MODEL_TABLE_REFUSED)
+
+
+def refuses_frozen_model(source_hash, model):
+    """Whether a run recorded at this source on this frozen model must not restore here."""
+    if not isinstance(model, dict):
+        return False
+    refused = REFUSED_FROZEN_MODELS.get(source_hash, frozenset())
+    return (model.get("provider"), model.get("model")) in refused
+
+
 def upgrade_historical_manifest(manifest, source_hash, *, preserved_provider=None):
     result = dict(manifest)
     prefix = "src/balatro_horizons/"
@@ -182,6 +225,8 @@ def upgrade_historical_manifest(manifest, source_hash, *, preserved_provider=Non
     groups = [upgrades]
     if source_hash == WORKSPACE_SOURCE or preserved_claude_upgrade:
         groups.append(WORKSPACE_UPGRADES)
+    if source_hash in MODEL_TABLE_SOURCES:
+        groups.append(MODEL_TABLE_UPGRADES)
     for group in groups:
         for path, (previous, accepted) in group.items():
             name = prefix + path

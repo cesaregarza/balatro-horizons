@@ -170,8 +170,7 @@ class Config(Options):
         return self
 
     def public(self):
-        from balatro_horizons.harness.transport import public_capability_table
-        from balatro_horizons.harness.transport.claude_models import presets
+        from balatro_horizons.harness.transport import model_presets, public_capability_table
 
         return {
             "benchmark": self.benchmark,
@@ -182,7 +181,7 @@ class Config(Options):
             "budgets": self.budgets.model_dump(),
             "models": {k: v.model_dump() for k, v in self.models.items()},
             "model_capabilities": public_capability_table(self.models),
-            "model_presets": presets(),
+            "model_presets": model_presets(),
         }
 
 

@@ -14,11 +14,10 @@ from balatro_horizons.harness.transport.errors import (
     ProtocolFailure,
     ProviderFailure,
 )
+from balatro_horizons.harness.transport.openai_models import declared
 from balatro_horizons.harness.transport.sse import strict_json
 
 MODEL_VERSION = re.compile(r"^gpt-(\d+)(?:\.(\d+))?(?:-|$)")
-DISPLAY_MODEL = re.compile(r"^gpt-(5\.6|6)-(luna|terra|sol|astra)$")
-GPT6_SOL_LUNA = frozenset({"gpt-6-sol", "gpt-6-luna"})
 
 
 def prompt_cache_diagnostics(model):
@@ -34,35 +33,29 @@ def explicit_cache_mode(model):
 
 def unsupported_settings(model):
     # Reject unsupported efforts before a paid request.
-    if model == "gpt-5.6-luna" or model in GPT6_SOL_LUNA:
-        return {"reasoning_effort": {"minimal"}}
-    return {}
+    refused = declared(model).refused_efforts
+    return {"reasoning_effort": set(refused)} if refused else {}
 
 
 def validate_settings(model, settings):
-    if (
-        model in GPT6_SOL_LUNA
-        and "temperature" in settings
-        and settings.get("reasoning_effort", "medium") != "none"
-    ):
+    rule = declared(model).temperature
+    if "temperature" not in settings or rule == "any":
+        return
+    if rule == "never":
+        raise ValueError(f"{model} does not support temperature")
+    if settings.get("reasoning_effort", "medium") != "none":
         raise ValueError(f"{model} supports temperature only with reasoning_effort none")
 
 
 def reasoning_efforts(model, pinned):
-    if model in GPT6_SOL_LUNA or re.match(r"^gpt-5\.6(?:-|$)", model):
-        return ("none", "low", "medium", "high", "xhigh", "max")
-    if re.match(r"^gpt-6-astra(?:-|$)", model):
-        return ("low", "medium", "high", "xhigh", "max")
+    if efforts := declared(model).efforts:
+        return efforts
     value = pinned.get("reasoning_effort")
     return (str(value),) if value else ()
 
 
 def display_name(model):
-    match = DISPLAY_MODEL.fullmatch(model)
-    if not match:
-        return model
-    generation, tier = match.groups()
-    return f"GPT-{generation} {tier.title()}"
+    return declared(model).name or model
 
 
 CAPABILITIES = {

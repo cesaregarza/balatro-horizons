@@ -8,12 +8,12 @@ from balatro_horizons.harness.transport import DirectProvider
 
 
 @pytest.mark.parametrize("name,rates", [
-    ("Fable 5.1", (10, 50, 12.5, 0.25)), ("Opus 5.5", (4, 20, 5, 0.20)),
+    ("Fable 5.2", (8, 40, 10, 0.20)), ("Fable 5.1", (10, 50, 12.5, 0.25)), ("Opus 5.5", (4, 20, 5, 0.20)),
     ("Sonnet 5.5", (2, 10, 2.5, 0.10)), ("Haiku 5.5", (0.10, 0.50, 0.125, 0.01)),
 ])
 def test_preset_prices_and_reservations_cover_cache_write_premium(name, rates):
     model = claude(name)
-    assert model.pricing_date == "2026-10-08"
+    assert model.pricing_date == "2026-11-22"
     assert (model.input_usd_per_million, model.output_usd_per_million,
             model.cache_write_input_usd_per_million, model.cached_input_usd_per_million) == rates
     assert reservation_usd(model, Limits()) == pytest.approx(32768 * (rates[1] + rates[2]) / 1e6)

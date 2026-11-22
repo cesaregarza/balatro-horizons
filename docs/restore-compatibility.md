@@ -221,6 +221,42 @@ Unlisted fingerprints, reverts and further edits of the target module refuse wit
 `RESTORE_SOURCE_INCOMPATIBLE`. The receipt, operator consent, release/environment
 and single-replay gates still apply.
 
+### Model tables and presets
+
+Each provider's model facts now live in one table keyed by model ID, which the
+settings rules, display names and the one provider-labelled preset list all read.
+`claude-fable-5-2`, `gpt-6.2-astra`, `gpt-6.2-sol`, `gpt-6.1-terra` and `gpt-6.1-sol`
+are declared. This edits five execution modules (`config.py`,
+`harness/transport/__init__.py`, `anthropic.py`, `claude_models.py`, `openai.py`) and
+adds `harness/transport/openai_models.py`. The native manifest is byte-identical.
+
+Every previously declared model keeps its efforts, refusals, temperature rule,
+display name, request body and accounting, and tests pin that. So the group applies
+to every provider, like the workspace and native-gate groups, from exactly two
+sources: the certified `68fe9fa` (full fingerprint `a0f8e2cc…`, which also takes the
+native-gate group) and main at `6b95c0c` (`e9b5120a…`). Old and accepted
+whole-module ASTs are pinned, with the reviewed target at `640a198`. Unlisted
+fingerprints, reverts, missing modules and further edits refuse with
+`RESTORE_SOURCE_INCOMPATIBLE`; the receipt, operator consent, release/environment
+and single-replay gates still apply.
+
+A run recorded at either source that named a newly declared model before it was
+declared keeps its frozen configuration. A setting the new rules refuse, such as a
+GPT-6.2 temperature or `none` effort, cannot be configured at the new source, so
+continuation refuses before any request: the saved model fails validation or no
+longer matches the frozen one (`AGENT_PROTOCOL_MODEL_CHANGED`). For the four new
+OpenAI models, every setting both sources accept builds a byte-identical request,
+compared offline at each source and pinned by a test, so those runs restore.
+
+`claude-fable-5-2` is different. Its earlier request omitted the thinking and effort
+fields, so the API defaults applied: adaptive thinking at `high` effort, with the
+thinking display omitted. The new request asks for adaptive thinking with a
+summarized display, so resumed responses and recorded history could change. The
+group lists that model as refused for both sources, and Restore and budget
+continuation refuse such a run with `RESTORE_MODEL_REQUEST_CHANGED` before any
+provider call; execution rechecks the frozen model against its receipt. Runs on
+every previously declared model, and baselines, restore exactly as before.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game
