@@ -46,9 +46,13 @@ function capabilityFor(model: ModelConfig, capabilities: CapabilityTable) {
   return capabilities.models[modelKey(model)];
 }
 
+export function providerName(provider: ModelConfig["provider"]) {
+  return provider === "openai" ? "OpenAI" : "Anthropic";
+}
+
 export function modelLabel(model: ModelConfig, capabilities = EMPTY_CAPABILITIES) {
   const name = capabilityFor(model, capabilities)?.display_name ?? model.model;
-  return `${name} · ${model.provider === "openai" ? "OpenAI" : "Anthropic"}`;
+  return `${name} · ${providerName(model.provider)}`;
 }
 
 // One option per provider/model: saved defaults win; otherwise retain the first configured
