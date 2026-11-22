@@ -240,14 +240,22 @@ fingerprints, reverts, missing modules and further edits refuse with
 `RESTORE_SOURCE_INCOMPATIBLE`; the receipt, operator consent, release/environment
 and single-replay gates still apply.
 
-One case changes behavior. A run recorded at either source that named a newly
-declared model before it was declared now runs under that model's rules. A frozen
-setting those rules refuse, such as a GPT-6.2 temperature or `none` effort, cannot be
-configured at the new source, so continuation refuses before any request: the saved
-model fails validation or no longer matches the frozen one
-(`AGENT_PROTOCOL_MODEL_CHANGED`). A frozen
-`claude-fable-5-2` run without such a setting would restore with adaptive thinking
-at its `high` default instead of the manual or absent thinking it started with.
+A run recorded at either source that named a newly declared model before it was
+declared keeps its frozen configuration. A setting the new rules refuse, such as a
+GPT-6.2 temperature or `none` effort, cannot be configured at the new source, so
+continuation refuses before any request: the saved model fails validation or no
+longer matches the frozen one (`AGENT_PROTOCOL_MODEL_CHANGED`). For the four new
+OpenAI models, every setting both sources accept builds a byte-identical request,
+compared offline at each source and pinned by a test, so those runs restore.
+
+`claude-fable-5-2` is different. Its earlier request omitted the thinking and effort
+fields, so the API defaults applied: adaptive thinking at `high` effort, with the
+thinking display omitted. The new request asks for adaptive thinking with a
+summarized display, so resumed responses and recorded history could change. The
+group lists that model as refused for both sources, and Restore and budget
+continuation refuse such a run with `RESTORE_MODEL_REQUEST_CHANGED` before any
+provider call; execution rechecks the frozen model against its receipt. Runs on
+every previously declared model, and baselines, restore exactly as before.
 
 ## Receipt, branch scope and trust
 
