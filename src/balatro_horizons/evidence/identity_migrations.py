@@ -190,6 +190,20 @@ MODEL_TABLE_UPGRADES = {
     "harness/transport/openai_models.py": (
         None, "9307d6c0e3bf45194aeeb57f689dcfd5d7d1dfcd0a49d7a6211a57c96063384f"),
 }
+# Newly declared models whose request differs from the one a run built when it named
+# them at these sources. Its earlier request omitted thinking and effort; it now asks for
+# adaptive thinking with a summarized display. The new OpenAI models build identical
+# requests, so they restore.
+MODEL_TABLE_REFUSED = frozenset({("anthropic", "claude-fable-5-2")})
+REFUSED_FROZEN_MODELS = dict.fromkeys(MODEL_TABLE_SOURCES, MODEL_TABLE_REFUSED)
+
+
+def refuses_frozen_model(source_hash, model):
+    """Whether a run recorded at this source on this frozen model must not restore here."""
+    if not isinstance(model, dict):
+        return False
+    refused = REFUSED_FROZEN_MODELS.get(source_hash, frozenset())
+    return (model.get("provider"), model.get("model")) in refused
 
 
 def upgrade_historical_manifest(manifest, source_hash, *, preserved_provider=None):

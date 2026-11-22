@@ -6,6 +6,7 @@ import subprocess
 
 from balatro_horizons.config import ROOT
 from balatro_horizons.evidence.execution_identity import execution_manifest
+from balatro_horizons.evidence.identity_migrations import refuses_frozen_model
 from balatro_horizons.evidence.provenance import (
     fingerprint_sources,
     implementation_fingerprint,
@@ -43,6 +44,7 @@ def prepare_compatibility(source_hashes, protocol, *, game_kind):
     previous.discard(current)
     if not previous:
         return None
+    _require_unchanged_model_request(previous, protocol)
     identity = _identity(source_files(ROOT), game_kind=game_kind)
     provider = _preserved_provider(protocol)
     revisions = {}
@@ -61,6 +63,12 @@ def prepare_compatibility(source_hashes, protocol, *, game_kind):
             "accepted_implementation_hash": current,
             "protocol_hash": digest(protocol), "source_revisions": revisions,
             "preserved_provider": provider, **identity}
+
+
+def _require_unchanged_model_request(sources, protocol):
+    # Refused before any provider call: this model's request differs from its source's.
+    if any(refuses_frozen_model(source, protocol.get("model")) for source in sources):
+        raise ValueError("RESTORE_MODEL_REQUEST_CHANGED")
 
 
 def validate_compatibility(record):
@@ -128,3 +136,4 @@ def require_protocol_compatibility(store, checkpoint, bundle):
             or bundle["implementation_hash"] not in record["source_revisions"]
             or record.get("preserved_provider") != _preserved_provider(bundle)):
         raise ValueError("AGENT_PROTOCOL_IMPLEMENTATION_CHANGED")
+    _require_unchanged_model_request(record["source_revisions"], bundle)
