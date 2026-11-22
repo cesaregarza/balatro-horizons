@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-22 — Fable 5.2, GPT-6.1 and GPT-6.2, with presets for every model
+
+- Declare `claude-fable-5-2`, `gpt-6.2-astra`, `gpt-6.2-sol`, `gpt-6.1-terra` and
+  `gpt-6.1-sol` with their display names, efforts and refusals. `minimal` is refused for
+  all four OpenAI models and `none` for GPT-6.2 and GPT-6.1 Sol; GPT-6.2 and GPT-6.1 Sol
+  refuse any temperature, and GPT-6.1 Terra accepts one only at `none`.
+- Keep each provider's model facts in one table keyed by model ID. The settings rules,
+  display names and presets all read it; existing models keep their rules.
+- Replace the Claude-only preset list with one **Preset** list for all eleven models,
+  labelled by provider, with all four prices and pricing date 2026-11-22.
+- Runs recorded at `68fe9fa` or `6b95c0c` restore through one source-gated upgrade
+  group; see [restore compatibility](docs/restore-compatibility.md#model-tables-and-presets).
+
 ## 2026-10-27 — Layered request layout (CES-1214, CES-1215)
 
 - Freeze `layered_decision_v1` with wire policies `openai_responses_v2` and

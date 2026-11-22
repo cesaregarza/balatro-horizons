@@ -242,8 +242,10 @@ and single-replay gates still apply.
 
 One case changes behavior. A run recorded at either source that named a newly
 declared model before it was declared now runs under that model's rules. A frozen
-setting those rules refuse, such as a GPT-6.2 temperature or `none` effort, fails
-when the frozen configuration is loaded, before any request. A frozen
+setting those rules refuse, such as a GPT-6.2 temperature or `none` effort, cannot be
+configured at the new source, so continuation refuses before any request: the saved
+model fails validation or no longer matches the frozen one
+(`AGENT_PROTOCOL_MODEL_CHANGED`). A frozen
 `claude-fable-5-2` run without such a setting would restore with adaptive thinking
 at its `high` default instead of the manual or absent thinking it started with.
 

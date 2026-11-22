@@ -59,6 +59,9 @@ environment fingerprints, and the evidence gates documented in the evidence
 guide. Credentials, seeds, raw engine state, saves, private manifests, and
 journals stay outside public exports.
 
+[Model presets](docs/harness.md#presets): one dashboard list for Claude Fable 5.2, Fable 5.1,
+Opus 5.5, Sonnet 5.5 and Haiku 5.5, and GPT-6.2 Astra and Sol, GPT-6.1 Terra and Sol, and
+GPT-6 Sol and Luna.
 [GPT-6 Sol and Luna setup](docs/harness.md#gpt-6-sol-and-luna): [Sol config](configs/gpt6-sol-smoke.yaml), [Luna config](configs/gpt6-luna-smoke.yaml).
 [Claude setup](docs/harness.md#claude): opt-in dashboard presets, adaptive thinking,
 and five-minute prefix caching with separate read/write billing.
