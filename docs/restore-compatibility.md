@@ -221,6 +221,32 @@ Unlisted fingerprints, reverts and further edits of the target module refuse wit
 `RESTORE_SOURCE_INCOMPATIBLE`. The receipt, operator consent, release/environment
 and single-replay gates still apply.
 
+### Model tables and presets
+
+Each provider's model facts now live in one table keyed by model ID, which the
+settings rules, display names and the one provider-labelled preset list all read.
+`claude-fable-5-2`, `gpt-6.2-astra`, `gpt-6.2-sol`, `gpt-6.1-terra` and `gpt-6.1-sol`
+are declared. This edits five execution modules (`config.py`,
+`harness/transport/__init__.py`, `anthropic.py`, `claude_models.py`, `openai.py`) and
+adds `harness/transport/openai_models.py`. The native manifest is byte-identical.
+
+Every previously declared model keeps its efforts, refusals, temperature rule,
+display name, request body and accounting, and tests pin that. So the group applies
+to every provider, like the workspace and native-gate groups, from exactly two
+sources: the certified `68fe9fa` (full fingerprint `a0f8e2cc…`, which also takes the
+native-gate group) and main at `6b95c0c` (`e9b5120a…`). Old and accepted
+whole-module ASTs are pinned, with the reviewed target at `640a198`. Unlisted
+fingerprints, reverts, missing modules and further edits refuse with
+`RESTORE_SOURCE_INCOMPATIBLE`; the receipt, operator consent, release/environment
+and single-replay gates still apply.
+
+One case changes behavior. A run recorded at either source that named a newly
+declared model before it was declared now runs under that model's rules. A frozen
+setting those rules refuse, such as a GPT-6.2 temperature or `none` effort, fails
+when the frozen configuration is loaded, before any request. A frozen
+`claude-fable-5-2` run without such a setting would restore with adaptive thinking
+at its `high` default instead of the manual or absent thinking it started with.
+
 ## Receipt, branch scope and trust
 
 The private receipt binds historical Git commits, original protocol hash, game
