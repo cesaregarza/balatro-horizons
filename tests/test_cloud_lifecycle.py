@@ -52,13 +52,16 @@ def test_boot_failure_tears_down_after_the_boot_timeout(cloud):
     cloud.assert_torn_down("r1", "boot_failed")
 
 
-def test_droplet_vanishing_during_boot_is_a_boot_failure(cloud):
+def test_droplet_vanishing_during_boot_is_a_boot_failure_that_cannot_be_verified(cloud):
     cloud.provider.boot = False
     controller = cloud.controller()
     controller.launch("r1")
     cloud.provider.inventory.pop(cloud.owned_ids("r1")[0])
     controller.tick()
-    cloud.assert_torn_down("r1", "boot_failed")
+    record = cloud.ledger.get("r1")
+    # No DELETE of ours was acknowledged, so the 404 proves nothing.
+    assert (record.state, record.teardown_reason) == ("cleanup_unverified", "boot_failed")
+    assert cloud.provider.deleted() == []
 
 
 def test_create_failure_leaves_a_verified_run_and_nothing_created(cloud):

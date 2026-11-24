@@ -64,11 +64,12 @@ def test_list_by_tag_follows_pagination():
     ]
 
 
-def test_delete_is_by_id_and_404_means_gone():
+def test_delete_is_by_id_and_only_a_2xx_is_an_acknowledgment():
     handler, seen = replies(httpx.Response(204), httpx.Response(404, json={"id": "not_found"}))
     client = client_for(handler)
-    client.delete_droplet(7)
-    client.delete_droplet(7)
+    assert client.delete_droplet(7) is True
+    # A 404 on DELETE is not an acknowledgment of our DELETE.
+    assert client.delete_droplet(7) is False
     assert [(r.method, r.url.path, dict(r.url.params)) for r in seen] == [
         ("DELETE", "/v2/droplets/7", {}), ("DELETE", "/v2/droplets/7", {}),
     ]

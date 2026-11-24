@@ -152,9 +152,13 @@ def test_known_id_whose_tags_were_removed_is_not_deleted_and_fails_closed(cloud)
     assert droplet_id not in cloud.provider.deleted()
     assert "UNMATCHED_DROPLET" in [a.code for a in cloud.ledger.alerts()]
     assert "UNMATCHED_DROPLET" in controller.launch("r2")["reasons"]
+    # The run holding an ID it may not delete never settles, even once that ID reads 404.
     cloud.provider.inventory.pop(droplet_id)
     cloud.reconcile()
-    assert controller.launch("r2")["outcome"] == "launched"
+    controller.tick()
+    record = cloud.ledger.get("r1")
+    assert (record.state, record.settled_usd) == ("cleanup_unverified", None)
+    assert {"UNMATCHED_DROPLET", "CONCURRENCY_LIMIT"} <= set(controller.launch("r2")["reasons"])
 
 
 def test_restart_after_accepted_create_with_lost_id_cleans_without_a_second_create(cloud):
@@ -173,16 +177,17 @@ def test_restart_after_accepted_create_with_lost_id_cleans_without_a_second_crea
     assert len(cloud.creates()) == 1
 
 
-def test_restart_after_delete_issued_reverifies_without_double_counting(cloud):
+def test_restart_after_a_delete_whose_acknowledgment_was_lost_holds_the_run(cloud):
     controller = cloud.launched()
     cloud.clock.advance(1800)
     cloud.provider.crash_at.add("after_delete")
     with pytest.raises(BaseException, match="after_delete"):
         controller.cancel("r1", now=True)
     cloud.restarted().recover()
-    record = cloud.assert_torn_down("r1", "cancelled")
+    record = cloud.ledger.get("r1")
+    assert (record.state, record.settled_usd) == ("cleanup_unverified", None)
     assert len(cloud.provider.deleted()) == 1
-    assert reserved_remaining(cloud) == pytest.approx(1.0 - record.settled_usd)
+    assert reserved_remaining(cloud) == pytest.approx(1.0 - cloud.settings.worst_case_usd)
 
 
 def test_running_worker_kept_only_within_its_original_deadline_after_restart(cloud):

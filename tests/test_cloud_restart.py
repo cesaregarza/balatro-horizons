@@ -7,9 +7,11 @@ from cloud_support import Cloud
 
 from balatro_horizons.cloud.fake import SimulatedCrash
 
-# The successful lifecycle writes the ledger five times: the new run, its Droplet
-# ID, running, teardown started, and verified.
-LEDGER_WRITES = 5
+# The successful lifecycle writes the ledger six times: the new run, its Droplet ID,
+# running, teardown started, the acknowledged DELETE, and verified.
+LEDGER_WRITES = 6
+# A crash on this write loses the acknowledgment of a DELETE the provider carried out.
+ACKNOWLEDGMENT_WRITE = 5
 
 
 @pytest.fixture
@@ -50,7 +52,8 @@ def restart_and_settle(cloud):
     raise AssertionError("a live run outlived 100 controller ticks")
 
 
-@pytest.mark.parametrize("number", range(1, LEDGER_WRITES + 1))
+@pytest.mark.parametrize("number", [n for n in range(1, LEDGER_WRITES + 1)
+                                    if n != ACKNOWLEDGMENT_WRITE])
 def test_crash_at_each_ledger_write_then_restart_leaves_nothing(cloud, monkeypatch, number):
     restore = crash_on_write(cloud, monkeypatch, number)
     with pytest.raises(SimulatedCrash):
@@ -67,7 +70,7 @@ def test_crash_at_each_ledger_write_then_restart_leaves_nothing(cloud, monkeypat
     cloud.assert_unrelated_survive()
 
 
-@pytest.mark.parametrize("point", ["after_create", "before_delete", "after_delete"])
+@pytest.mark.parametrize("point", ["after_create", "before_delete"])
 def test_crash_inside_a_provider_call_then_restart_leaves_nothing(cloud, point):
     cloud.provider.crash_at.add(point)
     with pytest.raises(SimulatedCrash):
@@ -75,6 +78,23 @@ def test_crash_inside_a_provider_call_then_restart_leaves_nothing(cloud, point):
     restart_and_settle(cloud)
     assert cloud.ledger.get("r1").state == "torn_down"
     assert cloud.owned_ids("r1") == []
+    cloud.assert_unrelated_survive()
+
+
+def test_crash_before_the_acknowledgment_is_written_holds_the_run(cloud, monkeypatch):
+    restore = crash_on_write(cloud, monkeypatch, ACKNOWLEDGMENT_WRITE)
+    with pytest.raises(SimulatedCrash):
+        full_lifecycle(cloud)
+    restore()
+    restarted = cloud.controller()
+    restarted.recover()
+    for _ in range(10):
+        restarted.tick()
+        cloud.reconcile()
+    record = cloud.ledger.get("r1")
+    assert (record.state, record.settled_usd) == ("cleanup_unverified", None)
+    assert len(cloud.provider.deleted()) == 1
+    assert restarted.launch("r2")["outcome"] == "refused"
     cloud.assert_unrelated_survive()
 
 

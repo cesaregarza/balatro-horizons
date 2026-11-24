@@ -109,6 +109,12 @@ class DigitalOceanStub:
         self.create_status = None
         # IDs kept out of the tag and name listings, as a lagging index would.
         self.unlisted = set()
+        # IDs kept out of the tag listings only, while the name filter still sees them.
+        self.tag_hidden = set()
+        # IDs that answer 404 by ID, though the Droplet still exists.
+        self.id_hidden = set()
+        # A status here answers a DELETE with it; the Droplet is removed regardless.
+        self.delete_status = None
 
     def __call__(self, request):
         self.requests.append(request)
@@ -123,14 +129,15 @@ class DigitalOceanStub:
             if "name" in params:
                 found = [d for d in listed if d["name"].lower() == params["name"].lower()]
             else:
-                found = [d for d in listed if params["tag_name"] in d["tags"]]
+                found = [d for d in listed if params["tag_name"] in d["tags"]
+                         and d["id"] not in self.tag_hidden]
             return page_of("droplets", found)
         droplet_id = int(path.rsplit("/", 1)[1])
-        if droplet_id not in self.droplets:
+        if droplet_id not in self.droplets or droplet_id in self.id_hidden:
             return httpx.Response(404, json={"id": "not_found", "message": "gone"})
         if request.method == "DELETE":
             del self.droplets[droplet_id]
-            return httpx.Response(204)
+            return httpx.Response(self.delete_status or 204)
         return httpx.Response(200, json={"droplet": self.droplets[droplet_id]})
 
     def create(self, body):

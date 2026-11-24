@@ -149,7 +149,7 @@ def test_owner_tag_without_a_run_tag_is_never_deleted_and_is_alerted(cloud, tmp_
     assert code == 1
     assert [(a["code"], a["droplet_id"]) for a in report["alerts"]] == [
         ("UNMATCHED_DROPLET", unmatched.id)]
-    assert "never deleted automatically" in report["alerts"][0]["message"]
+    assert "no read clears it" in report["alerts"][0]["message"]
     cloud.reconcile()
     assert len(cloud.ledger.alerts()) == 1
     cloud.assert_unrelated_survive()
@@ -162,11 +162,10 @@ def test_unmatched_droplet_refuses_new_launches(cloud, tmp_path, capsys):
     assert not [call for call in cloud.provider.calls if call[0] == "create"]
 
 
-def test_launches_reopen_once_the_unmatched_droplet_is_verified_gone(cloud, tmp_path, capsys):
+def test_unmatched_droplet_that_later_reads_404_still_holds_launches(cloud, tmp_path, capsys):
     unmatched, _, _ = unmatched_alerted(cloud, tmp_path, capsys)
-    cloud.provider.list_failures = 2
     cloud.provider.inventory.pop(unmatched.id)
-    assert cloud.reconcile()["orphan_scan"] == "LIST_FAILED"
-    assert "UNMATCHED_DROPLET" in cloud.controller().launch("r1")["reasons"]
-    assert cloud.reconcile()["unmatched"] == [{"droplet_id": unmatched.id, "state": "gone"}]
-    assert cloud.controller().launch("r1")["outcome"] == "launched"
+    # No DELETE of ours can be acknowledged for it, so no read shows it gone.
+    assert cloud.reconcile()["unmatched"] == [{"droplet_id": unmatched.id, "state": "present"}]
+    assert cloud.controller().launch("r1")["reasons"] == ["UNMATCHED_DROPLET"]
+    assert cloud.creates() == []
