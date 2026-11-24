@@ -1,6 +1,7 @@
 """Register operational commands without changing their output or exit semantics."""
 
 from . import (
+    cloud,
     continue_budget,
     credentials,
     deploy_frontend,
@@ -21,6 +22,7 @@ from . import (
 def add_operational_commands(sub):
     continue_budget.configure_parser(sub.add_parser("continue-budget", help="Plan or explicitly fund a budget continuation"))
     credentials.configure_parser(sub.add_parser("credentials", help="Configure private backend credentials"))
+    cloud.configure_parser(sub.add_parser("cloud", help="Throwaway Droplet workers that are always torn down"))
     offline.configure_parser(sub.add_parser("offline", help="Run offline checks"))
     honesty.configure_parser(sub.add_parser("honesty", help="Score agents' pre-action claims, read-only"))
     smoke.configure_parser(sub.add_parser("smoke", help="Preflight or run a capped smoke"))

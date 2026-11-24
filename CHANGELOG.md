@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-24 — Cloud runner: a Droplet per run that is always torn down
+
+- Add `bh cloud launch`, `status`, `cancel` and `reconcile` with a run ledger, a
+  provider interface, a DigitalOcean API client and a fake provider. Settings live
+  in `configs/cloud.yaml`. See [cloud runner](docs/cloud-runner.md).
+- Tear a run's Droplet down on success, boot failure, a failed or partial create,
+  the deadline, cancellation, a lost heartbeat, a controller error and a restart.
+  Verified means a 404 by ID and an empty run-tag listing.
+- Fail closed: a run whose cleanup is unverified within the bound records an alert
+  and refuses every new launch until a later verified absence.
+- Bound infrastructure spend with its own budget. Provider commands need
+  `--allow-provider-calls`. Nothing was deleted; the native path is unchanged,
+  and no file in the execution manifest changed.
+
 ## 2026-11-22 — Fable 5.2, GPT-6.1 and GPT-6.2, with presets for every model
 
 - Declare `claude-fable-5-2`, `gpt-6.2-astra`, `gpt-6.2-sol`, `gpt-6.1-terra` and

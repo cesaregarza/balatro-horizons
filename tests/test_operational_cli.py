@@ -24,6 +24,10 @@ COMMANDS = [
     ("native diagnose", modules.diagnose_native, []),
     ("review session", modules.workbench_session, []),
     ("review status", modules.workbench_status, []),
+    ("cloud launch", modules.cloud, ["r1"]),
+    ("cloud status", modules.cloud, []),
+    ("cloud cancel", modules.cloud, ["r1"]),
+    ("cloud reconcile", modules.cloud, []),
 ]
 
 
@@ -73,7 +77,7 @@ def test_new_default_paths_remain_bound_to_the_checkout():
     assert not smoke.allow_paid and not smoke.transport_only
 
 
-@pytest.mark.parametrize("command", ["deploy", "guide", "prompt", "native"])
+@pytest.mark.parametrize("command", ["deploy", "guide", "prompt", "native", "cloud"])
 def test_required_subcommands_remain_required(command):
     with pytest.raises(SystemExit) as stopped:
         main([command])
