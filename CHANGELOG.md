@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-11-24 — Dashboard: a Cloud runs view and a view-only mode
+
+- Add a Cloud runs tab that shows the report `bh cloud status` prints, from the
+  same function now kept in the cloud package: active alerts first, launch
+  refusals, the budget, the last inventory read and each run's cost, reservation
+  and settled amount. `bh cloud status` gains the same per-run fields and the time
+  it read the records. The new `GET /api/cloud/status` route reads the durable
+  records on every request, creates nothing, and answers `CLOUD_LEDGER_UNREADABLE`
+  or `CLOUD_SETTINGS_INVALID` instead of an empty list. See
+  [dashboard](docs/dashboard.md#cloud-runs).
+- Add `bh review --view-only`, which does not mount the routes that start or stop
+  a run, save settings, plan, run or export a batch, or write an annotation, and
+  hides their controls. It is refused together with `--workbench`. The mount
+  counts become 27 flag-off and 48 flag-on.
+- Fix `bh --data-dir DIR review`, which ignored DIR and served the checkout's own
+  data directory.
+- Raise the Python CI job's time limit from 10 to 15 minutes.
+- No file in the execution manifest changed; the native path and restore
+  compatibility are untouched.
+
 ## 2026-11-24 — Cloud runner: a Droplet per run that is always torn down
 
 - Add `bh cloud launch`, `status`, `cancel` and `reconcile` with a run ledger, a

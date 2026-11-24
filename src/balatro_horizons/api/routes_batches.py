@@ -14,6 +14,8 @@ from .middleware import require_operator
 from .models import BatchInput, BatchRun, PanelInput
 
 router = APIRouter()
+# Routes that act for the operator. View-only mode never mounts them.
+actions = APIRouter()
 
 
 @router.get("/api/panels", dependencies=[Depends(require_operator)])
@@ -24,14 +26,14 @@ def panels(request: Request):
     ]
 
 
-@router.post("/api/panels", dependencies=[Depends(require_operator)])
+@actions.post("/api/panels", dependencies=[Depends(require_operator)])
 def make_panel(request: Request, data: PanelInput):
     panel_id = uuid.uuid4().hex
     path = request.app.state.store.root / "panels" / f"{panel_id}.json"
     return {"panel_id": panel_id, **seed_panel(path, data.count)}
 
 
-@router.post("/api/batches", dependencies=[Depends(require_operator)])
+@actions.post("/api/batches", dependencies=[Depends(require_operator)])
 def make_batch(request: Request, data: BatchInput):
     store = request.app.state.store
     panel = json.loads((store.root / "panels" / f"{identifier(data.panel_id)}.json").read_text())
@@ -46,7 +48,7 @@ def batches(request: Request):
     ]
 
 
-@router.post("/api/batches/{batch_id}/run", dependencies=[Depends(require_operator)])
+@actions.post("/api/batches/{batch_id}/run", dependencies=[Depends(require_operator)])
 def batch_run(request: Request, batch_id: str, data: BatchRun):
     state = request.app.state
     identifier(batch_id)
@@ -66,7 +68,7 @@ def report(request: Request, batch_id: str):
     return report_batch(state.store, identifier(batch_id), state.output_root / "reports/generated" / batch_id)
 
 
-@router.post("/api/batches/{batch_id}/export", dependencies=[Depends(require_operator)])
+@actions.post("/api/batches/{batch_id}/export", dependencies=[Depends(require_operator)])
 def export(request: Request, batch_id: str):
     export_id = uuid.uuid4().hex
     output = request.app.state.output_root / "exports" / batch_id / export_id

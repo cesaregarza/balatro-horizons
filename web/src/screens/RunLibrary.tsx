@@ -14,7 +14,7 @@ const isRevision = (value: unknown): value is string => typeof value === "string
 const isModelCollection = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes, busy, run, openExplorer, openReview, onCompare, priorSeedExposure, setPriorSeedExposure, watch, setWatch, status, setNotice, onHumanStart }: any) {
+export function RunLibrary({ viewOnly, workbench, config, setConfig, episodes, setEpisodes, busy, run, openExplorer, openReview, onCompare, priorSeedExposure, setPriorSeedExposure, watch, setWatch, status, setNotice, onHumanStart }: any) {
   const [agent, setAgent] = useState("heuristic");
   const [offline, setOffline] = useState(true);
   const [deck, setDeck] = useState(config.deck ?? "RED");
@@ -59,10 +59,10 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
   const batchLimit = costOverride === "uncapped" ? null : costOverride ?? budgets.max_batch_cost_usd;
 
   return <>
-    <header className="run-library-heading"><div><p className="eyebrow">BALATRO HORIZONS</p><h1>Runs and experiments</h1><p>Launch an episode, then explore its recorded decisions and outcomes.</p></div><button className="primary" onClick={() => { document.getElementById("start-a-run")?.scrollIntoView({ block: "start" }); document.querySelector<HTMLSelectElement>("#start-a-run select")?.focus({ preventScroll: true }); }}>Start a run</button></header>
+    <header className="run-library-heading"><div><p className="eyebrow">BALATRO HORIZONS</p><h1>Runs and experiments</h1><p>{viewOnly ? "Explore the recorded decisions and outcomes of past runs." : "Launch an episode, then explore its recorded decisions and outcomes."}</p></div>{!viewOnly && <button className="primary" onClick={() => { document.getElementById("start-a-run")?.scrollIntoView({ block: "start" }); document.querySelector<HTMLSelectElement>("#start-a-run select")?.focus({ preventScroll: true }); }}>Start a run</button>}</header>
     <LibraryTable config={config} workbench={workbench} episodes={episodes} busy={busy} openExplorer={openExplorer} openReview={openReview} onCompare={onCompare} priorSeedExposure={priorSeedExposure} setPriorSeedExposure={setPriorSeedExposure} />
     <div className="split">
-      <section className="panel run-setup" id="start-a-run">
+      {!viewOnly && <section className="panel run-setup" id="start-a-run">
         <h2>Start a run</h2>
         <div className="form-row">
           <label>Model<select aria-label="Model" value={agent} onChange={(e) => { setAgent(e.target.value); setCostOverride(null); }} disabled={busy}>
@@ -124,7 +124,7 @@ export function RunLibrary({ workbench, config, setConfig, episodes, setEpisodes
           <button disabled={busy} onClick={() => action(async () => { await stopRun(); setNotice("Stop requested. Any in-flight action will be recorded."); })}>Stop worker</button>
         </div>
         {!offline && <RuntimeConnection connection={connection} onRefresh={refreshConnection} />}
-      </section>
+      </section>}
       <section className="panel live">
         <p className="eyebrow">OPERATOR STATUS</p><h2>Live progress</h2>
         <p>Watching reveals the agent and its progress. That exposure is recorded before later review.</p>

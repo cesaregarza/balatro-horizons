@@ -13,8 +13,9 @@ dashboard always mounts the run library, live status, decision exploration,
 cost/model-budget settings, batches, reports, and cheap append-only
 retrospective annotations under the `/api/explore...` and core namespaces.
 These surfaces remain usable when the flag is off; workbench-only routes are
-registered separately, including budget-continuation and restore admission. There are 26
-mounted routes flag-off, 47 flag-on, and 21 workbench-only routes.
+registered separately, including budget-continuation and restore admission. There are 27
+mounted routes flag-off, 48 flag-on, and 21 workbench-only routes. Twelve of the
+flag-off routes are not GET routes.
 
 The workbench owns staged reveal/review, branching and comparison, human
 takeover, budget continuation, and verification. Its `/api/review*`,
@@ -24,6 +25,60 @@ and `/api/verify` routes are absent and
 return 404 when the flag is off. Workbench controls and screens are hidden in
 that mode; exploration and annotation are not. DevTrace is a development
 surface under Decision Explorer, not a separate navigation root.
+
+## View-only mode
+
+`bh review --view-only` serves the dashboard for a reader who must not act. It
+does not mount the routes that start a run (`POST /api/runs`), stop the worker
+(`POST /api/stop`), save settings (`PUT /api/settings`), make a seed panel or plan,
+run or export a batch (`POST /api/panels`, `POST /api/batches`,
+`POST /api/batches/{id}/run`, `POST /api/batches/{id}/export`), or write an
+annotation (`POST /api/explore/annotations`). Each answers 404 or 405, and 19
+routes are mounted. Combining `--view-only` with `--workbench` is refused at
+startup with `VIEW_ONLY_EXCLUDES_WORKBENCH`.
+
+`/api/bootstrap` reports `view_only`, and the browser reads it as it reads the
+workbench flag. It hides Start a run, Stop worker, batch planning, running and
+export, every settings save and Annotate, and it drops the Models & budgets tab
+because every control there saves settings. Browsing runs, the explorer, batch
+reports, live worker status and the Cloud runs view still work.
+
+View-only describes what the operator can do. It does not make the disk read-only.
+The server still writes its own bookkeeping to the data directory: the store's
+index at startup, exposure records when a run is revealed, explorer sessions and
+generated batch reports. Nothing the mode mounts builds a model or cloud provider
+client, reads the cloud token, starts a game or spends; the bootstrap still
+reports only whether each model key exists, never its value.
+
+The mode carries no authentication of its own. The bootstrap hands out the
+operator token, so anyone who can reach the URL can read everything it serves.
+The only boundary is network reach, which is why the supported bind is loopback
+behind a tailnet-only proxy. `bh --data-dir DIR review` serves DIR; the review
+command's own `--data-dir` still works and takes precedence.
+
+## Cloud runs
+
+The Cloud runs tab shows the report `bh cloud status` prints, from the same
+function, so the page works out nothing itself. `GET /api/cloud/status` needs the
+operator token, reads the cloud records under the data directory and the default
+cloud settings file on every request, and keeps nothing between requests. It
+creates no directory and no lock file.
+
+The screen shows, from the top: each active alert with its message and the time it
+started; whether launches are allowed and every refusal code; the budget total,
+the remainder and the worst case per run; when the inventory was last read and
+whether that read was complete; and each run with its ID, state, creation time,
+original deadline, teardown reason, cost, reservation and settled amount. A run's
+cost is the launch gate's own estimate: the settled amount once it is torn down,
+otherwise the larger of its reservation and its elapsed hours at the hourly price.
+The costs add up to the budget total less the remainder. Times are absolute UTC.
+The server states when it read the records, and the screen refreshes every five
+seconds.
+
+With nothing recorded the screen says so, and still shows launches, alerts and the
+budget. A record that cannot be read answers 503 with `CLOUD_LEDGER_UNREADABLE`,
+and missing or invalid settings answer 503 with `CLOUD_SETTINGS_INVALID`. The
+screen shows the code in place of the report; it never shows an empty list.
 
 ## Runtime and safety
 

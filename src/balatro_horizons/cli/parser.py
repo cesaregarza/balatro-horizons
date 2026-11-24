@@ -56,7 +56,12 @@ def add_review_commands(sub):
         "--public-origin", help="Exact Tailscale HTTPS origin served by a loopback proxy"
     )
     parser.add_argument("--workbench", action="store_true")
-    parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
+    parser.add_argument(
+        "--view-only", action="store_true",
+        help="Serve without the routes that start runs, save settings or write annotations",
+    )
+    # Left to the top-level option: a default here would override `bh --data-dir DIR review`.
+    parser.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS)
     for name in ("replay", "branch"):
         add_intervention_parser(sub, name)
 

@@ -1,7 +1,7 @@
-export type DashboardTab = "runs" | "explore" | "review" | "human" | "batches" | "models" | "comparison";
+export type DashboardTab = "runs" | "explore" | "review" | "human" | "batches" | "models" | "comparison" | "cloud";
 export type DashboardRoute = { tab: DashboardTab; episodeId?: string; decision?: number };
 
-const tabs = new Set<DashboardTab>(["runs", "explore", "review", "human", "batches", "models", "comparison"]);
+const tabs = new Set<DashboardTab>(["runs", "explore", "review", "human", "batches", "models", "comparison", "cloud"]);
 export function readRoute(hash = window.location.hash): DashboardRoute {
   const [name, episodeId, rawDecision] = hash.replace(/^#/, "").split("/");
   if (!tabs.has(name as DashboardTab)) return { tab: "runs" };

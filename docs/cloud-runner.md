@@ -205,6 +205,19 @@ the concurrency limit and the budget, are not alerts, and status exits 0 for the
 An orphan with no ledger run settles from the provider's `created_at`, or from
 when it was found if that time is missing or unparseable.
 
+### Status in the dashboard
+
+The dashboard's Cloud runs tab shows the same report. `bh cloud status` and
+`GET /api/cloud/status` call one function, so the alerts, refusals, budget and
+per-run costs cannot disagree. Each run reports `cost_usd`, the launch gate's own
+estimate (the settled amount once torn down, otherwise the larger of the
+reservation and the elapsed hours at the hourly price), next to `reserved_usd` and
+`settled_usd`. The report also carries `read_at`. The dashboard reads the ledger
+and the default settings file on every request, takes no lock and creates nothing,
+and answers `CLOUD_LEDGER_UNREADABLE` or `CLOUD_SETTINGS_INVALID` rather than an
+empty list. It builds no provider client and reads no token. See the
+[dashboard](dashboard.md#cloud-runs) for the screen and its view-only serving mode.
+
 ## Budget
 
 Infrastructure spend is bounded separately from model spend. A launch is refused
