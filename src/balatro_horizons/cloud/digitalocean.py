@@ -6,6 +6,7 @@ after the caller has listed and filtered on both tags.
 
 import os
 import time
+from datetime import UTC, datetime
 
 import httpx
 
@@ -107,9 +108,19 @@ def expect(response, status):
 def parse_droplet(item):
     try:
         return Droplet(id=int(item["id"]), name=str(item["name"]), status=str(item["status"]),
-                       tags=tuple(item.get("tags") or ()))
+                       tags=tuple(item.get("tags") or ()),
+                       created_at=parse_time(item.get("created_at")))
     except (KeyError, TypeError, ValueError):
         raise ProviderError("MALFORMED_RESPONSE") from None
+
+
+def parse_time(value):
+    """An aware UTC time, or None: a bad timestamp must not block a teardown."""
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.astimezone(UTC) if parsed.tzinfo else None
 
 
 def client_from_environment(**kwargs):

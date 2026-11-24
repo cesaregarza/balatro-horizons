@@ -1,5 +1,5 @@
-# Cloud runner settings (bh cloud). Prices are USD; check the size slug and its
-# hourly price against DigitalOcean's size list before the first real run.
+# Cloud runner settings (bh cloud). Prices are USD.
+# UNVERIFIED: size, hourly_price_usd and region are unchecked against the live API.
 controller_id: horizons-main
 region: nyc3
 size: s-2vcpu-8gb-amd

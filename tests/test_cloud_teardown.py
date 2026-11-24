@@ -128,3 +128,45 @@ def test_untagged_and_foreign_resources_survive_every_path(cloud, path):
     controller.tick()
     cloud.reconcile()
     cloud.assert_torn_down("r1", path)
+
+
+def unmatched_alerted(cloud, tmp_path, capsys):
+    """Seed an owner-tagged Droplet with no run tag, reconcile, and read the status."""
+    unmatched = cloud.provider.seed(cloud.settings.owner_tag)
+    result = cloud.reconcile()
+    assert result["unmatched"] == [{"droplet_id": unmatched.id, "state": "present"}]
+    config = tmp_path / "cloud.yaml"
+    config.write_text(json.dumps(cloud.settings.model_dump()))
+    flags = ["--data-dir", str(cloud.root.parent), "--cloud-config", str(config)]
+    code = main(["cloud", "status", *flags])
+    return unmatched, code, json.loads(capsys.readouterr().out)
+
+
+def test_owner_tag_without_a_run_tag_is_never_deleted_and_is_alerted(cloud, tmp_path, capsys):
+    unmatched, code, report = unmatched_alerted(cloud, tmp_path, capsys)
+    assert unmatched.id in cloud.provider.inventory
+    assert unmatched.id not in cloud.provider.deleted()
+    assert code == 1
+    assert [(a["code"], a["droplet_id"]) for a in report["alerts"]] == [
+        ("UNMATCHED_DROPLET", unmatched.id)]
+    assert "never deleted automatically" in report["alerts"][0]["message"]
+    cloud.reconcile()
+    assert len(cloud.ledger.alerts()) == 1
+    cloud.assert_unrelated_survive()
+
+
+def test_unmatched_droplet_refuses_new_launches(cloud, tmp_path, capsys):
+    _, _, report = unmatched_alerted(cloud, tmp_path, capsys)
+    assert report["refusals"] == ["UNMATCHED_DROPLET"]
+    assert cloud.controller().launch("r1")["reasons"] == ["UNMATCHED_DROPLET"]
+    assert not [call for call in cloud.provider.calls if call[0] == "create"]
+
+
+def test_launches_reopen_once_the_unmatched_droplet_is_verified_gone(cloud, tmp_path, capsys):
+    unmatched, _, _ = unmatched_alerted(cloud, tmp_path, capsys)
+    cloud.provider.list_failures = 1
+    cloud.provider.inventory.pop(unmatched.id)
+    assert cloud.reconcile()["orphan_scan"] == "LIST_FAILED"
+    assert cloud.controller().launch("r1")["reasons"] == ["UNMATCHED_DROPLET"]
+    assert cloud.reconcile()["unmatched"] == [{"droplet_id": unmatched.id, "state": "gone"}]
+    assert cloud.controller().launch("r1")["outcome"] == "launched"

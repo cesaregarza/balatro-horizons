@@ -47,7 +47,8 @@ class Controller:
             existing = self.ledger.get(run_id)
             if existing is not None:
                 return {"outcome": "duplicate", "run_id": run_id, "state": existing.state}
-            reasons = launch_refusals(self.ledger.runs(), self.settings, self.clock())
+            reasons = launch_refusals(
+                self.ledger.runs(), self.ledger.unmatched(), self.settings, self.clock())
             if reasons:
                 return {"outcome": "refused", "run_id": run_id, "reasons": reasons}
             record = self.persist_new(run_id)

@@ -68,10 +68,21 @@ class RunRecord(BaseModel):
         self.history.append(Transition(at=at, state=state, reason=reason))
 
 
-class RunAlert(BaseModel):
-    run_id: str
+class Alert(BaseModel):
     code: str
     at: datetime
+    run_id: str | None = None
+    droplet_id: int | None = None
+
+
+class UnmatchedDroplet(BaseModel):
+    """An owner-tagged Droplet without one usable run tag: never deleted, only watched."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    droplet_id: int
+    found_at: datetime
+    gone_at: datetime | None = None
 
 
 class Ledger:
@@ -79,29 +90,33 @@ class Ledger:
         self.root = Path(root)
         self.runs_dir = self.root / "runs"
         self.alerts_dir = self.root / "alerts"
+        self.unmatched_dir = self.root / "unmatched"
 
     def get(self, run_id):
         path = self.runs_dir / f"{run_id}.json"
         return RunRecord.model_validate_json(path.read_text()) if path.is_file() else None
 
     def runs(self):
-        # Interrupted writes leave only *.tmp files, which never match this pattern.
-        paths = sorted(self.runs_dir.glob("*.json")) if self.runs_dir.is_dir() else []
-        return [RunRecord.model_validate_json(path.read_text()) for path in paths]
+        return [RunRecord.model_validate_json(path.read_text()) for path in json_files(self.runs_dir)]
 
     def save(self, record: RunRecord):
         atomic_json(self.runs_dir / f"{record.run_id}.json", record.model_dump(mode="json"))
 
-    def record_alert(self, run_id, code, at: datetime):
-        stamp = at.strftime("%Y%m%dT%H%M%S%fZ")
-        path = self.alerts_dir / f"{stamp}-{run_id}-{code}.json"
-        atomic_json(path, {"run_id": run_id, "code": code, "at": at.isoformat()})
+    def record_alert(self, code, at: datetime, *, run_id=None, droplet_id=None):
+        alert = Alert(code=code, at=at, run_id=run_id, droplet_id=droplet_id)
+        subject = run_id if run_id is not None else f"droplet-{droplet_id}"
+        path = self.alerts_dir / f"{at.strftime('%Y%m%dT%H%M%S%fZ')}-{subject}-{code}.json"
+        atomic_json(path, alert.model_dump(mode="json"))
 
     def alerts(self):
-        if not self.alerts_dir.is_dir():
-            return []
-        return [RunAlert.model_validate_json(path.read_text())
-                for path in sorted(self.alerts_dir.glob("*.json"))]
+        return [Alert.model_validate_json(path.read_text()) for path in json_files(self.alerts_dir)]
+
+    def unmatched(self):
+        return [UnmatchedDroplet.model_validate_json(path.read_text())
+                for path in json_files(self.unmatched_dir)]
+
+    def save_unmatched(self, record: UnmatchedDroplet):
+        atomic_json(self.unmatched_dir / f"{record.droplet_id}.json", record.model_dump(mode="json"))
 
     @contextmanager
     def lock(self, wait_seconds=0.0):
@@ -114,6 +129,11 @@ class Ledger:
         """Held for a controller's lifetime, so a restart knows the previous one is gone."""
         with exclusive(self.root / "controller.lock", 0.0, "CONTROLLER_BUSY"):
             yield
+
+
+def json_files(directory: Path):
+    # Interrupted writes leave only *.tmp files, which never match this pattern.
+    return sorted(directory.glob("*.json")) if directory.is_dir() else []
 
 
 @contextmanager

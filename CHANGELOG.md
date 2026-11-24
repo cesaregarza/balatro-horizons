@@ -9,7 +9,9 @@
   the deadline, cancellation, a lost heartbeat, a controller error and a restart.
   Verified means a 404 by ID and an empty run-tag listing.
 - Fail closed: a run whose cleanup is unverified within the bound records an alert
-  and refuses every new launch until a later verified absence.
+  and refuses every new launch until a later verified absence. An owner-tagged
+  Droplet with no usable run tag is never deleted; it raises an alert and refuses
+  launches until the reconciler verifies it is gone.
 - Bound infrastructure spend with its own budget. Provider commands need
   `--allow-provider-calls`. Nothing was deleted; the native path is unchanged,
   and no file in the execution manifest changed.

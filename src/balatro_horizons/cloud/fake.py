@@ -24,8 +24,9 @@ class FakeProvider:
     crash_at: set[str] = field(default_factory=set)
     calls: list[tuple] = field(default_factory=list)
 
-    def seed(self, *tags, status="active"):
-        droplet = Droplet(id=self.allocate(), name="seeded", status=status, tags=tuple(tags))
+    def seed(self, *tags, status="active", created_at=None):
+        droplet = Droplet(id=self.allocate(), name="seeded", status=status, tags=tuple(tags),
+                          created_at=created_at)
         self.inventory[droplet.id] = droplet
         return droplet
 

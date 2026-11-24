@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -70,6 +71,15 @@ def test_delete_is_by_id_and_404_means_gone():
         ("DELETE", "/v2/droplets/7", {}), ("DELETE", "/v2/droplets/7", {}),
     ]
     assert not [name for name in dir(client) if "tag" in name and "delete" in name]
+
+
+@pytest.mark.parametrize("stamp,expected", [
+    ("2026-11-24T10:30:00Z", datetime(2026, 11, 24, 10, 30, tzinfo=UTC)),
+    ("yesterday", None), (None, None), ("2026-11-24T10:30:00", None),
+])
+def test_droplet_creation_time_is_parsed_or_left_unknown(stamp, expected):
+    handler, _ = replies(httpx.Response(200, json={"droplet": DROPLET | {"created_at": stamp}}))
+    assert client_for(handler).get_droplet(7).created_at == expected
 
 
 def test_get_reads_404_as_gone():

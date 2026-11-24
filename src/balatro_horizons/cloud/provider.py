@@ -24,6 +24,8 @@ class Droplet:
     name: str
     status: str
     tags: tuple[str, ...]
+    # When the provider made it; None when the provider did not say or said nonsense.
+    created_at: datetime | None = None
 
 
 class Provider(Protocol):

@@ -73,7 +73,9 @@ def reconcile_command(args, ledger, settings, provider):
     result = reconcile(ledger, provider, settings)
     unverified = [run for run in result["runs"] + result["orphans"]
                   if run["state"] == "cleanup_unverified"]
-    return emit(result, 1 if unverified or result["orphan_scan"] != "COMPLETE" else 0)
+    present = [item for item in result["unmatched"] if item["state"] == "present"]
+    failed = unverified or present or result["orphan_scan"] != "COMPLETE"
+    return emit(result, 1 if failed else 0)
 
 
 OPERATIONS = {"launch": launch_command, "cancel": cancel_command,
@@ -81,18 +83,12 @@ OPERATIONS = {"launch": launch_command, "cancel": cancel_command,
 
 
 def status_report(ledger, settings, now):
-    runs = ledger.runs()
-    unverified = {record.run_id for record in runs if record.state == "cleanup_unverified"}
-    alerts = [alert for alert in ledger.alerts() if alert.run_id in unverified]
-    refusals = launch_refusals(runs, settings, now)
+    runs, unmatched = ledger.runs(), ledger.unmatched()
+    refusals = launch_refusals(runs, unmatched, settings, now)
     return {
         "launches": "REFUSED" if refusals else "ALLOWED",
         "refusals": refusals,
-        "alerts": [{
-            "code": alert.code, "run_id": alert.run_id, "since": alert.at.isoformat(),
-            "message": f"Cleanup of run {alert.run_id} is unverified. New launches are "
-                       "refused until a later sweep verifies its Droplets are gone.",
-        } for alert in alerts],
+        "alerts": active_alerts(ledger.alerts(), runs, unmatched),
         "budget_usd": {
             "total": settings.infrastructure_budget_usd,
             "remaining": round(remaining_budget_usd(runs, settings, now), 6),
@@ -104,6 +100,27 @@ def status_report(ledger, settings, now):
             "settled_usd": record.settled_usd,
         } for record in runs],
     }
+
+
+def active_alerts(alerts, runs, unmatched):
+    """Alerts whose cause is still present; cleared ones stay on disk as history."""
+    unverified = {record.run_id for record in runs if record.state == "cleanup_unverified"}
+    present = {record.droplet_id for record in unmatched if record.gone_at is None}
+    shown = []
+    for alert in alerts:
+        if alert.code == "CLEANUP_UNVERIFIED" and alert.run_id in unverified:
+            message = (f"Cleanup of run {alert.run_id} is unverified. New launches are refused "
+                       "until a later sweep verifies its Droplets are gone.")
+        elif alert.code == "UNMATCHED_DROPLET" and alert.droplet_id in present:
+            message = (f"Droplet {alert.droplet_id} carries this controller's owner tag but no "
+                       "usable run tag. It is never deleted automatically; new launches are "
+                       "refused until the reconciler verifies it is gone.")
+        else:
+            continue
+        shown.append({"code": alert.code, "run_id": alert.run_id,
+                      "droplet_id": alert.droplet_id, "since": alert.at.isoformat(),
+                      "message": message})
+    return shown
 
 
 def show_status(ledger, settings):

@@ -1,5 +1,8 @@
 """The reconciler works without the controller and never races it."""
 
+from dataclasses import replace
+from datetime import timedelta
+
 import pytest
 from cloud_support import Cloud
 
@@ -51,7 +54,8 @@ def test_stuck_provisioning_run_is_torn_down_after_the_boot_timeout(cloud):
 def test_live_run_within_its_deadline_is_left_to_the_controller(cloud):
     cloud.launched()
     cloud.clock.advance(3600)
-    assert cloud.reconcile() == {"runs": [], "orphans": [], "orphan_scan": "COMPLETE"}
+    assert cloud.reconcile() == {"runs": [], "orphans": [], "unmatched": [],
+                                 "orphan_scan": "COMPLETE"}
     assert cloud.ledger.get("r1").state == "running"
     assert len(cloud.owned_ids("r1")) == 1
 
@@ -70,8 +74,21 @@ def test_failed_orphan_listing_deletes_nothing(cloud):
     assert cloud.provider.deleted() == []
 
 
-def test_owner_tag_without_a_run_tag_is_not_treated_as_an_orphan(cloud):
+@pytest.mark.parametrize("age_hours,settled", [(1.5, 0.15), (None, 0.0)])
+def test_orphan_with_no_ledger_run_settles_from_the_provider_creation_time(
+    cloud, age_hours, settled,
+):
+    created = None if age_hours is None else cloud.clock() - timedelta(hours=age_hours)
+    cloud.provider.seed(cloud.settings.owner_tag, run_tag("lost"), created_at=created)
+    cloud.reconcile()
+    record = cloud.assert_torn_down("lost", "orphan")
+    assert record.created_at == (created or record.teardown_started_at)
+    assert record.settled_usd == pytest.approx(settled)
+
+
+def test_unmatched_droplet_that_lost_its_owner_tag_is_not_taken_as_gone(cloud):
     unmatched = cloud.provider.seed(cloud.settings.owner_tag)
     cloud.reconcile()
-    assert unmatched.id in cloud.provider.inventory
-    cloud.assert_unrelated_survive()
+    cloud.provider.inventory[unmatched.id] = replace(unmatched, tags=())
+    assert cloud.reconcile()["unmatched"] == [{"droplet_id": unmatched.id, "state": "present"}]
+    assert cloud.controller().launch("r1")["reasons"] == ["UNMATCHED_DROPLET"]

@@ -90,7 +90,7 @@ class Teardown:
         at = self.clock()
         record.move("cleanup_unverified", at, record.teardown_reason)
         self.ledger.save(record)
-        self.ledger.record_alert(record.run_id, "CLEANUP_UNVERIFIED", at)
+        self.ledger.record_alert("CLEANUP_UNVERIFIED", at, run_id=record.run_id)
         return record
 
     def backoff(self, attempt):

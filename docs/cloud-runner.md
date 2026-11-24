@@ -75,8 +75,17 @@ launch is refused. There is no override. Only a later verified absence, from a
 controller tick or `bh cloud reconcile`, clears it.
 
 Resources without the owner tag, or with another controller's owner tag, are
-never deleted. An owner-tagged Droplet without a run tag is left alone too,
-because the deletion filter needs both tags.
+never deleted.
+
+An owner-tagged Droplet without exactly one usable run tag is never deleted
+either, because the deletion filter needs both tags. It may still be billing, so
+the reconciler records an `UNMATCHED_DROPLET` alert, `status` shows it, and new
+launches are refused. Only a reconcile that sees it gone clears this: a 404 by
+ID and its absence from the owner-tag listing. Delete it by hand after checking
+what it is.
+
+An orphan with no ledger run settles from the provider's `created_at`, or from
+when it was found if that time is missing or unparseable.
 
 ## Budget
 
@@ -101,8 +110,9 @@ one operation at a time and waits up to 30 minutes for it. The reconciler waits
   channel is an interface, and real launches use a silent channel.
 - Only Droplets are created. The ledger records each resource's kind so firewalls
   and SSH keys can join later.
-- The default size `s-2vcpu-8gb-amd` (2 vCPU, 8 GiB), its hourly price and the
-  region are configuration. Check them against DigitalOcean's size list before
-  the first real run.
+- Unverified: the default size `s-2vcpu-8gb-amd` (2 vCPU, 8 GiB), its hourly
+  price of 0.063 and the region `nyc3` have not been checked against the live
+  API. A later real-provider smoke test, which needs the owner's approval,
+  confirms them.
 - All tests use a fake provider or a fake HTTP transport. No real provider call
   has been made.
