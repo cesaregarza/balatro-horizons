@@ -46,6 +46,8 @@ class Cloud:
 
     def __post_init__(self):
         self.ledger = Ledger(self.root)
+        # The fake provider stamps creation times and its action log from this clock.
+        self.provider.clock = self.clock
         self.unrelated = [
             self.provider.seed(),
             self.provider.seed("web", "production"),
@@ -57,6 +59,14 @@ class Cloud:
     def controller(self):
         return Controller(self.ledger, self.provider, self.settings, channel=self.channel,
                           clock=self.clock, sleep=self.clock.advance)
+
+    def restarted(self):
+        """A fresh controller over a fresh ledger object on the same directory."""
+        return Controller(Ledger(self.root), self.provider, self.settings, channel=self.channel,
+                          clock=self.clock, sleep=self.clock.advance)
+
+    def creates(self):
+        return [call for call in self.provider.calls if call[0] == "create"]
 
     def reconcile(self):
         return reconcile(self.ledger, self.provider, self.settings, clock=self.clock,
@@ -93,6 +103,7 @@ class DigitalOceanStub:
 
     def __init__(self):
         self.droplets = {}
+        self.actions = []
         self.requests = []
 
     def __call__(self, request):
@@ -100,10 +111,16 @@ class DigitalOceanStub:
         path = request.url.path.removeprefix("/v2")
         if path == "/droplets" and request.method == "POST":
             return self.create(json.loads(request.content))
+        if path == "/actions":
+            return page_of("actions", self.actions)
         if path == "/droplets":
-            tag = request.url.params["tag_name"]
-            found = [d for d in self.droplets.values() if tag in d["tags"]]
-            return httpx.Response(200, json={"droplets": found, "links": {}})
+            params = request.url.params
+            if "name" in params:
+                found = [d for d in self.droplets.values()
+                         if d["name"].lower() == params["name"].lower()]
+            else:
+                found = [d for d in self.droplets.values() if params["tag_name"] in d["tags"]]
+            return page_of("droplets", found)
         droplet_id = int(path.rsplit("/", 1)[1])
         if droplet_id not in self.droplets:
             return httpx.Response(404, json={"id": "not_found", "message": "gone"})
@@ -114,6 +131,13 @@ class DigitalOceanStub:
 
     def create(self, body):
         droplet_id = 5000 + len(self.requests)
-        self.droplets[droplet_id] = {"id": droplet_id, "name": body["name"],
-                                     "status": "active", "tags": body["tags"]}
+        self.droplets[droplet_id] = {"id": droplet_id, "name": body["name"], "status": "active",
+                                     "tags": body["tags"], "created_at": "2026-11-24T12:00:00Z"}
+        self.actions.append({"id": droplet_id + 1, "type": "create", "resource_type": "droplet",
+                             "resource_id": droplet_id, "status": "completed",
+                             "started_at": "2026-11-24T12:00:00Z"})
         return httpx.Response(202, json={"droplet": self.droplets[droplet_id]})
+
+
+def page_of(key, items):
+    return httpx.Response(200, json={key: items, "links": {}, "meta": {"total": len(items)}})

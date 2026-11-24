@@ -51,8 +51,10 @@ def test_create_sends_the_spec_with_both_tags_and_bearer_auth():
 def test_list_by_tag_follows_pagination():
     next_link = {"pages": {"next": "https://api.digitalocean.com/v2/droplets?page=2"}}
     handler, seen = replies(
-        httpx.Response(200, json={"droplets": [DROPLET], "links": next_link}),
-        httpx.Response(200, json={"droplets": [DROPLET | {"id": 8}], "links": {}}),
+        httpx.Response(200, json={"droplets": [DROPLET], "links": next_link,
+                                  "meta": {"total": 2}}),
+        httpx.Response(200, json={"droplets": [DROPLET | {"id": 8}], "links": {},
+                                  "meta": {"total": 2}}),
     )
     droplets = client_for(handler).list_droplets("bh-run:r1")
     assert [d.id for d in droplets] == [7, 8]
@@ -80,6 +82,72 @@ def test_delete_is_by_id_and_404_means_gone():
 def test_droplet_creation_time_is_parsed_or_left_unknown(stamp, expected):
     handler, _ = replies(httpx.Response(200, json={"droplet": DROPLET | {"created_at": stamp}}))
     assert client_for(handler).get_droplet(7).created_at == expected
+
+
+def listing(droplets, **extra):
+    return httpx.Response(200, json={"droplets": droplets, "links": {},
+                                     "meta": {"total": len(droplets)}} | extra)
+
+
+MALFORMED_LISTINGS = {
+    "missing tags": listing([{k: v for k, v in DROPLET.items() if k != "tags"}]),
+    "tags not a list": listing([DROPLET | {"tags": "bh-run:r1"}]),
+    "boolean id": listing([DROPLET | {"id": True}]),
+    "numeric created_at": listing([DROPLET | {"created_at": 1764000000}]),
+    "droplets not a list": listing({}),
+    "non-string next link": (listing([DROPLET], links={"pages": {"next": 2}}), listing([])),
+    "missing meta": httpx.Response(200, json={"droplets": [DROPLET], "links": {}}),
+    "total disagrees": listing([DROPLET], meta={"total": 3}),
+}
+
+
+@pytest.mark.parametrize("case", MALFORMED_LISTINGS)
+def test_malformed_listing_is_a_failed_listing_never_an_empty_one(case):
+    responses = MALFORMED_LISTINGS[case]
+    handler, _ = replies(*(responses if isinstance(responses, tuple) else (responses,)))
+    with pytest.raises(ProviderError):
+        client_for(handler).list_droplets("bh-run:r1")
+
+
+def test_name_filter_lists_exact_names_without_a_tag_filter():
+    handler, seen = replies(listing([DROPLET]))
+    method = getattr(client_for(handler), "find_droplets_by_name", None)
+    assert method is not None
+    assert [d.id for d in method("bh-r1")] == [7]
+    assert dict(seen[0].url.params) == {"name": "bh-r1", "page": "1", "per_page": "200"}
+
+
+def test_action_log_is_read_completely_and_keeps_droplet_creates_since():
+    since = datetime(2026, 11, 24, 12, tzinfo=UTC)
+    actions = [
+        {"id": 1, "type": "create", "resource_type": "droplet", "resource_id": 70,
+         "status": "completed", "started_at": "2026-11-24T12:05:00Z"},
+        {"id": 2, "type": "destroy", "resource_type": "droplet", "resource_id": 71,
+         "status": "completed", "started_at": "2026-11-24T12:06:00Z"},
+        {"id": 3, "type": "create", "resource_type": "droplet", "resource_id": 72,
+         "status": "completed", "started_at": "2026-11-24T11:00:00Z"},
+    ]
+    next_link = {"pages": {"next": "https://api.digitalocean.com/v2/actions?page=2"}}
+    handler, seen = replies(
+        httpx.Response(200, json={"actions": actions[:2], "links": next_link,
+                                  "meta": {"total": 3}}),
+        httpx.Response(200, json={"actions": actions[2:], "links": {}, "meta": {"total": 3}}),
+    )
+    method = getattr(client_for(handler), "list_create_actions", None)
+    assert method is not None
+    assert [a.resource_id for a in method(since)] == [70]
+    assert [r.url.path for r in seen] == ["/v2/actions", "/v2/actions"]
+
+
+def test_action_log_with_a_malformed_entry_is_a_failed_read():
+    bad = {"id": 1, "type": "create", "resource_type": "droplet", "resource_id": "70",
+           "started_at": "soon"}
+    handler, _ = replies(httpx.Response(200, json={"actions": [bad], "links": {},
+                                                   "meta": {"total": 1}}))
+    method = getattr(client_for(handler), "list_create_actions", None)
+    assert method is not None
+    with pytest.raises(ProviderError):
+        method(datetime(2026, 11, 24, tzinfo=UTC))
 
 
 def test_get_reads_404_as_gone():

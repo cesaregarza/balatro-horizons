@@ -43,7 +43,8 @@ def restart_and_settle(cloud):
     restarted = cloud.controller()
     restarted.recover()
     for _ in range(100):
-        if not restarted.tick():
+        restarted.tick()
+        if not any(record.live for record in cloud.ledger.runs()):
             return
         cloud.clock.advance(cloud.settings.poll_seconds)
     raise AssertionError("a live run outlived 100 controller ticks")

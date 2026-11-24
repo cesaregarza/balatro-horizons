@@ -164,9 +164,9 @@ def test_unmatched_droplet_refuses_new_launches(cloud, tmp_path, capsys):
 
 def test_launches_reopen_once_the_unmatched_droplet_is_verified_gone(cloud, tmp_path, capsys):
     unmatched, _, _ = unmatched_alerted(cloud, tmp_path, capsys)
-    cloud.provider.list_failures = 1
+    cloud.provider.list_failures = 2
     cloud.provider.inventory.pop(unmatched.id)
     assert cloud.reconcile()["orphan_scan"] == "LIST_FAILED"
-    assert cloud.controller().launch("r1")["reasons"] == ["UNMATCHED_DROPLET"]
+    assert "UNMATCHED_DROPLET" in cloud.controller().launch("r1")["reasons"]
     assert cloud.reconcile()["unmatched"] == [{"droplet_id": unmatched.id, "state": "gone"}]
     assert cloud.controller().launch("r1")["outcome"] == "launched"

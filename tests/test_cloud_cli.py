@@ -92,3 +92,10 @@ def test_shipped_settings_default_to_one_2_vcpu_8_gib_ubuntu_worker():
     assert settings.max_concurrent_workers == 1
     assert settings.owner_tag == "bh-owner:horizons-main"
     assert settings.worst_case_usd <= settings.infrastructure_budget_usd
+
+
+def test_launch_exits_nonzero_when_cleanup_is_left_unverified(paths, capsys):
+    flags, ledger, provider = paths
+    provider.delete_failures = 10**9
+    assert main(["cloud", "launch", "r1", "--allow-provider-calls", *flags]) == 1
+    assert ledger.get("r1").state == "cleanup_unverified"
