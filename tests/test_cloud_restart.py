@@ -67,7 +67,7 @@ def test_crash_at_each_ledger_write_then_restart_leaves_nothing(cloud, monkeypat
     cloud.assert_unrelated_survive()
 
 
-@pytest.mark.parametrize("point", ["before_create", "after_create", "before_delete", "after_delete"])
+@pytest.mark.parametrize("point", ["after_create", "before_delete", "after_delete"])
 def test_crash_inside_a_provider_call_then_restart_leaves_nothing(cloud, point):
     cloud.provider.crash_at.add(point)
     with pytest.raises(SimulatedCrash):
@@ -75,6 +75,23 @@ def test_crash_inside_a_provider_call_then_restart_leaves_nothing(cloud, point):
     restart_and_settle(cloud)
     assert cloud.ledger.get("r1").state == "torn_down"
     assert cloud.owned_ids("r1") == []
+    cloud.assert_unrelated_survive()
+
+
+def test_crash_before_the_create_request_holds_the_run_rather_than_guess(cloud):
+    # The ledger cannot tell a crash before the request from one during it.
+    cloud.provider.crash_at.add("before_create")
+    with pytest.raises(SimulatedCrash):
+        full_lifecycle(cloud)
+    restarted = cloud.controller()
+    restarted.recover()
+    for _ in range(100):
+        restarted.tick()
+        cloud.reconcile()
+        cloud.clock.advance(cloud.settings.poll_seconds)
+    assert cloud.ledger.get("r1").state == "create_unresolved"
+    assert "CREATE_UNRESOLVED" in restarted.launch("r2")["reasons"]
+    assert len([call for call in cloud.provider.calls if call[0] == "create"]) == 1
     cloud.assert_unrelated_survive()
 
 

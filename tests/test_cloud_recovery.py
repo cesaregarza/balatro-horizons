@@ -9,7 +9,7 @@ from balatro_horizons.cli.cloud import status_report
 from balatro_horizons.cloud.settings import run_tag
 
 NEVER = 10**9
-SETTLE = 600
+HOUR = 3600
 
 
 @pytest.fixture
@@ -18,9 +18,10 @@ def cloud(tmp_path):
 
 
 def lost_create(cloud, lag=3):
-    """Create is accepted, the response is lost, and listings lag behind."""
+    """Create is accepted, the response is lost, and listings and the action log lag."""
     cloud.provider.partial_create = True
     cloud.provider.listing_lag = lag
+    cloud.provider.pending_creates = True
     return cloud.controller().launch("r1")
 
 
@@ -51,25 +52,25 @@ def test_unresolved_create_resolves_once_its_droplet_becomes_visible(cloud):
     assert controller.launch("r2")["outcome"] == "launched"
 
 
-def test_server_error_on_create_waits_for_the_settle_window_and_the_action_log(cloud):
+def test_server_error_on_create_stays_unresolved_however_long_reads_stay_empty(cloud):
     cloud.provider.fail_create = True
     cloud.provider.fail_create_code = "HTTP_503"
     controller = cloud.controller()
     assert controller.launch("r1")["outcome"] == "create_unresolved"
-    cloud.clock.advance(SETTLE - 1)
-    controller.tick()
+    for _ in range(24):
+        cloud.clock.advance(HOUR)
+        controller.tick()
+        cloud.reconcile()
     assert cloud.ledger.get("r1").state == "create_unresolved"
-    cloud.clock.advance(2)
-    controller.tick()
-    cloud.assert_torn_down("r1", "create_failed")
+    assert "CREATE_UNRESOLVED" in controller.launch("r2")["reasons"]
+    assert cloud.provider.deleted() == []
 
 
 def test_action_log_create_carrying_this_runs_tags_is_deleted_and_verified(cloud):
-    lost_create(cloud, lag=NEVER)
+    cloud.provider.partial_create = True
+    cloud.provider.listing_lag = NEVER
     controller = cloud.controller()
-    controller.tick()
-    assert cloud.ledger.get("r1").state == "create_unresolved"
-    cloud.clock.advance(SETTLE + 1)
+    controller.launch("r1")
     controller.tick()
     cloud.assert_torn_down("r1", "create_failed")
     assert len(cloud.provider.deleted()) == 1
@@ -81,10 +82,9 @@ def test_action_log_creates_with_foreign_tags_are_left_untouched(cloud):
     controller = cloud.controller()
     controller.launch("r1")
     foreign = cloud.provider.seed("bh-owner:someone-else", run_tag("r1"))
-    assert cloud.ledger.get("r1").state == "create_unresolved"
-    cloud.clock.advance(SETTLE + 1)
+    cloud.clock.advance(HOUR)
     controller.tick()
-    cloud.assert_torn_down("r1", "create_failed")
+    assert cloud.ledger.get("r1").state == "create_unresolved"
     assert foreign.id in cloud.provider.inventory
     assert cloud.provider.deleted() == []
 
@@ -92,7 +92,7 @@ def test_action_log_creates_with_foreign_tags_are_left_untouched(cloud):
 def test_unreadable_action_log_keeps_the_create_unresolved(cloud):
     lost_create(cloud, lag=NEVER)
     cloud.provider.action_failures = NEVER
-    cloud.clock.advance(SETTLE + 1)
+    cloud.clock.advance(HOUR)
     cloud.controller().tick()
     cloud.reconcile()
     assert cloud.ledger.get("r1").state == "create_unresolved"
@@ -104,12 +104,12 @@ def test_unlistable_inventory_keeps_the_create_unresolved(cloud):
     cloud.provider.fail_create_code = "HTTP_502"
     cloud.controller().launch("r1")
     cloud.provider.list_failures = NEVER
-    cloud.clock.advance(SETTLE + 1)
+    cloud.clock.advance(HOUR)
     cloud.controller().tick()
     assert cloud.ledger.get("r1").state == "create_unresolved"
 
 
-def test_rejected_create_is_definite_and_needs_no_settle_window(cloud):
+def test_rejected_create_is_definite_and_settles_at_once(cloud):
     cloud.provider.fail_create = True
     cloud.provider.fail_create_code = "HTTP_422"
     assert cloud.controller().launch("r1")["outcome"] == "create_failed"
@@ -159,6 +159,7 @@ def test_known_id_whose_tags_were_removed_is_not_deleted_and_fails_closed(cloud)
 
 def test_restart_after_accepted_create_with_lost_id_cleans_without_a_second_create(cloud):
     cloud.provider.listing_lag = 2
+    cloud.provider.pending_creates = True
     cloud.provider.crash_at.add("after_create")
     with pytest.raises(BaseException, match="after_create"):
         cloud.controller().launch("r1")

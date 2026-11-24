@@ -7,7 +7,7 @@ from cloud_support import Cloud, cloud_settings
 
 from balatro_horizons.cli import cloud as cloud_cli
 from balatro_horizons.cli import main
-from balatro_horizons.cloud.fake import FakeProvider
+from balatro_horizons.cloud.fake import FakeProvider, SimulatedCrash
 from balatro_horizons.cloud.ledger import Ledger
 from balatro_horizons.cloud.settings import load_settings
 
@@ -99,3 +99,37 @@ def test_launch_exits_nonzero_when_cleanup_is_left_unverified(paths, capsys):
     provider.delete_failures = 10**9
     assert main(["cloud", "launch", "r1", "--allow-provider-calls", *flags]) == 1
     assert ledger.get("r1").state == "cleanup_unverified"
+
+
+def unseen_create(ledger, provider):
+    """The create was accepted, then the controller died before recording the ID."""
+    provider.listing_lag = 10**9
+    provider.pending_creates = True
+    provider.crash_at.add("after_create")
+    with pytest.raises(SimulatedCrash):
+        Cloud(ledger.root, settings=cloud_settings(), provider=provider).controller().launch("r1")
+
+
+def assert_held(ledger, provider, flags, capsys):
+    capsys.readouterr()
+    assert ledger.get("r1").state == "create_unresolved"
+    assert main(["cloud", "status", *flags]) == 0
+    assert json.loads(capsys.readouterr().out)["launches"] == "REFUSED"
+    assert [call for call in provider.calls if call[0] == "create"] == [
+        ("create", "bh-r1", ("bh-owner:test-ctl", "bh-run:r1"))]
+    assert provider.deleted() == []
+
+
+def test_cancel_request_then_reconcile_holds_an_unseen_create(paths, capsys):
+    flags, ledger, provider = paths
+    unseen_create(ledger, provider)
+    assert main(["cloud", "cancel", "r1", *flags]) == 0
+    assert main(["cloud", "reconcile", "--allow-provider-calls", *flags]) == 1
+    assert_held(ledger, provider, flags, capsys)
+
+
+def test_cancel_with_provider_calls_holds_an_unseen_create(paths, capsys):
+    flags, ledger, provider = paths
+    unseen_create(ledger, provider)
+    assert main(["cloud", "cancel", "r1", "--allow-provider-calls", *flags]) == 0
+    assert_held(ledger, provider, flags, capsys)

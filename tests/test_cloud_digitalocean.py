@@ -126,17 +126,31 @@ def test_action_log_is_read_completely_and_keeps_droplet_creates_since():
          "status": "completed", "started_at": "2026-11-24T12:06:00Z"},
         {"id": 3, "type": "create", "resource_type": "droplet", "resource_id": 72,
          "status": "completed", "started_at": "2026-11-24T11:00:00Z"},
+        {"id": 4, "type": "create", "resource_type": "droplet", "resource_id": None,
+         "status": "in-progress", "started_at": "2026-11-24T12:07:00Z"},
     ]
     next_link = {"pages": {"next": "https://api.digitalocean.com/v2/actions?page=2"}}
     handler, seen = replies(
         httpx.Response(200, json={"actions": actions[:2], "links": next_link,
-                                  "meta": {"total": 3}}),
-        httpx.Response(200, json={"actions": actions[2:], "links": {}, "meta": {"total": 3}}),
+                                  "meta": {"total": 4}}),
+        httpx.Response(200, json={"actions": actions[2:], "links": {}, "meta": {"total": 4}}),
     )
     method = getattr(client_for(handler), "list_create_actions", None)
     assert method is not None
-    assert [a.resource_id for a in method(since)] == [70]
+    # A create with no resource ID yet is kept: it may be the one still being made.
+    assert [(a.resource_id, getattr(a, "status", None)) for a in method(since)] == [
+        (70, "completed"), (None, "in-progress")]
     assert [r.url.path for r in seen] == ["/v2/actions", "/v2/actions"]
+
+
+@pytest.mark.parametrize("status", [None, 3, "pending"])
+def test_action_with_an_unknown_status_is_a_failed_read(status):
+    bad = {"id": 1, "type": "create", "resource_type": "droplet", "resource_id": 70,
+           "status": status, "started_at": "2026-11-24T12:05:00Z"}
+    handler, _ = replies(httpx.Response(200, json={"actions": [bad], "links": {},
+                                                   "meta": {"total": 1}}))
+    with pytest.raises(ProviderError):
+        client_for(handler).list_create_actions(datetime(2026, 11, 24, tzinfo=UTC))
 
 
 def test_action_log_with_a_malformed_entry_is_a_failed_read():
