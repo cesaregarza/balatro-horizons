@@ -1,8 +1,10 @@
 """In-memory provider and worker channel for offline tests; never a real Droplet."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 
-from .provider import Droplet, ProviderError, WorkerReport
+from .provider import CreateAction, Droplet, ProviderError, WorkerReport
 
 
 class SimulatedCrash(BaseException):
@@ -14,6 +16,8 @@ class FakeProvider:
     inventory: dict[int, Droplet] = field(default_factory=dict)
     next_id: int = 1000
     fail_create: bool = False
+    # A 4xx is a definite rejection; a 5xx or transport error leaves the create ambiguous.
+    fail_create_code: str = "HTTP_422"
     # Create the Droplet, then fail the call, as a timeout after acceptance would.
     partial_create: bool = False
     boot: bool = True
@@ -21,6 +25,12 @@ class FakeProvider:
     # Delete answers success but the Droplet stays, so only verification catches it.
     ghost_deletes: bool = False
     list_failures: int = 0
+    action_failures: int = 0
+    # New Droplets stay out of listings for this many listing calls, as a lagging index would.
+    listing_lag: int = 0
+    clock: Callable[[], datetime] | None = None
+    actions: list[CreateAction] = field(default_factory=list)
+    hidden: dict[int, int] = field(default_factory=dict)
     crash_at: set[str] = field(default_factory=set)
     calls: list[tuple] = field(default_factory=list)
 
@@ -28,7 +38,13 @@ class FakeProvider:
         droplet = Droplet(id=self.allocate(), name="seeded", status=status, tags=tuple(tags),
                           created_at=created_at)
         self.inventory[droplet.id] = droplet
+        self.log_create(droplet.id, created_at)
         return droplet
+
+    def log_create(self, droplet_id, at=None):
+        started = at or (self.clock() if self.clock else None)
+        if started is not None:
+            self.actions.append(CreateAction(resource_id=droplet_id, started_at=started))
 
     def allocate(self):
         self.next_id += 1
@@ -43,9 +59,14 @@ class FakeProvider:
         self.calls.append(("create", spec.name, spec.tags))
         self.crash("before_create")
         if self.fail_create:
-            raise ProviderError("HTTP_422")
-        droplet = Droplet(id=self.allocate(), name=spec.name, status="new", tags=spec.tags)
+            raise ProviderError(self.fail_create_code)
+        created = self.clock() if self.clock else None
+        droplet = Droplet(id=self.allocate(), name=spec.name, status="new", tags=spec.tags,
+                          created_at=created)
         self.inventory[droplet.id] = droplet
+        self.log_create(droplet.id)
+        if self.listing_lag:
+            self.hidden[droplet.id] = self.listing_lag
         self.crash("after_create")
         if self.partial_create:
             raise ProviderError("TRANSPORT_ERROR")
@@ -60,10 +81,27 @@ class FakeProvider:
 
     def list_droplets(self, tag):
         self.calls.append(("list", tag))
+        return self.visible(lambda d: tag in d.tags)
+
+    def find_droplets_by_name(self, name):
+        self.calls.append(("name", name))
+        return self.visible(lambda d: d.name.lower() == name.lower())
+
+    def visible(self, matches):
         if self.list_failures:
             self.list_failures -= 1
             raise ProviderError("HTTP_503")
-        return [d for d in self.inventory.values() if tag in d.tags]
+        found = [d for d in self.inventory.values()
+                 if matches(d) and not self.hidden.get(d.id)]
+        self.hidden = {i: max(n - 1, 0) for i, n in self.hidden.items()}
+        return found
+
+    def list_create_actions(self, since):
+        self.calls.append(("actions", since))
+        if self.action_failures:
+            self.action_failures -= 1
+            raise ProviderError("HTTP_503")
+        return [action for action in self.actions if action.started_at >= since]
 
     def delete_droplet(self, droplet_id):
         self.calls.append(("delete", droplet_id))

@@ -6,22 +6,20 @@ the only state and a reconciler can interleave between ticks without racing.
 
 import re
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
+from .creation import CreateResolver, definite_rejection
 from .gate import launch_refusals
 from .ledger import RUN_ID_PATTERN, RunRecord
 from .provider import DropletSpec, SilentChannel
-from .settings import run_tag
+from .reconcile import reconcile_inventory
+from .settings import droplet_name, run_tag, utc_now
 from .teardown import Teardown
 
 SUPERVISED_STATES = ("provisioning", "running")
 # The reconciler holds the ledger lock while it verifies cleanup, up to the cleanup
 # bound for each run it tears down, so the controller waits rather than failing.
 LOCK_WAIT_SECONDS = 1800
-
-
-def utc_now():
-    return datetime.now(UTC)
 
 
 def require_run_id(run_id):
@@ -40,6 +38,7 @@ class Controller:
         self.clock = clock
         self.sleep = sleep
         self.teardown = Teardown(ledger, provider, settings, clock, sleep)
+        self.resolver = CreateResolver(ledger, provider, settings, self.teardown, clock)
 
     def launch(self, run_id):
         require_run_id(run_id)
@@ -47,20 +46,29 @@ class Controller:
             existing = self.ledger.get(run_id)
             if existing is not None:
                 return {"outcome": "duplicate", "run_id": run_id, "state": existing.state}
-            reasons = launch_refusals(
-                self.ledger.runs(), self.ledger.unmatched(), self.settings, self.clock())
+            # Admit nothing until what we already own is accounted for.
+            reconcile_inventory(self.ledger, self.provider, self.settings, self.teardown,
+                                self.clock)
+            reasons = launch_refusals(self.ledger, self.settings, self.clock())
             if reasons:
                 return {"outcome": "refused", "run_id": run_id, "reasons": reasons}
             record = self.persist_new(run_id)
             try:
                 droplet = self.provider.create_droplet(self.spec(run_id))
-                record.remember(droplet.id)
-                self.ledger.save(record)
-            except Exception:
-                # A failed or partial create may still have left a tagged Droplet.
-                record = self.teardown.run(record, "create_failed")
-                return {"outcome": "create_failed", "run_id": run_id, "state": record.state}
+            except Exception as error:
+                return self.create_failed(record, error)
+            record.remember(droplet.id)
+            self.ledger.save(record)
             return {"outcome": "launched", "run_id": run_id, "state": record.state}
+
+    def create_failed(self, record, error):
+        if definite_rejection(error):
+            record = self.teardown.run(record, "create_failed")
+        else:
+            # The create may have succeeded; only positive evidence may release it.
+            record = self.resolver.hold(record, "create_failed")
+        outcome = "create_unresolved" if record.state == "create_unresolved" else "create_failed"
+        return {"outcome": outcome, "run_id": record.run_id, "state": record.state}
 
     def persist_new(self, run_id):
         """Write the run and its absolute deadline before any provider call."""
@@ -68,7 +76,7 @@ class Controller:
         record = RunRecord(
             run_id=run_id, state="provisioning", created_at=now,
             deadline=now + timedelta(hours=self.settings.max_run_hours),
-            reserved_usd=self.settings.worst_case_usd,
+            reserved_usd=self.settings.worst_case_usd, create_attempted_at=now,
         )
         record.move("provisioning", now)
         self.ledger.save(record)
@@ -76,7 +84,7 @@ class Controller:
 
     def spec(self, run_id):
         return DropletSpec(
-            name=f"bh-{run_id}", region=self.settings.region, size=self.settings.size,
+            name=droplet_name(run_id), region=self.settings.region, size=self.settings.size,
             image=self.settings.image, tags=(self.settings.owner_tag, run_tag(run_id)),
         )
 
@@ -89,6 +97,8 @@ class Controller:
             return any(record.state in SUPERVISED_STATES for record in self.ledger.runs())
 
     def evaluate(self, record):
+        if record.state == "create_unresolved":
+            return self.resolver.resolve(record)
         if record.state in ("tearing_down", "cleanup_unverified"):
             return self.teardown.run(record, record.teardown_reason)
         now = self.clock()
@@ -152,13 +162,21 @@ class Controller:
                 if not record.live:
                     continue
                 if record.state == "provisioning":
-                    # Never adopt a half-made worker: its boot was not observed.
-                    self.teardown.run(record, "restart_while_provisioning")
+                    self.abandon_provisioning(record)
                     continue
                 if record.state == "running":
                     record.grace_from = self.clock()
                     self.ledger.save(record)
                 self.evaluate(record)
+            reconcile_inventory(self.ledger, self.provider, self.settings, self.teardown,
+                                self.clock)
+
+    def abandon_provisioning(self, record):
+        """Never adopt a half-made worker: its boot was not observed."""
+        if not record.resources:
+            # The crash may have come after the provider accepted the create.
+            return self.resolver.hold(record, "restart_while_provisioning")
+        return self.teardown.run(record, "restart_while_provisioning")
 
     def supervise(self):
         """Tick until no run needs supervision; any error tears live runs down first."""

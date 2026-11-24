@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 import httpx
 
-from .provider import Droplet, DropletSpec, ProviderError
+from .provider import CreateAction, Droplet, DropletSpec, ProviderError
 from .settings import TOKEN_VARIABLE
 
 API_URL = "https://api.digitalocean.com/v2"
@@ -45,22 +45,43 @@ class DigitalOceanClient:
         # A 5xx or dropped connection may follow a successful create, so only a
         # 429, which the API rejects before acting, is retried here.
         response = self.request("POST", "/droplets", json=body, retry_server_errors=False)
-        return parse_droplet(expect(response, 202)["droplet"])
+        return parse_droplet(expect(response, 202).get("droplet"))
 
     def get_droplet(self, droplet_id):
         response = self.request("GET", f"/droplets/{int(droplet_id)}")
         if response.status_code == 404:
             return None
-        return parse_droplet(expect(response, 200)["droplet"])
+        return parse_droplet(expect(response, 200).get("droplet"))
 
     def list_droplets(self, tag):
-        droplets = []
+        return [parse_droplet(item) for item in self.read_all("/droplets", "droplets",
+                                                              {"tag_name": tag})]
+
+    def find_droplets_by_name(self, name):
+        # The API matches names exactly, ignoring case, and refuses name with tag_name.
+        return [parse_droplet(item) for item in self.read_all("/droplets", "droplets",
+                                                              {"name": name})]
+
+    def list_create_actions(self, since):
+        # The API documents no order for the action log, so every page is read.
+        actions = [parse_action(item) for item in self.read_all("/actions", "actions", {})]
+        return [CreateAction(resource_id=a["resource_id"], started_at=a["started_at"])
+                for a in actions
+                if a["type"] == "create" and a["resource_type"] == "droplet"
+                and a["resource_id"] is not None and a["started_at"] >= since]
+
+    def read_all(self, path, key, filters):
+        """Every item across pages; anything short of a complete, well-formed read raises."""
+        items = []
         for page in range(1, MAX_PAGES + 1):
-            params = {"tag_name": tag, "page": page, "per_page": PAGE_SIZE}
-            body = expect(self.request("GET", "/droplets", params=params), 200)
-            droplets.extend(parse_droplet(item) for item in body.get("droplets", []))
-            if not body.get("links", {}).get("pages", {}).get("next"):
-                return droplets
+            params = filters | {"page": page, "per_page": PAGE_SIZE}
+            body = expect(self.request("GET", path, params=params), 200)
+            batch, more, total = page_parts(body, key)
+            items.extend(batch)
+            if not more:
+                if len(items) != total:
+                    raise ProviderError("INCOMPLETE_LISTING")
+                return items
         raise ProviderError("TOO_MANY_PAGES")
 
     def delete_droplet(self, droplet_id):
@@ -100,18 +121,62 @@ def expect(response, status):
     if response.status_code != status:
         raise ProviderError(f"HTTP_{response.status_code}")
     try:
-        return response.json()
+        body = response.json()
     except ValueError:
         raise ProviderError("MALFORMED_RESPONSE") from None
+    if not isinstance(body, dict):
+        raise ProviderError("MALFORMED_RESPONSE")
+    return body
+
+
+def page_parts(body, key):
+    """The items, whether another page follows, and the reported total."""
+    items = body.get(key) if isinstance(body, dict) else None
+    links = body.get("links", {}) if isinstance(body, dict) else None
+    meta = body.get("meta") if isinstance(body, dict) else None
+    pages = links.get("pages", {}) if isinstance(links, dict) else None
+    following = pages.get("next") if isinstance(pages, dict) else None
+    total = meta.get("total") if isinstance(meta, dict) else None
+    if not isinstance(items, list) or not isinstance(total, int) or isinstance(total, bool):
+        raise ProviderError("MALFORMED_RESPONSE")
+    if following is not None and not isinstance(following, str):
+        raise ProviderError("MALFORMED_RESPONSE")
+    return items, bool(following), total
+
+
+def whole_number(value):
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ProviderError("MALFORMED_RESPONSE")
+    return value
 
 
 def parse_droplet(item):
-    try:
-        return Droplet(id=int(item["id"]), name=str(item["name"]), status=str(item["status"]),
-                       tags=tuple(item.get("tags") or ()),
-                       created_at=parse_time(item.get("created_at")))
-    except (KeyError, TypeError, ValueError):
-        raise ProviderError("MALFORMED_RESPONSE") from None
+    if not isinstance(item, dict):
+        raise ProviderError("MALFORMED_RESPONSE")
+    tags, created = item.get("tags"), item.get("created_at")
+    if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+        raise ProviderError("MALFORMED_RESPONSE")
+    if created is not None and not isinstance(created, str):
+        raise ProviderError("MALFORMED_RESPONSE")
+    name, status = item.get("name"), item.get("status")
+    if not isinstance(name, str) or not isinstance(status, str):
+        raise ProviderError("MALFORMED_RESPONSE")
+    return Droplet(id=whole_number(item.get("id")), name=name, status=status,
+                   tags=tuple(tags), created_at=parse_time(created))
+
+
+def parse_action(item):
+    if not isinstance(item, dict):
+        raise ProviderError("MALFORMED_RESPONSE")
+    started = parse_time(item.get("started_at"))
+    kind, resource_type = item.get("type"), item.get("resource_type")
+    resource_id = item.get("resource_id")
+    if started is None or not isinstance(kind, str) or not isinstance(resource_type, str):
+        raise ProviderError("MALFORMED_RESPONSE")
+    if resource_id is not None:
+        whole_number(resource_id)
+    return {"type": kind, "resource_type": resource_type, "resource_id": resource_id,
+            "started_at": started}
 
 
 def parse_time(value):

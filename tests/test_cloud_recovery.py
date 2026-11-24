@@ -47,6 +47,7 @@ def test_unresolved_create_resolves_once_its_droplet_becomes_visible(cloud):
         controller.tick()
     record = cloud.assert_torn_down("r1", "create_failed")
     assert record.settled_usd is not None
+    cloud.provider.partial_create = False
     assert controller.launch("r2")["outcome"] == "launched"
 
 

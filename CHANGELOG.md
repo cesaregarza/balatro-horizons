@@ -12,6 +12,12 @@
   and refuses every new launch until a later verified absence. An owner-tagged
   Droplet with no usable run tag is never deleted; it raises an alert and refuses
   launches until the reconciler verifies it is gone.
+- Hold an ambiguous create (lost response, timeout, 5xx) unresolved, with its
+  reservation, slot and an alert, until its Droplet is found and deleted or the
+  action log settles it. Reconcile the owned inventory at startup and before each
+  launch. Write the ledger durably against power loss, check ownership before
+  deleting a known ID, reject malformed listings, and make `bh cloud launch` exit
+  nonzero when an alert is active.
 - Bound infrastructure spend with its own budget. Provider commands need
   `--allow-provider-calls`. Nothing was deleted; the native path is unchanged,
   and no file in the execution manifest changed.

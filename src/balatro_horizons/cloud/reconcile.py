@@ -3,9 +3,9 @@
 import re
 import time
 
-from .controller import utc_now
-from .ledger import RUN_ID_PATTERN, RunRecord, UnmatchedDroplet
-from .settings import run_id_from_tags
+from .creation import CreateResolver
+from .ledger import RUN_ID_PATTERN, RunRecord
+from .settings import run_id_from_tags, utc_now
 from .teardown import Teardown
 
 RECONCILE_LOCK_WAIT_SECONDS = 30
@@ -30,25 +30,39 @@ def stale_reason(record, now, settings):
 def reconcile(ledger, provider, settings, *, clock=utc_now, sleep=time.sleep,
               wait_seconds=RECONCILE_LOCK_WAIT_SECONDS):
     teardown = Teardown(ledger, provider, settings, clock, sleep)
+    resolver = CreateResolver(ledger, provider, settings, teardown, clock)
     with ledger.lock(wait_seconds):
         torn = []
         for record in ledger.runs():
+            if record.state == "create_unresolved":
+                torn.append(summary(resolver.resolve(record)))
+                continue
             reason = stale_reason(record, clock(), settings)
             if reason:
                 torn.append(summary(teardown.run(record, reason)))
-        try:
-            listed = provider.list_droplets(settings.owner_tag)
-        except Exception:
-            # A failed listing proves nothing, so it deletes nothing.
-            return {"runs": torn, "orphans": [], "unmatched": [], "orphan_scan": "LIST_FAILED"}
-        owned = [droplet for droplet in listed if settings.owner_tag in droplet.tags]
-        orphans = []
-        for droplet, run_id in orphan_droplets(ledger, owned):
-            record = adopt(ledger, run_id, droplet, clock(), settings)
-            orphans.append(summary(teardown.run(record, "orphan")) | {"droplet_id": droplet.id})
-        unmatched = watch_unmatched(ledger, provider, owned, clock())
-        return {"runs": torn, "orphans": orphans, "unmatched": unmatched,
-                "orphan_scan": "COMPLETE"}
+        return {"runs": torn} | reconcile_inventory(ledger, provider, settings, teardown, clock)
+
+
+def reconcile_inventory(ledger, provider, settings, teardown, clock):
+    """Read everything this controller owns: adopt orphans, watch unmatched Droplets.
+
+    The caller holds the ledger lock. The result is recorded so the launch gate and
+    status can tell a complete read from a failed one.
+    """
+    try:
+        listed = provider.list_droplets(settings.owner_tag)
+    except Exception:
+        # A failed listing proves nothing, so it deletes nothing and closes the gate.
+        ledger.save_inventory(False, clock())
+        return {"orphans": [], "unmatched": [], "orphan_scan": "LIST_FAILED"}
+    owned = [droplet for droplet in listed if settings.owner_tag in droplet.tags]
+    orphans = []
+    for droplet, run_id in orphan_droplets(ledger, owned):
+        record = adopt(ledger, run_id, droplet, clock(), settings)
+        orphans.append(summary(teardown.run(record, "orphan")) | {"droplet_id": droplet.id})
+    unmatched = watch_unmatched(ledger, provider, owned, clock())
+    ledger.save_inventory(True, clock())
+    return {"orphans": orphans, "unmatched": unmatched, "orphan_scan": "COMPLETE"}
 
 
 def usable_run_id(droplet):
@@ -89,21 +103,18 @@ def watch_unmatched(ledger, provider, owned, now):
     They are never deleted: without a run tag the both-tags filter cannot confirm them.
     """
     listed = {droplet.id for droplet in owned if usable_run_id(droplet) is None}
-    records = {record.droplet_id: record for record in ledger.unmatched()}
     for droplet_id in sorted(listed):
-        record = records.get(droplet_id)
-        if record is None or record.gone_at is not None:
-            records[droplet_id] = UnmatchedDroplet(droplet_id=droplet_id, found_at=now)
-            ledger.save_unmatched(records[droplet_id])
-            ledger.record_alert("UNMATCHED_DROPLET", now, droplet_id=droplet_id)
-    for record in records.values():
-        if record.gone_at is None and record.droplet_id not in listed:
-            if confirmed_gone(provider, record.droplet_id):
-                record.gone_at = now
-                ledger.save_unmatched(record)
-    return [{"droplet_id": record.droplet_id,
-             "state": "present" if record.gone_at is None else "gone"}
-            for record in records.values() if record.gone_at is None or record.gone_at == now]
+        ledger.note_unmatched(droplet_id, now)
+    report = []
+    for record in ledger.unmatched():
+        if record.gone_at is not None:
+            continue
+        if record.droplet_id not in listed and confirmed_gone(provider, record.droplet_id):
+            record.gone_at = now
+            ledger.save_unmatched(record)
+        report.append({"droplet_id": record.droplet_id,
+                       "state": "present" if record.gone_at is None else "gone"})
+    return report
 
 
 def confirmed_gone(provider, droplet_id):

@@ -48,7 +48,7 @@ class Teardown:
             for droplet_id in listed:
                 record.remember(droplet_id)
             self.ledger.save(record)
-        deleted = [self.delete(droplet_id) for droplet_id in sorted(record.resource_ids())]
+        deleted = [self.delete(record, droplet_id) for droplet_id in sorted(record.resource_ids())]
         return listed is not None and all(deleted) and self.verified_absent(record)
 
     def owned(self, run_id):
@@ -60,7 +60,19 @@ class Teardown:
             return None
         return {d.id for d in droplets if tag in d.tags and self.settings.owner_tag in d.tags}
 
-    def delete(self, droplet_id):
+    def delete(self, record, droplet_id):
+        """Delete only what still carries both tags; a known ID alone is not ownership."""
+        try:
+            current = self.provider.get_droplet(droplet_id)
+        except Exception:
+            return False
+        if current is None:
+            return True
+        if not {self.settings.owner_tag, run_tag(record.run_id)} <= set(current.tags):
+            record.release(droplet_id)
+            self.ledger.save(record)
+            self.ledger.note_unmatched(droplet_id, self.clock())
+            return True
         try:
             self.provider.delete_droplet(droplet_id)
         except Exception:

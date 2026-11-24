@@ -36,8 +36,19 @@ class Provider(Protocol):
 
     def list_droplets(self, tag: str) -> list[Droplet]: ...
 
+    def find_droplets_by_name(self, name: str) -> list[Droplet]: ...
+
+    def list_create_actions(self, since: datetime) -> list["CreateAction"]:
+        """Every Droplet create action started at or after `since`, read completely."""
+
     def delete_droplet(self, droplet_id: int) -> None:
         """Delete one Droplet by ID; a 404 means it is already gone."""
+
+
+@dataclass(frozen=True)
+class CreateAction:
+    resource_id: int
+    started_at: datetime
 
 
 @dataclass(frozen=True)

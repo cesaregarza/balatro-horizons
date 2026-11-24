@@ -15,10 +15,10 @@ compatibility is untouched.
 
 | Command | Provider calls | Purpose |
 | --- | --- | --- |
-| `bh cloud status` | none | Ledger, launch gate, budget and active alerts. Exits 1 while an alert is active. |
-| `bh cloud launch RUN_ID --allow-provider-calls` | yes | Start the controller, re-evaluate existing runs, launch one run and supervise until every run is torn down. |
+| `bh cloud status` | none | Ledger, launch gate, budget, the last inventory read and active alerts. Exits 1 while an alert is active. |
+| `bh cloud launch RUN_ID --allow-provider-calls` | yes | Start the controller, re-evaluate existing runs and the owned inventory, launch one run and supervise until every run is torn down. Exits nonzero if any alert is active at the end. |
 | `bh cloud cancel RUN_ID [--allow-provider-calls]` | only with the flag | Without the flag, record the request for the controller. With it, also tear down now. |
-| `bh cloud reconcile --allow-provider-calls` | yes | Tear down expired runs and orphans and verify each. Safe from a timer while the controller is down. |
+| `bh cloud reconcile --allow-provider-calls` | yes | Tear down expired runs and orphans, resolve unresolved creates, and verify each. Safe from a timer while the controller is down. |
 
 Every command that can reach DigitalOcean refuses with
 `PROVIDER_CALLS_NOT_ALLOWED` unless `--allow-provider-calls` is given, as
@@ -45,7 +45,7 @@ Settings live in `configs/cloud.yaml`, not `config.py`; pass another file with
 | --- | --- |
 | The worker reports it finished | `succeeded` |
 | Not `active` within `boot_timeout_seconds`, or gone during boot | `boot_failed` |
-| The create call fails, including after the Droplet was made | `create_failed` |
+| The create call is rejected with a 4xx, or an ambiguous create resolves | `create_failed` |
 | The absolute deadline passes | `deadline` |
 | A cancel request | `cancelled` |
 | No heartbeat within `heartbeat_grace_seconds` | `heartbeat_lost` |
@@ -54,17 +54,57 @@ Settings live in `configs/cloud.yaml`, not `config.py`; pass another file with
 | An owner-tagged Droplet with no live ledger run | `orphan` |
 
 On a controller restart, every live run is re-evaluated. A provisioning run is
-torn down, never adopted. A running run is torn down if it is past its deadline;
-otherwise it gets a fresh heartbeat grace window and is torn down if no heartbeat
-arrives. An interrupted teardown resumes. Only one controller can run at a time:
-it holds `controller.lock` for its lifetime, and a second one exits with
+torn down, never adopted; one with no recorded Droplet ID becomes an unresolved
+create, because the crash may have followed an accepted create. A running run is
+torn down if it is past its original deadline; otherwise it gets a fresh
+heartbeat grace window and is torn down if no heartbeat arrives. An interrupted
+teardown resumes. Only one controller can run at a time: it holds
+`controller.lock` for its lifetime, and a second one exits with
 `CONTROLLER_BUSY`.
+
+At startup, and again just before admitting each launch, the controller reads the
+whole owner-tag inventory, tears down orphans and records unmatched Droplets. If
+that read fails or is malformed, the launch is refused with
+`INVENTORY_UNVERIFIED`, and `status` shows the failed read.
+
+## Ambiguous creates
+
+A lost response, timeout, dropped connection, malformed reply or 5xx on create
+may follow an accepted create. A 4xx is the only definite rejection. An ambiguous
+create moves the run to `create_unresolved`: it keeps its reservation and its
+concurrency slot, records a `CREATE_UNRESOLVED` alert, and refuses launches.
+
+It resolves only on positive evidence:
+
+1. Its Droplet is found, by run tag or by its exact name through the name filter,
+   carrying both tags, and its deletion is verified.
+2. Or, once `create_settle_seconds` (default 10 minutes) have passed since the
+   attempt, the account action log has been read completely, back to five
+   minutes before the attempt to allow for clock skew. Every Droplet create in
+   that window is then resolved by ID. A 404 means gone. A Droplet carrying this
+   run's tags is deleted and verified. A Droplet with other tags is left alone.
+   The run-tag and name listings must also be empty. A Droplet with this run's
+   name but not its tags keeps the run unresolved.
+
+If the action log or any listing cannot be read completely, the run stays
+unresolved. The basis is that listings can lag a fresh create, while the action
+log records the create itself, and the API keeps completed actions for querying.
+The API documents no order for the action log, so every page is read. A read is
+complete only when the page count stays within bounds and the items collected
+match `meta.total`.
+
+Listings are strict: a missing or wrongly typed `id`, `name`, `status`, `tags`,
+`created_at`, pagination link or `meta.total` makes the listing fail. It is never
+read as empty.
 
 ## Verified teardown
 
 Teardown deletes every recorded Droplet and every Droplet listed under the run tag
 that also carries the owner tag. Deletion is by ID only; the bulk delete-by-tag
-endpoint is never called. Each pass is then verified: every ID must answer 404,
+endpoint is never called. Before each delete, the Droplet is read by ID. A 404
+means gone. A Droplet that no longer carries both tags is not deleted: it is
+handed to the unmatched watch described below, with its alert and the closed
+launch gate. Each pass is then verified: every ID must answer 404,
 and the run-tag listing must be empty. Powering a Droplet off never counts,
 because it still bills. Failed passes retry with exponential backoff
 (`retry_base_seconds`, capped at `retry_max_seconds`).
@@ -97,9 +137,12 @@ worst case and their elapsed cost; torn-down runs count at their settled cost.
 
 ## Ledger
 
-The ledger holds one JSON file per run in `cloud/runs/`, each replaced atomically
-by writing a temporary file and renaming it, so a crash at any point leaves the
-previous version readable. Alerts are separate, append-only files. The controller
+The ledger holds one JSON file per run in `cloud/runs/`. Each write survives power
+loss, not just a process crash: a temporary file in the same directory is written,
+flushed and synced, renamed into place, and then the directory is synced. A new
+directory is synced into its parent. A crash at any point leaves the previous
+version readable. The intent record written before a create holds the run ID,
+the original absolute deadline and the spend reservation. Alerts are separate, append-only files. The controller
 and the reconciler serialize on `cloud/ledger.lock`. The controller holds it for
 one operation at a time and waits up to 30 minutes for it. The reconciler waits
 30 seconds and then exits with `LEDGER_BUSY`.

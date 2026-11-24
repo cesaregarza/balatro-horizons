@@ -61,8 +61,9 @@ def launch_command(args, ledger, settings, provider):
         result = controller.launch(args.run_id)
         print(json.dumps(result, sort_keys=True), flush=True)
         controller.supervise()
-    show_status(ledger, settings)
-    return 0 if result["outcome"] in ("launched", "duplicate") else 1
+    # Any cleanup left unverified, or any other active alert, makes the launch a failure.
+    status_code = show_status(ledger, settings)
+    return status_code or (0 if result["outcome"] in ("launched", "duplicate") else 1)
 
 
 def cancel_command(args, ledger, settings, provider):
@@ -72,7 +73,7 @@ def cancel_command(args, ledger, settings, provider):
 def reconcile_command(args, ledger, settings, provider):
     result = reconcile(ledger, provider, settings)
     unverified = [run for run in result["runs"] + result["orphans"]
-                  if run["state"] == "cleanup_unverified"]
+                  if run["state"] in ("cleanup_unverified", "create_unresolved")]
     present = [item for item in result["unmatched"] if item["state"] == "present"]
     failed = unverified or present or result["orphan_scan"] != "COMPLETE"
     return emit(result, 1 if failed else 0)
@@ -83,12 +84,14 @@ OPERATIONS = {"launch": launch_command, "cancel": cancel_command,
 
 
 def status_report(ledger, settings, now):
-    runs, unmatched = ledger.runs(), ledger.unmatched()
-    refusals = launch_refusals(runs, unmatched, settings, now)
+    runs, unmatched, inventory = ledger.runs(), ledger.unmatched(), ledger.inventory()
+    refusals = launch_refusals(ledger, settings, now)
     return {
         "launches": "REFUSED" if refusals else "ALLOWED",
         "refusals": refusals,
         "alerts": active_alerts(ledger.alerts(), runs, unmatched),
+        "inventory": None if inventory is None else {
+            "complete": inventory.complete, "checked_at": inventory.at.isoformat()},
         "budget_usd": {
             "total": settings.infrastructure_budget_usd,
             "remaining": round(remaining_budget_usd(runs, settings, now), 6),
@@ -104,13 +107,18 @@ def status_report(ledger, settings, now):
 
 def active_alerts(alerts, runs, unmatched):
     """Alerts whose cause is still present; cleared ones stay on disk as history."""
-    unverified = {record.run_id for record in runs if record.state == "cleanup_unverified"}
+    states = {record.run_id: record.state for record in runs}
     present = {record.droplet_id for record in unmatched if record.gone_at is None}
     shown = []
     for alert in alerts:
-        if alert.code == "CLEANUP_UNVERIFIED" and alert.run_id in unverified:
+        state = states.get(alert.run_id)
+        if alert.code == "CLEANUP_UNVERIFIED" and state == "cleanup_unverified":
             message = (f"Cleanup of run {alert.run_id} is unverified. New launches are refused "
                        "until a later sweep verifies its Droplets are gone.")
+        elif alert.code == "CREATE_UNRESOLVED" and state == "create_unresolved":
+            message = (f"The create for run {alert.run_id} may have succeeded. New launches "
+                       "are refused until its Droplet is found and deleted, or the action log "
+                       "shows nothing of ours was made.")
         elif alert.code == "UNMATCHED_DROPLET" and alert.droplet_id in present:
             message = (f"Droplet {alert.droplet_id} carries this controller's owner tag but no "
                        "usable run tag. It is never deleted automatically; new launches are "
