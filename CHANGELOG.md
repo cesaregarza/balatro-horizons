@@ -9,12 +9,13 @@
   the deadline, cancellation, a lost heartbeat, a controller error and a restart.
   A Droplet counts as gone only after the provider acknowledged our DELETE, then
   a 404 by ID and an empty run-tag listing; no earlier read proves anything.
-- Fail closed: a run whose cleanup is unverified within the bound records an alert
-  and refuses every new launch until a later verified absence. An owner-tagged
-  Droplet with no usable run tag, or a known ID that lost its tags, is never
-  deleted; it raises an alert and holds launches, and no read clears it.
+- Fail closed: a run whose cleanup is unverified within the bound refuses every
+  new launch until a later verified absence. An owner-tagged Droplet with no
+  usable run tag, or a known ID that lost its tags, is never deleted; it holds
+  launches, and no read clears it. Status alerts and its exit code derive from
+  these durable blockers, through the gate's own function.
 - Hold a create with no recorded Droplet ID and no 4xx unresolved, on every
-  teardown path, with its reservation, slot and an alert, until its Droplet is
+  teardown path, with its reservation and slot, until its Droplet is
   found and its deletion verified. Empty reads and pending action log creates
   never clear it. Reconcile the owned inventory at startup and before each
   launch. Write the ledger durably against power loss, check ownership before

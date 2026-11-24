@@ -1,4 +1,4 @@
-"""The launch gate: unverified cleanup, concurrency and the infrastructure budget.
+"""The launch gate: durable blockers, concurrency and the infrastructure budget.
 
 Infrastructure money is bounded here on its own, apart from model spend.
 """
@@ -17,21 +17,31 @@ def remaining_budget_usd(runs, settings, now):
     return settings.infrastructure_budget_usd - committed
 
 
-def launch_refusals(ledger, settings, now):
-    runs, unmatched, inventory = ledger.runs(), ledger.unmatched(), ledger.inventory()
-    reasons = []
-    # Fail closed: an unverified cleanup may still be billing, and no override exists.
-    if any(record.state == "cleanup_unverified" for record in runs):
-        reasons.append("CLEANUP_UNVERIFIED")
-    # A create that may have succeeded holds the gate until positive evidence settles it.
-    if any(record.state == "create_unresolved" for record in runs):
-        reasons.append("CREATE_UNRESOLVED")
-    # An owned Droplet this controller cannot attribute may also be billing unnoticed.
-    if unmatched:
-        reasons.append("UNMATCHED_DROPLET")
-    # Without a complete read of what we own, an orphan may already be billing.
+BLOCKING_STATES = {"cleanup_unverified": "CLEANUP_UNVERIFIED",
+                   "create_unresolved": "CREATE_UNRESOLVED"}
+
+
+def blockers(ledger):
+    """The durable records that refuse launches; status shows exactly these as alerts.
+
+    Each is read from the record that commits it, so no second write can be lost.
+    Each may be billing unnoticed, and there is no override.
+    """
+    found = [{"code": BLOCKING_STATES[r.state], "run_id": r.run_id, "droplet_id": None,
+              "since": r.history[-1].at} for r in ledger.runs() if r.state in BLOCKING_STATES]
+    found += [{"code": "UNMATCHED_DROPLET", "run_id": None, "droplet_id": w.droplet_id,
+               "since": w.found_at} for w in ledger.unmatched()]
+    inventory = ledger.inventory()
     if inventory is not None and not inventory.complete:
-        reasons.append("INVENTORY_UNVERIFIED")
+        found.append({"code": "INVENTORY_UNVERIFIED", "run_id": None, "droplet_id": None,
+                      "since": inventory.at})
+    return found
+
+
+def launch_refusals(ledger, settings, now):
+    """Every blocker's code, then the capacity limits, which are not alerts."""
+    reasons = list(dict.fromkeys(blocker["code"] for blocker in blockers(ledger)))
+    runs = ledger.runs()
     if sum(record.live for record in runs) >= settings.max_concurrent_workers:
         reasons.append("CONCURRENCY_LIMIT")
     if settings.worst_case_usd > remaining_budget_usd(runs, settings, now):

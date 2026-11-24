@@ -1,4 +1,4 @@
-"""One JSON file per run, written durably, plus append-only alert records."""
+"""One JSON file per run, plus the unmatched watch and the last inventory read, written durably."""
 
 import fcntl
 import time
@@ -85,13 +85,6 @@ class RunRecord(BaseModel):
         self.history.append(Transition(at=at, state=state, reason=reason))
 
 
-class Alert(BaseModel):
-    code: str
-    at: datetime
-    run_id: str | None = None
-    droplet_id: int | None = None
-
-
 class UnmatchedDroplet(BaseModel):
     """An owner-tagged Droplet without one usable run tag: never deleted, only watched."""
 
@@ -112,7 +105,6 @@ class Ledger:
     def __init__(self, root: Path):
         self.root = Path(root)
         self.runs_dir = self.root / "runs"
-        self.alerts_dir = self.root / "alerts"
         self.unmatched_dir = self.root / "unmatched"
         self.inventory_path = self.root / "inventory.json"
 
@@ -126,15 +118,6 @@ class Ledger:
     def save(self, record: RunRecord):
         durable_json(self.runs_dir / f"{record.run_id}.json", record.model_dump(mode="json"))
 
-    def record_alert(self, code, at: datetime, *, run_id=None, droplet_id=None):
-        alert = Alert(code=code, at=at, run_id=run_id, droplet_id=droplet_id)
-        subject = run_id if run_id is not None else f"droplet-{droplet_id}"
-        path = self.alerts_dir / f"{at.strftime('%Y%m%dT%H%M%S%fZ')}-{subject}-{code}.json"
-        durable_json(path, alert.model_dump(mode="json"))
-
-    def alerts(self):
-        return [Alert.model_validate_json(path.read_text()) for path in json_files(self.alerts_dir)]
-
     def unmatched(self):
         return [UnmatchedDroplet.model_validate_json(path.read_text())
                 for path in json_files(self.unmatched_dir)]
@@ -144,11 +127,10 @@ class Ledger:
                      record.model_dump(mode="json"))
 
     def note_unmatched(self, droplet_id, now):
-        """Start watching a Droplet this controller must not delete; alert once."""
+        """Start watching a Droplet this controller must not delete; it blocks from then on."""
         if any(record.droplet_id == droplet_id for record in self.unmatched()):
             return
         self.save_unmatched(UnmatchedDroplet(droplet_id=droplet_id, found_at=now))
-        self.record_alert("UNMATCHED_DROPLET", now, droplet_id=droplet_id)
 
     def inventory(self):
         if not self.inventory_path.is_file():

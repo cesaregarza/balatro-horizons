@@ -77,7 +77,7 @@ create. The run is persisted before the request is sent, so the ledger always
 knows a create was attempted.
 
 Such a run moves to `create_unresolved`. It keeps its reservation and its
-concurrency slot, records a `CREATE_UNRESOLVED` alert, and refuses launches.
+concurrency slot, shows a `CREATE_UNRESOLVED` alert, and refuses launches.
 Every teardown path holds it this way rather than tearing it down: the
 controller's tick, boot check and restart recovery, the reconciler's expiry and
 boot-timeout checks, `cancel` with or without `--allow-provider-calls`, the
@@ -146,7 +146,7 @@ bills. Failed passes retry with exponential backoff (`retry_base_seconds`, cappe
 at `retry_max_seconds`).
 
 If a run is not verified within `cleanup_verify_seconds`, it is marked
-`cleanup_unverified`, an alert is recorded under `cloud/alerts/`, and every new
+`cleanup_unverified`, status shows a `CLEANUP_UNVERIFIED` alert, and every new
 launch is refused. There is no override. Only a later verified absence, from a
 controller tick or `bh cloud reconcile`, clears it.
 
@@ -165,8 +165,8 @@ tags:
 - An owner-tagged Droplet without exactly one usable run tag, found by the
   reconciler.
 
-Each records an `UNMATCHED_DROPLET` alert, `status` shows it, and new launches
-are refused. With no DELETE of ours to acknowledge, no read clears them: a 404
+Each is recorded in the unmatched watch, `status` shows an `UNMATCHED_DROPLET`
+alert for it, and new launches are refused. With no DELETE of ours to acknowledge, no read clears them: a 404
 does not, and neither does absence from a listing. A run that holds such an ID
 never settles, so it keeps its reservation and its slot. Delete the Droplet by
 hand after checking what it is.
@@ -187,6 +187,21 @@ A completed `destroy` action for the ID in the account action log is a candidate
 for conclusive evidence in some of these cases. It is not implemented; the first
 real-provider slice checks whether it is reliable.
 
+Live runs need an evidence-backed recovery path for these cases first, with no
+force-clear. Until then they are a documented limit of this offline slice: a lost
+DELETE acknowledgment, for example, blocks launches indefinitely even when the
+deletion really happened.
+
+### Alerts
+
+Status derives its alerts, and its exit code, from the durable records that block
+launches, through the same function the launch gate uses: each run in
+`create_unresolved` or `cleanup_unverified`, each unmatched Droplet, and an
+inventory read that did not complete. The run's transition history and the
+watch's `found_at` record when each began. No separate alert file is written, so a
+crash right after a blocker is committed cannot hide it. Capacity refusals, from
+the concurrency limit and the budget, are not alerts, and status exits 0 for them.
+
 An orphan with no ledger run settles from the provider's `created_at`, or from
 when it was found if that time is missing or unparseable.
 
@@ -205,7 +220,7 @@ loss, not just a process crash: a temporary file in the same directory is writte
 flushed and synced, renamed into place, and then the directory is synced. A new
 directory is synced into its parent. A crash at any point leaves the previous
 version readable. The intent record written before a create holds the run ID,
-the original absolute deadline and the spend reservation. Alerts are separate, append-only files. The controller
+the original absolute deadline and the spend reservation. The controller
 and the reconciler serialize on `cloud/ledger.lock`. The controller holds it for
 one operation at a time and waits up to 30 minutes for it. The reconciler waits
 30 seconds and then exits with `LEDGER_BUSY`.

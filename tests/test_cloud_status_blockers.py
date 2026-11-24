@@ -11,7 +11,9 @@ import pytest
 from cloud_support import Cloud
 
 from balatro_horizons.cli import main
+from balatro_horizons.cli.cloud import status_report
 from balatro_horizons.cloud.fake import SimulatedCrash
+from balatro_horizons.cloud.ledger import Ledger
 
 NEVER = 10**9
 
@@ -88,3 +90,9 @@ def test_crash_after_committing_an_unmatched_droplet_still_shows_its_alert(
     monkeypatch.undo()
     assert_blocked(cloud, capsys, "UNMATCHED_DROPLET", ("droplet_id", unmatched.id))
 
+
+
+def test_capacity_refusals_are_not_alerts(cloud):
+    cloud.launched()
+    report = status_report(Ledger(cloud.root), cloud.settings, cloud.clock())
+    assert (report["refusals"], report["alerts"]) == (["CONCURRENCY_LIMIT"], [])

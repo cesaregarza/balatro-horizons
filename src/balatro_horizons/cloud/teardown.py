@@ -26,7 +26,7 @@ class Teardown:
         if record.state == "torn_down":
             return record
         if record.state == "cleanup_unverified":
-            # Already alerted; a later verified absence is the only way out.
+            # Already blocking launches; a later verified absence is the only way out.
             return self.settle(record) if self.sweep(record) else record
         if record.state != "tearing_down":
             self.begin(record, reason)
@@ -138,7 +138,6 @@ class Teardown:
         at = self.clock()
         record.move("cleanup_unverified", at, record.teardown_reason)
         self.ledger.save(record)
-        self.ledger.record_alert("CLEANUP_UNVERIFIED", at, run_id=record.run_id)
         return record
 
     def backoff(self, attempt):

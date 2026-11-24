@@ -6,7 +6,7 @@ from pathlib import Path
 
 from balatro_horizons.cloud.controller import Controller, utc_now
 from balatro_horizons.cloud.digitalocean import client_from_environment
-from balatro_horizons.cloud.gate import launch_refusals, remaining_budget_usd
+from balatro_horizons.cloud.gate import blockers, launch_refusals, remaining_budget_usd
 from balatro_horizons.cloud.ledger import Ledger, LedgerBusy
 from balatro_horizons.cloud.reconcile import reconcile
 from balatro_horizons.cloud.settings import DEFAULT_PATH, load_settings
@@ -84,12 +84,12 @@ OPERATIONS = {"launch": launch_command, "cancel": cancel_command,
 
 
 def status_report(ledger, settings, now):
-    runs, unmatched, inventory = ledger.runs(), ledger.unmatched(), ledger.inventory()
+    runs, inventory = ledger.runs(), ledger.inventory()
     refusals = launch_refusals(ledger, settings, now)
     return {
         "launches": "REFUSED" if refusals else "ALLOWED",
         "refusals": refusals,
-        "alerts": active_alerts(ledger.alerts(), runs, unmatched),
+        "alerts": active_alerts(ledger),
         "inventory": None if inventory is None else {
             "complete": inventory.complete, "checked_at": inventory.at.isoformat()},
         "budget_usd": {
@@ -105,30 +105,25 @@ def status_report(ledger, settings, now):
     }
 
 
-def active_alerts(alerts, runs, unmatched):
-    """Alerts whose cause is still present; cleared ones stay on disk as history."""
-    states = {record.run_id: record.state for record in runs}
-    present = {record.droplet_id for record in unmatched}
-    shown = []
-    for alert in alerts:
-        state = states.get(alert.run_id)
-        if alert.code == "CLEANUP_UNVERIFIED" and state == "cleanup_unverified":
-            message = (f"Cleanup of run {alert.run_id} is unverified. New launches are refused "
-                       "until a later sweep verifies its Droplets are gone.")
-        elif alert.code == "CREATE_UNRESOLVED" and state == "create_unresolved":
-            message = (f"The create for run {alert.run_id} may have succeeded. New launches "
-                       "are refused until its Droplet is found and its deletion verified; "
-                       "empty reads never clear it.")
-        elif alert.code == "UNMATCHED_DROPLET" and alert.droplet_id in present:
-            message = (f"Droplet {alert.droplet_id} is one this controller may not delete: it "
-                       "lost its run's tags, or carries the owner tag with no usable run tag. "
-                       "New launches are refused, and no read clears it.")
-        else:
-            continue
-        shown.append({"code": alert.code, "run_id": alert.run_id,
-                      "droplet_id": alert.droplet_id, "since": alert.at.isoformat(),
-                      "message": message})
-    return shown
+ALERT_MESSAGES = {
+    "CLEANUP_UNVERIFIED": "Cleanup of run {run_id} is unverified. New launches are refused "
+                          "until a later sweep verifies its Droplets are gone.",
+    "CREATE_UNRESOLVED": "The create for run {run_id} may have succeeded. New launches are "
+                         "refused until its Droplet is found and its deletion verified; "
+                         "empty reads never clear it.",
+    "UNMATCHED_DROPLET": "Droplet {droplet_id} is one this controller may not delete: it lost "
+                         "its run's tags, or carries the owner tag with no usable run tag. New "
+                         "launches are refused, and no read clears it.",
+    "INVENTORY_UNVERIFIED": "The last read of the owned inventory failed. New launches are "
+                            "refused until a complete read.",
+}
+
+
+def active_alerts(ledger):
+    """One alert per durable blocker, from the same records the launch gate reads."""
+    return [blocker | {"since": blocker["since"].isoformat(),
+                       "message": ALERT_MESSAGES[blocker["code"]].format(**blocker)}
+            for blocker in blockers(ledger)]
 
 
 def show_status(ledger, settings):

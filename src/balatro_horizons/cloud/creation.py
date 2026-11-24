@@ -56,7 +56,6 @@ class CreateResolver:
         record.teardown_reason = reason
         record.move("create_unresolved", now, reason)
         self.ledger.save(record)
-        self.ledger.record_alert("CREATE_UNRESOLVED", now, run_id=record.run_id)
         return self.resolve(record)
 
     def resolve(self, record):
