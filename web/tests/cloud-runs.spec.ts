@@ -33,7 +33,9 @@ test("phone cloud screen shows alerts first, absolute times and no sideways scro
   await page.setViewportSize({ width: 390, height: 844 });
   await mockCloud(page, () => ({ body: report }));
   await page.goto("/");
-  await page.getByRole("navigation").getByRole("button", { name: "Cloud runs", exact: true }).click();
+  const cloudTab = page.getByRole("navigation").getByRole("button", { name: "Cloud runs", exact: true });
+  await expect(cloudTab).toBeVisible();
+  await cloudTab.click();
   await expect(page).toHaveURL(/#cloud$/);
   await expect(page.getByRole("heading", { name: "Cloud runs", level: 1 })).toBeVisible();
   const alert = page.getByRole("alert");
@@ -44,6 +46,8 @@ test("phone cloud screen shows alerts first, absolute times and no sideways scro
   expect(alertBox!.y).toBeLessThan(budgetBox!.y);
   await expect(page.getByRole("region", { name: "Launches" })).toContainText("Launches are refused");
   await expect(page.getByRole("region", { name: "Launches" })).toContainText("CLEANUP_UNVERIFIED");
+  await expect(page.getByRole("region", { name: "Launches" })).toContainText("started from the command line, not from this dashboard");
+  await expect(page.getByRole("region", { name: "Launches" })).toContainText("estimates from the hourly price");
   const budget = page.getByRole("region", { name: "Budget" });
   await expect(budget).toContainText("$10.0000");
   await expect(budget).toContainText("$9.3000");
