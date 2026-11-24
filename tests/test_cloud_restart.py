@@ -42,8 +42,11 @@ def full_lifecycle(cloud):
 def restart_and_settle(cloud):
     restarted = cloud.controller()
     restarted.recover()
-    while restarted.tick():
+    for _ in range(100):
+        if not restarted.tick():
+            return
         cloud.clock.advance(cloud.settings.poll_seconds)
+    raise AssertionError("a live run outlived 100 controller ticks")
 
 
 @pytest.mark.parametrize("number", range(1, LEDGER_WRITES + 1))

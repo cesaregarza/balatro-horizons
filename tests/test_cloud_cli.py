@@ -15,8 +15,11 @@ from balatro_horizons.cloud.settings import load_settings
 @pytest.fixture
 def paths(tmp_path, monkeypatch):
     config = tmp_path / "cloud.yaml"
+    # Real time: the deadline (3.6 s) bounds the launch test if a trigger is broken.
     config.write_text(json.dumps(cloud_settings(
-        heartbeat_grace_seconds=1, poll_seconds=0.05).model_dump()))
+        heartbeat_grace_seconds=1, poll_seconds=0.05, max_run_hours=0.001,
+        cleanup_verify_seconds=2, retry_base_seconds=0.1, retry_max_seconds=0.5,
+    ).model_dump()))
     provider = FakeProvider()
     monkeypatch.setattr(cloud_cli, "client_from_environment", lambda: provider)
     flags = ["--data-dir", str(tmp_path), "--cloud-config", str(config)]
