@@ -44,8 +44,8 @@ class Provider(Protocol):
         Creates that have no resource ID yet are kept, and so is each action's status.
         """
 
-    def delete_droplet(self, droplet_id: int) -> None:
-        """Delete one Droplet by ID; a 404 means it is already gone."""
+    def delete_droplet(self, droplet_id: int) -> bool:
+        """Delete one Droplet by ID; True only when the provider acknowledged the DELETE."""
 
 
 @dataclass(frozen=True)

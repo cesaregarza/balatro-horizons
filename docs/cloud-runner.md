@@ -106,9 +106,9 @@ run-tag and name reads above find it. The owner-tag inventory sweeps, at
 startup, before each launch and on each reconciler pass, adopt and delete any
 owner-tagged Droplet whose run is no longer live.
 
-Clearing a create that the provider never shows is an open design question for
-a later slice. In this slice such a run holds launches and its reservation
-indefinitely, which is the intended fail-closed result.
+Clearing a create that the provider never shows is one of the open cases listed
+under [Cases that hold](#cases-that-hold). In this slice such a run holds launches
+and its reservation indefinitely, which is the intended fail-closed result.
 
 The API documents no order for the action log, so every page is read. A read is
 complete only when the page count stays within bounds and the items collected
@@ -121,15 +121,29 @@ read as empty.
 
 ## Verified teardown
 
+The controller believes a Droplet is gone only after the provider has
+acknowledged our DELETE for it. DigitalOcean documents no read-after-write
+guarantee, so the controller relies on none: a by-ID read and a listing can
+each lag or disagree. An ID counts as gone only when all three of these hold,
+in order:
+
+1. A fresh by-ID read showed it with both tags.
+2. The provider acknowledged our DELETE with a 2xx. A 404 on DELETE is not an
+   acknowledgment. The acknowledgment is recorded durably on the run's resource
+   before any later read is trusted.
+3. Afterwards, a by-ID read returns 404 and the run-tag listing omits the ID.
+
+Before the acknowledgment, a 404 or an empty listing proves nothing. The run
+keeps its state, reservation and slot, and later passes read again; if the ID
+reads with both tags again, it is deleted then. The same rule applies to every
+run: a known ID, an adopted orphan, and a Droplet found for an unresolved
+create.
+
 Teardown deletes every recorded Droplet and every Droplet listed under the run tag
 that also carries the owner tag. Deletion is by ID only; the bulk delete-by-tag
-endpoint is never called. Before each delete, the Droplet is read by ID. A 404
-means gone. A Droplet that no longer carries both tags is not deleted: it is
-handed to the unmatched watch described below, with its alert and the closed
-launch gate. Each pass is then verified: every ID must answer 404,
-and the run-tag listing must be empty. Powering a Droplet off never counts,
-because it still bills. Failed passes retry with exponential backoff
-(`retry_base_seconds`, capped at `retry_max_seconds`).
+endpoint is never called. Powering a Droplet off never counts, because it still
+bills. Failed passes retry with exponential backoff (`retry_base_seconds`, capped
+at `retry_max_seconds`).
 
 If a run is not verified within `cleanup_verify_seconds`, it is marked
 `cleanup_unverified`, an alert is recorded under `cloud/alerts/`, and every new
@@ -139,12 +153,39 @@ controller tick or `bh cloud reconcile`, clears it.
 Resources without the owner tag, or with another controller's owner tag, are
 never deleted.
 
-An owner-tagged Droplet without exactly one usable run tag is never deleted
-either, because the deletion filter needs both tags. It may still be billing, so
-the reconciler records an `UNMATCHED_DROPLET` alert, `status` shows it, and new
-launches are refused. Only a reconcile that sees it gone clears this: a 404 by
-ID and its absence from the owner-tag listing. Delete it by hand after checking
-what it is.
+### IDs the controller may not delete
+
+Two kinds of Droplet are never deleted, because the deletion filter needs both
+tags:
+
+- A recorded ID whose fresh read no longer shows both tags. The unmatched watch
+  is written first, and only then is the ID taken out of the run's deletable
+  set. A crash between the two writes leaves the ID in both places, and the
+  next pass repeats the step.
+- An owner-tagged Droplet without exactly one usable run tag, found by the
+  reconciler.
+
+Each records an `UNMATCHED_DROPLET` alert, `status` shows it, and new launches
+are refused. With no DELETE of ours to acknowledge, no read clears them: a 404
+does not, and neither does absence from a listing. A run that holds such an ID
+never settles, so it keeps its reservation and its slot. Delete the Droplet by
+hand after checking what it is.
+
+### Cases that hold
+
+These hold launches, and the run's reservation where there is one, until an
+operator path is designed in a later slice:
+
+- A create the provider never shows.
+- A DELETE whose acknowledgment was lost, for example to a crash before it was
+  recorded.
+- A Droplet deleted outside the controller, which reads 404 with no
+  acknowledgment.
+- An unmatched Droplet.
+
+A completed `destroy` action for the ID in the account action log is a candidate
+for conclusive evidence in some of these cases. It is not implemented; the first
+real-provider slice checks whether it is reliable.
 
 An orphan with no ledger run settles from the provider's `created_at`, or from
 when it was found if that time is missing or unparseable.

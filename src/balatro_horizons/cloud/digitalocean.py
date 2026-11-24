@@ -89,9 +89,13 @@ class DigitalOceanClient:
         raise ProviderError("TOO_MANY_PAGES")
 
     def delete_droplet(self, droplet_id):
+        """True when the API acknowledged our DELETE; a 404 is not an acknowledgment."""
         response = self.request("DELETE", f"/droplets/{int(droplet_id)}")
-        if response.status_code not in (204, 404):
+        if response.status_code == 404:
+            return False
+        if not 200 <= response.status_code < 300:
             raise ProviderError(f"HTTP_{response.status_code}")
+        return True
 
     def request(self, method, path, *, retry_server_errors=True, **kwargs):
         for attempt in range(MAX_ATTEMPTS):

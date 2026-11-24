@@ -27,6 +27,8 @@ class Resource(BaseModel):
     # Firewalls and SSH keys join this list in a later slice.
     kind: Literal["droplet"] = "droplet"
     id: int
+    # When the provider acknowledged our DELETE; no read counts as gone before it.
+    acknowledged_at: datetime | None = None
 
 
 class Transition(BaseModel):
@@ -67,6 +69,9 @@ class RunRecord(BaseModel):
     def resource_ids(self):
         return {resource.id for resource in self.resources}
 
+    def resource(self, droplet_id):
+        return next(resource for resource in self.resources if resource.id == droplet_id)
+
     def remember(self, droplet_id):
         if droplet_id not in self.resource_ids() and droplet_id not in self.released:
             self.resources.append(Resource(id=droplet_id))
@@ -94,7 +99,6 @@ class UnmatchedDroplet(BaseModel):
 
     droplet_id: int
     found_at: datetime
-    gone_at: datetime | None = None
 
 
 class InventoryCheck(BaseModel):
@@ -141,8 +145,7 @@ class Ledger:
 
     def note_unmatched(self, droplet_id, now):
         """Start watching a Droplet this controller must not delete; alert once."""
-        current = next((r for r in self.unmatched() if r.droplet_id == droplet_id), None)
-        if current is not None and current.gone_at is None:
+        if any(record.droplet_id == droplet_id for record in self.unmatched()):
             return
         self.save_unmatched(UnmatchedDroplet(droplet_id=droplet_id, found_at=now))
         self.record_alert("UNMATCHED_DROPLET", now, droplet_id=droplet_id)

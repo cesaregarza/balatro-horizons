@@ -60,7 +60,7 @@ def reconcile_inventory(ledger, provider, settings, teardown, clock):
     for droplet, run_id in orphan_droplets(ledger, owned):
         record = adopt(ledger, run_id, droplet, clock(), settings)
         orphans.append(summary(teardown.run(record, "orphan")) | {"droplet_id": droplet.id})
-    unmatched = watch_unmatched(ledger, provider, owned, clock())
+    unmatched = watch_unmatched(ledger, owned, clock())
     ledger.save_inventory(True, clock())
     return {"orphans": orphans, "unmatched": unmatched, "orphan_scan": "COMPLETE"}
 
@@ -97,31 +97,17 @@ def adopt(ledger, run_id, droplet, now, settings):
     return record
 
 
-def watch_unmatched(ledger, provider, owned, now):
-    """Alert on owned Droplets with no usable run tag, and fail closed until they are gone.
+def watch_unmatched(ledger, owned, now):
+    """Alert on owned Droplets with no usable run tag; they hold launches from then on.
 
     They are never deleted: without a run tag the both-tags filter cannot confirm them.
+    With no DELETE of ours to acknowledge, no later read can show them gone.
     """
     listed = {droplet.id for droplet in owned if usable_run_id(droplet) is None}
     for droplet_id in sorted(listed):
         ledger.note_unmatched(droplet_id, now)
-    report = []
-    for record in ledger.unmatched():
-        if record.gone_at is not None:
-            continue
-        if record.droplet_id not in listed and confirmed_gone(provider, record.droplet_id):
-            record.gone_at = now
-            ledger.save_unmatched(record)
-        report.append({"droplet_id": record.droplet_id,
-                       "state": "present" if record.gone_at is None else "gone"})
-    return report
-
-
-def confirmed_gone(provider, droplet_id):
-    try:
-        return provider.get_droplet(droplet_id) is None
-    except Exception:
-        return False
+    return [{"droplet_id": record.droplet_id, "state": "present"}
+            for record in ledger.unmatched()]
 
 
 def summary(record):

@@ -116,9 +116,11 @@ class FakeProvider:
             self.delete_failures -= 1
             raise ProviderError("HTTP_500")
         self.crash("before_delete")
+        found = droplet_id in self.inventory
         if not self.ghost_deletes:
             self.inventory.pop(droplet_id, None)
         self.crash("after_delete")
+        return found
 
     def deleted(self):
         return [call[1] for call in self.calls if call[0] == "delete"]

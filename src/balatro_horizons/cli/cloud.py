@@ -108,7 +108,7 @@ def status_report(ledger, settings, now):
 def active_alerts(alerts, runs, unmatched):
     """Alerts whose cause is still present; cleared ones stay on disk as history."""
     states = {record.run_id: record.state for record in runs}
-    present = {record.droplet_id for record in unmatched if record.gone_at is None}
+    present = {record.droplet_id for record in unmatched}
     shown = []
     for alert in alerts:
         state = states.get(alert.run_id)
@@ -120,9 +120,9 @@ def active_alerts(alerts, runs, unmatched):
                        "are refused until its Droplet is found and its deletion verified; "
                        "empty reads never clear it.")
         elif alert.code == "UNMATCHED_DROPLET" and alert.droplet_id in present:
-            message = (f"Droplet {alert.droplet_id} carries this controller's owner tag but no "
-                       "usable run tag. It is never deleted automatically; new launches are "
-                       "refused until the reconciler verifies it is gone.")
+            message = (f"Droplet {alert.droplet_id} is one this controller may not delete: it "
+                       "lost its run's tags, or carries the owner tag with no usable run tag. "
+                       "New launches are refused, and no read clears it.")
         else:
             continue
         shown.append({"code": alert.code, "run_id": alert.run_id,

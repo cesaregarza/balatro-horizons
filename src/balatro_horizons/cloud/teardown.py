@@ -1,7 +1,11 @@
 """Delete a run's Droplets by ID, retry with backoff, and verify they are gone.
 
-Verified means both a 404 for every recorded ID and an empty listing for the run tag.
-Powering a Droplet off never counts: it still bills.
+The controller believes a Droplet is gone only after the provider acknowledged our
+DELETE for it. An ID is gone when a fresh read showed it with both tags, our DELETE
+for it was acknowledged, and afterwards it reads 404 by ID and is missing from the
+run-tag listing. The provider documents no read-after-write guarantee, so a 404 or
+an empty listing before the acknowledgment proves nothing. Powering a Droplet off
+never counts: it still bills.
 """
 
 from datetime import timedelta
@@ -51,35 +55,62 @@ class Teardown:
         deleted = [self.delete(record, droplet_id) for droplet_id in sorted(record.resource_ids())]
         return listed is not None and all(deleted) and self.verified_absent(record)
 
-    def owned(self, run_id):
-        """IDs listed under the run tag that also carry this controller's owner tag."""
-        tag = run_tag(run_id)
+    def listing(self, run_id):
+        """Droplets listed under the run tag, or None when the listing failed."""
         try:
-            droplets = self.provider.list_droplets(tag)
+            return self.provider.list_droplets(run_tag(run_id))
         except Exception:
             return None
-        return {d.id for d in droplets if tag in d.tags and self.settings.owner_tag in d.tags}
+
+    def owned(self, run_id):
+        """IDs listed under the run tag that also carry this controller's owner tag."""
+        droplets = self.listing(run_id)
+        if droplets is None:
+            return None
+        tags = {self.settings.owner_tag, run_tag(run_id)}
+        return {d.id for d in droplets if tags <= set(d.tags)}
 
     def delete(self, record, droplet_id):
-        """Delete only what still carries both tags; a known ID alone is not ownership."""
+        """Delete what a fresh read shows with both tags; True once a DELETE is acknowledged."""
+        resource = record.resource(droplet_id)
         try:
             current = self.provider.get_droplet(droplet_id)
         except Exception:
             return False
         if current is None:
-            return True
+            # Until our DELETE is acknowledged, a 404 proves nothing; later sweeps read again.
+            return resource.acknowledged_at is not None
         if not {self.settings.owner_tag, run_tag(record.run_id)} <= set(current.tags):
-            record.release(droplet_id)
-            self.ledger.save(record)
-            self.ledger.note_unmatched(droplet_id, self.clock())
-            return True
+            self.lose_ownership(record, droplet_id)
+            return False
         try:
-            self.provider.delete_droplet(droplet_id)
+            acknowledged = self.provider.delete_droplet(droplet_id)
         except Exception:
             return False
+        if not acknowledged:
+            return False
+        # Durable before any later read is trusted.
+        resource.acknowledged_at = self.clock()
+        self.ledger.save(record)
         return True
 
+    def lose_ownership(self, record, droplet_id):
+        """A known ID without both tags is never deleted; the unmatched watch owns it.
+
+        The watch is written first, so a crash between the two writes leaves the ID in
+        both places rather than in neither, and the next sweep repeats this step.
+        """
+        self.ledger.note_unmatched(droplet_id, self.clock())
+        record.release(droplet_id)
+        self.ledger.save(record)
+
     def verified_absent(self, record):
+        """Gone means our DELETE was acknowledged, then a 404 by ID and no run-tag listing."""
+        if record.released:
+            # An ID we may not delete has no acknowledgment to wait for, so it never clears.
+            return False
+        if any(resource.acknowledged_at is None for resource in record.resources):
+            return False
         try:
             gone_by_id = all(
                 self.provider.get_droplet(droplet_id) is None
@@ -87,7 +118,12 @@ class Teardown:
             )
         except Exception:
             return False
-        return gone_by_id and self.owned(record.run_id) == set()
+        droplets = self.listing(record.run_id)
+        if droplets is None:
+            return False
+        tags = {self.settings.owner_tag, run_tag(record.run_id)}
+        listed = {d.id for d in droplets if d.id in record.resource_ids() or tags <= set(d.tags)}
+        return gone_by_id and not listed
 
     def settle(self, record):
         """Charge the budget for the time actually elapsed, now that nothing bills."""

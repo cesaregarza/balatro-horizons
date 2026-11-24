@@ -7,11 +7,12 @@
   in `configs/cloud.yaml`. See [cloud runner](docs/cloud-runner.md).
 - Tear a run's Droplet down on success, boot failure, a failed or partial create,
   the deadline, cancellation, a lost heartbeat, a controller error and a restart.
-  Verified means a 404 by ID and an empty run-tag listing.
+  A Droplet counts as gone only after the provider acknowledged our DELETE, then
+  a 404 by ID and an empty run-tag listing; no earlier read proves anything.
 - Fail closed: a run whose cleanup is unverified within the bound records an alert
   and refuses every new launch until a later verified absence. An owner-tagged
-  Droplet with no usable run tag is never deleted; it raises an alert and refuses
-  launches until the reconciler verifies it is gone.
+  Droplet with no usable run tag, or a known ID that lost its tags, is never
+  deleted; it raises an alert and holds launches, and no read clears it.
 - Hold a create with no recorded Droplet ID and no 4xx unresolved, on every
   teardown path, with its reservation, slot and an alert, until its Droplet is
   found and its deletion verified. Empty reads and pending action log creates

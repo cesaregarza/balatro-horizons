@@ -27,7 +27,7 @@ def launch_refusals(ledger, settings, now):
     if any(record.state == "create_unresolved" for record in runs):
         reasons.append("CREATE_UNRESOLVED")
     # An owned Droplet this controller cannot attribute may also be billing unnoticed.
-    if any(record.gone_at is None for record in unmatched):
+    if unmatched:
         reasons.append("UNMATCHED_DROPLET")
     # Without a complete read of what we own, an orphan may already be billing.
     if inventory is not None and not inventory.complete:
