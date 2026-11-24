@@ -38,7 +38,7 @@ def test_ambiguous_create_with_delayed_visibility_stays_unresolved_and_blocks(cl
     refused = cloud.controller().launch("r2")
     assert "CREATE_UNRESOLVED" in refused["reasons"]
     assert len(cloud.creates()) == 1
-    assert [a.code for a in cloud.ledger.alerts()] == ["CREATE_UNRESOLVED"]
+    assert cloud.alert_codes() == ["CREATE_UNRESOLVED"]
 
 
 def test_unresolved_create_resolves_once_its_droplet_becomes_visible(cloud):
@@ -114,7 +114,7 @@ def test_rejected_create_is_definite_and_settles_at_once(cloud):
     cloud.provider.fail_create_code = "HTTP_422"
     assert cloud.controller().launch("r1")["outcome"] == "create_failed"
     cloud.assert_torn_down("r1", "create_failed")
-    assert not cloud.ledger.alerts()
+    assert cloud.active_alerts() == []
 
 
 def test_startup_cleans_a_visible_former_worker_before_any_launch(cloud):
@@ -150,7 +150,7 @@ def test_known_id_whose_tags_were_removed_is_not_deleted_and_fails_closed(cloud)
     controller.cancel("r1", now=True)
     assert droplet_id in cloud.provider.inventory
     assert droplet_id not in cloud.provider.deleted()
-    assert "UNMATCHED_DROPLET" in [a.code for a in cloud.ledger.alerts()]
+    assert "UNMATCHED_DROPLET" in cloud.alert_codes()
     assert "UNMATCHED_DROPLET" in controller.launch("r2")["reasons"]
     # The run holding an ID it may not delete never settles, even once that ID reads 404.
     cloud.provider.inventory.pop(droplet_id)
@@ -240,4 +240,5 @@ def test_rejected_create_whose_teardown_is_unverified_is_never_held_as_unresolve
     monkeypatch.undo()
     cloud.restarted().tick()
     cloud.assert_torn_down("r1", "create_failed")
-    assert [a.code for a in cloud.ledger.alerts()] == ["CLEANUP_UNVERIFIED"]
+    assert "create_unresolved" not in [t.state for t in cloud.ledger.get("r1").history]
+    assert cloud.active_alerts() == []

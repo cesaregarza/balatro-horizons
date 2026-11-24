@@ -32,7 +32,8 @@ def test_delete_that_never_succeeds_fails_closed_with_an_alert(cloud):
     controller.cancel("r1", now=True)
     record = cloud.ledger.get("r1")
     assert record.state == "cleanup_unverified"
-    assert [(a.run_id, a.code) for a in cloud.ledger.alerts()] == [("r1", "CLEANUP_UNVERIFIED")]
+    assert [(a["run_id"], a["code"]) for a in cloud.active_alerts()] == [
+        ("r1", "CLEANUP_UNVERIFIED")]
     refused = controller.launch("r2")
     assert refused["outcome"] == "refused" and "CLEANUP_UNVERIFIED" in refused["reasons"]
     assert cloud.ledger.get("r2") is None
@@ -44,7 +45,7 @@ def test_only_a_later_verified_absence_reopens_launches(cloud):
     controller.cancel("r1", now=True)
     controller.tick()
     assert cloud.ledger.get("r1").state == "cleanup_unverified"
-    assert len(cloud.ledger.alerts()) == 1
+    assert len(cloud.active_alerts()) == 1
     cloud.provider.delete_failures = 0
     cloud.reconcile()
     cloud.assert_torn_down("r1", "cancelled")
@@ -151,7 +152,7 @@ def test_owner_tag_without_a_run_tag_is_never_deleted_and_is_alerted(cloud, tmp_
         ("UNMATCHED_DROPLET", unmatched.id)]
     assert "no read clears it" in report["alerts"][0]["message"]
     cloud.reconcile()
-    assert len(cloud.ledger.alerts()) == 1
+    assert len(cloud.active_alerts()) == 1
     cloud.assert_unrelated_survive()
 
 

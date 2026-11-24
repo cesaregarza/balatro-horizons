@@ -87,7 +87,7 @@ def test_known_id_that_reads_404_before_any_delete_leaves_the_run_unsettled(clou
     controller.cancel("r1", now=True)
     assert_unsettled(cloud)
     assert cloud.provider.deleted() == []
-    assert "CLEANUP_UNVERIFIED" in [alert.code for alert in cloud.ledger.alerts()]
+    assert "CLEANUP_UNVERIFIED" in cloud.alert_codes()
 
 
 def http_cloud(tmp_path):
@@ -138,6 +138,6 @@ def test_delete_answered_404_is_not_an_acknowledgment(tmp_path):
     record = cloud.ledger.get("r1")
     assert record.state == "cleanup_unverified"
     assert (record.verified_at, record.settled_usd) == (None, None)
-    assert "CLEANUP_UNVERIFIED" in [alert.code for alert in cloud.ledger.alerts()]
+    assert "CLEANUP_UNVERIFIED" in cloud.alert_codes()
     assert controller.launch("r2")["outcome"] == "refused"
     assert len(methods(stub, "POST")) == 1

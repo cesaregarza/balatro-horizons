@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from balatro_horizons.cli.cloud import status_report
 from balatro_horizons.cloud.controller import Controller
 from balatro_horizons.cloud.fake import FakeChannel, FakeProvider
 from balatro_horizons.cloud.ledger import Ledger
@@ -71,6 +72,13 @@ class Cloud:
     def reconcile(self):
         return reconcile(self.ledger, self.provider, self.settings, clock=self.clock,
                          sleep=self.clock.advance, wait_seconds=0)
+
+    def active_alerts(self):
+        """The alerts status shows, read from a fresh ledger on the same directory."""
+        return status_report(Ledger(self.root), self.settings, self.clock())["alerts"]
+
+    def alert_codes(self):
+        return [alert["code"] for alert in self.active_alerts()]
 
     def owned_ids(self, run_id):
         tags = {self.settings.owner_tag, run_tag(run_id)}
