@@ -71,15 +71,15 @@ class Teardown:
         return {d.id for d in droplets if tags <= set(d.tags)}
 
     def delete(self, record, droplet_id):
-        """Delete what a fresh read shows with both tags; True once a DELETE is acknowledged."""
-        resource = record.resource(droplet_id)
+        """Delete what a fresh read shows with both tags; False when this pass must retry."""
         try:
             current = self.provider.get_droplet(droplet_id)
         except Exception:
             return False
         if current is None:
-            # Until our DELETE is acknowledged, a 404 proves nothing; later sweeps read again.
-            return resource.acknowledged_at is not None
+            # Nothing to delete now. Whether it is gone is for verification to decide,
+            # and before our DELETE is acknowledged, a 404 proves nothing.
+            return True
         if not {self.settings.owner_tag, run_tag(record.run_id)} <= set(current.tags):
             self.lose_ownership(record, droplet_id)
             return False
@@ -90,7 +90,7 @@ class Teardown:
         if not acknowledged:
             return False
         # Durable before any later read is trusted.
-        resource.acknowledged_at = self.clock()
+        record.resource(droplet_id).acknowledged_at = self.clock()
         self.ledger.save(record)
         return True
 
