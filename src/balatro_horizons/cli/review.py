@@ -12,6 +12,7 @@ def run_review_command(args):
             public_origin=args.public_origin,
             bind_host=args.host,
             workbench_enabled=args.workbench,
+            view_only=args.view_only,
         ),
         host=args.host,
         port=args.port,

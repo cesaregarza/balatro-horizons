@@ -25,7 +25,7 @@ export function DecisionExplorerDetail({
   onBack: () => void;
   onPrevious: () => void;
   onNext: () => void;
-  onAnnotate: () => void;
+  onAnnotate?: () => void;
 }) {
   return <section className="decision-detail" aria-label="Decision details">
     <div className="detail-navigation"><button className="back-to-choices" onClick={onBack}>← Back to choices</button><span>{activeIndex < 0 ? "Selected decision is outside the current filters" : `${activeIndex + 1} / ${visibleLength} matches`}</span><button aria-label="Previous matching decision" disabled={activeIndex <= 0} onClick={onPrevious}>← Previous</button><button aria-label="Next matching decision" disabled={activeIndex >= visibleLength - 1} onClick={onNext}>Next →</button></div>
@@ -46,7 +46,7 @@ export function DecisionExplorerDetail({
     {devMode && <DevTrace key={`${token}-${active.decision}`} token={token} decision={active.decision} liveUpdates={liveUpdates} refresh={refresh} />}
     {!view && !detailError && <p role="status">Loading this decision…</p>}
     {view && <>
-      <button className="primary" disabled={busy} onClick={onAnnotate}>Annotate this decision</button>
+      {onAnnotate && <button className="primary" disabled={busy} onClick={onAnnotate}>Annotate this decision</button>}
       <div className="board-toggle" aria-label="State to inspect"><button aria-pressed={boardSide === "before"} onClick={() => setBoardSide("before")}>Before decision</button><button aria-pressed={boardSide === "after"} disabled={!active.action_number || !view.transition} onClick={() => setBoardSide("after")}>After decision</button></div>
       <Board key={`${view.decision}-${boardSide}`} observation={boardSide === "after" && view.transition ? view.transition : view.observation} />
       <ReasoningSummaries events={view.action_events || []} />

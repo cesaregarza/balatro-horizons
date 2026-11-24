@@ -1,0 +1,23 @@
+.cloud-alert {
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+.cloud-alert p {
+  margin: 0 0 6px;
+}
+.cloud-refusals {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.cloud-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 18px;
+  margin: 0;
+}
+.cloud-facts dd {
+  margin: 0;
+}
+.cloud-runs td {
+  white-space: nowrap;
+}

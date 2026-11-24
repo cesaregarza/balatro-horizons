@@ -229,7 +229,28 @@ export type Bootstrap = {
   operator_token: string;
   config: any;
   workbench: boolean;
+  view_only: boolean;
   paid_credentials: Record<string, boolean>;
+};
+export type CloudAlert = { code: string; message: string; since: string; run_id: string | null; droplet_id: number | null };
+export type CloudRun = {
+  run_id: string;
+  state: string;
+  created_at: string;
+  deadline: string;
+  teardown_reason: string | null;
+  cost_usd: number;
+  reserved_usd: number;
+  settled_usd: number | null;
+};
+export type CloudStatus = {
+  read_at: string;
+  launches: "ALLOWED" | "REFUSED";
+  refusals: string[];
+  alerts: CloudAlert[];
+  inventory: { complete: boolean; checked_at: string } | null;
+  budget_usd: { total: number; remaining: number; worst_case_per_run: number };
+  runs: CloudRun[];
 };
 export type RuntimeConnection = {
   ready: boolean;
@@ -290,6 +311,7 @@ async function request<T>(path: string, method = "GET", body?: unknown, reviewTo
 }
 
 export const bootstrap = () => request<Bootstrap>("/bootstrap");
+export const cloudStatus = () => request<CloudStatus>("/cloud/status");
 export const listEpisodes = () => request<Episode[]>("/episodes");
 export const listOperatorEpisodes = (episodeIds: string[]) => request<OperatorEpisode[]>("/operator/episodes", "POST", { episode_ids: episodeIds });
 export const restorePreview = (episodeId: string) => request<RestorePreview>("/operator/episodes/" + episodeId + "/restore");

@@ -3,6 +3,7 @@ import { bootstrap, compareBranch, humanStatus, listBatches, listEpisodes, listP
 import { readRoute, routeHash, routeKey, type DashboardRoute, type DashboardTab } from "./dashboardNavigation";
 import { DecisionExplorer } from "./screens/DecisionExplorer";
 import { BatchesAndReports } from "./screens/BatchesAndReports";
+import { CloudRuns } from "./screens/CloudRuns";
 import { ModelsAndBudgets } from "./screens/ModelsAndBudgets";
 import { RunLibrary } from "./screens/RunLibrary";
 import { Comparison } from "./workbench/Comparison";
@@ -25,6 +26,8 @@ export default function App() {
   const [comparison, setComparison] = useState<any>(null);
   const [report, setReport] = useState<any>(null);
   const [credentials, setCredentials] = useState<Record<string, boolean>>({});
+  // The server serves no route that acts, so no control for one is shown.
+  const [viewOnly, setViewOnly] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,6 +49,7 @@ export default function App() {
   const priorExposure = useRef(priorSeedExposure);
   priorExposure.current = priorSeedExposure;
   const workbenchReady = useRef(false);
+  const viewOnlyReady = useRef(false);
 
   async function run(task: () => Promise<void>) {
     setBusy(true); setError("");
@@ -67,6 +71,10 @@ export default function App() {
     setTab(route.tab); setError(""); setOpening(false);
     if (!workbenchReady.current && ["review", "human", "comparison"].includes(route.tab)) {
       setError("This workspace does not have research workbench controls enabled.");
+      restoreScroll(route); return;
+    }
+    if (viewOnlyReady.current && route.tab === "models") {
+      setError("This dashboard is view-only, so settings cannot be changed.");
       restoreScroll(route); return;
     }
     try {
@@ -147,6 +155,7 @@ export default function App() {
       setOperatorToken(data.operator_token);
       setConfig(data.config); setCredentials(data.paid_credentials);
       workbenchReady.current = Boolean(data.config.workbench);
+      viewOnlyReady.current = Boolean(data.view_only); setViewOnly(viewOnlyReady.current);
       await refresh();
       if (active) await applyRoute(readRoute());
     }).catch((caught) => { if (active) setError(String(caught)); });
@@ -172,18 +181,19 @@ export default function App() {
   const workbench = Boolean(config.workbench);
   const explorerSelected = Boolean(explorer && currentRoute.current.episodeId === explorer.episodeId);
   const reviewSelected = Boolean(review && currentRoute.current.episodeId === review.view.episode_id);
-  const nav: [DashboardTab, string][] = [["runs", "Runs"], ["explore", "Decision explorer"], ["batches", "Batches & reports"], ["models", "Models & budgets"], ...(workbench ? [["review", "Horizon review"], ["human", "Human control"]] as [DashboardTab, string][] : [])];
+  const nav: [DashboardTab, string][] = [["runs", "Runs"], ["explore", "Decision explorer"], ["batches", "Batches & reports"], ...(viewOnly ? [] : [["models", "Models & budgets"]] as [DashboardTab, string][]), ["cloud", "Cloud runs"], ...(workbench ? [["review", "Horizon review"], ["human", "Human control"]] as [DashboardTab, string][] : [])];
   return <div className="shell">
     <aside><div className="brand"><span className="mark">♠</span><div><strong>BALATRO</strong><span>HORIZONS</span></div></div><p className="sidebar-label">{workbench ? "YOUR WORKBENCH" : "DASHBOARD"}</p><nav>{nav.map(([id, label]) => <button key={id} className={tab === id ? "active" : ""} onClick={() => selectTab(id)}>{label}</button>)}</nav><div className="sidebar-bottom"><span className="dot" /> LOCAL WORKSPACE<p>Native decisions.<br />Inspectable continuations.</p><small>Public run evidence</small></div></aside>
-    <main><header><span>{tab === "review" ? "EXPERT ANALYSIS" : "RUN WORKBENCH"}</span><div className="header-right"><span className="badge">{!watch ? "Worker status hidden" : !status ? "Checking worker…" : status.running ? "Worker running" : "Worker idle"}</span><button title="Shows model identity and progress; records operator exposure" onClick={() => setWatch(!watch)}>{watch ? "Hide worker status" : "Show worker status"}</button>{watch && status?.active_episode && <button onClick={() => openRun(status.active_episode, true)}>Open active run</button>}<button disabled={busy} title="Stopping while idle is harmless; it records no exposure" onClick={() => run(async () => { await stopRun(); setNotice("Stop requested. Any in-flight action will be recorded."); })}>Stop worker</button><button onClick={() => run(refresh)}>Refresh</button></div></header>
+    <main><header><span>{tab === "review" ? "EXPERT ANALYSIS" : "RUN WORKBENCH"}</span><div className="header-right">{viewOnly && <span className="badge">View only</span>}<span className="badge">{!watch ? "Worker status hidden" : !status ? "Checking worker…" : status.running ? "Worker running" : "Worker idle"}</span><button title="Shows model identity and progress; records operator exposure" onClick={() => setWatch(!watch)}>{watch ? "Hide worker status" : "Show worker status"}</button>{watch && status?.active_episode && <button onClick={() => openRun(status.active_episode, true)}>Open active run</button>}{!viewOnly && <button disabled={busy} title="Stopping while idle is harmless; it records no exposure" onClick={() => run(async () => { await stopRun(); setNotice("Stop requested. Any in-flight action will be recorded."); })}>Stop worker</button>}<button onClick={() => run(refresh)}>Refresh</button></div></header>
       {error && <div role="alert" className="error">{error}</div>}{notice && <div className="notice"><span role="status">{notice}</span><button className="dismiss-notice" aria-label="Dismiss notification" onClick={() => setNotice("")}>×</button></div>}
       {opening && <p role="status">Opening the recorded run…</p>}
-      <section hidden={tab !== "runs"} aria-label="Runs workspace"><RunLibrary workbench={workbench} config={config} setConfig={setConfig} episodes={episodes} setEpisodes={setEpisodes} busy={busy || opening} run={run} openExplorer={(id: string) => openRun(id, true)} openReview={(id: string) => openRun(id)} onCompare={(id: string) => navigate({ tab: "comparison", episodeId: id })} priorSeedExposure={priorSeedExposure} setPriorSeedExposure={setPriorSeedExposure} watch={watch} setWatch={setWatch} status={status} setNotice={setNotice} onHumanStart={() => selectTab("human")} /></section>
-      <section hidden={tab !== "explore" || opening} aria-label="Explorer workspace">{explorer && <div hidden={!explorerSelected}><DecisionExplorer key={explorer.token} token={explorer.token} initialDecision={explorer.initialDecision} active={tab === "explore" && explorerSelected && !opening} onDecisionChange={selectedDecision} onDirtyChange={(dirty) => { explorerDirty.current = dirty; }} workbench={workbench} onRestored={(id) => void restored(id)} /></div>}{!explorerSelected && <ChooseRun onChoose={() => selectTab("runs")} title="Choose a run to explore" />}</section>
+      <section hidden={tab !== "runs"} aria-label="Runs workspace"><RunLibrary viewOnly={viewOnly} workbench={workbench} config={config} setConfig={setConfig} episodes={episodes} setEpisodes={setEpisodes} busy={busy || opening} run={run} openExplorer={(id: string) => openRun(id, true)} openReview={(id: string) => openRun(id)} onCompare={(id: string) => navigate({ tab: "comparison", episodeId: id })} priorSeedExposure={priorSeedExposure} setPriorSeedExposure={setPriorSeedExposure} watch={watch} setWatch={setWatch} status={status} setNotice={setNotice} onHumanStart={() => selectTab("human")} /></section>
+      <section hidden={tab !== "explore" || opening} aria-label="Explorer workspace">{explorer && <div hidden={!explorerSelected}><DecisionExplorer key={explorer.token} viewOnly={viewOnly} token={explorer.token} initialDecision={explorer.initialDecision} active={tab === "explore" && explorerSelected && !opening} onDecisionChange={selectedDecision} onDirtyChange={(dirty) => { explorerDirty.current = dirty; }} workbench={workbench} onRestored={(id) => void restored(id)} /></div>}{!explorerSelected && <ChooseRun onChoose={() => selectTab("runs")} title="Choose a run to explore" />}</section>
       <section hidden={tab !== "review" || opening} aria-label="Research review workspace">{workbench && <>{review && <div hidden={!reviewSelected}><Review key={review.token} token={review.token} initial={review.view} onDirtyChange={(dirty) => { reviewDirty.current = dirty; }} onExplore={(decision) => openRun(review.view.episode_id, true, decision)} onBranch={(id) => { setNotice("Branch created: " + id.slice(0, 10)); void refresh(); selectTab("human"); }} /></div>}{!reviewSelected && <ChooseRun onChoose={() => selectTab("runs")} title="Choose a run for staged review" />}</>}</section>
       {workbench && <section hidden={tab !== "human"}><HumanControl human={human} setHuman={setHuman} run={run} /></section>}
-      <section hidden={tab !== "batches"}><BatchesAndReports config={config} setConfig={setConfig} panels={panels} setPanels={setPanels} batches={batches} setBatches={setBatches} report={report} setReport={setReport} offline={true} busy={busy} run={run} /></section>
-      <section hidden={tab !== "models"}><ModelsAndBudgets config={config} setConfig={setConfig} run={run} setNotice={setNotice} credentials={credentials} busy={busy} /></section>
+      <section hidden={tab !== "batches"}><BatchesAndReports viewOnly={viewOnly} config={config} setConfig={setConfig} panels={panels} setPanels={setPanels} batches={batches} setBatches={setBatches} report={report} setReport={setReport} offline={true} busy={busy} run={run} /></section>
+      {!viewOnly && <section hidden={tab !== "models"}><ModelsAndBudgets config={config} setConfig={setConfig} run={run} setNotice={setNotice} credentials={credentials} busy={busy} /></section>}
+      {tab === "cloud" && <section aria-label="Cloud workspace"><CloudRuns /></section>}
       {tab === "comparison" && !opening && (comparison && sessions.current.comparisonId === currentRoute.current.episodeId ? <Comparison data={comparison} onExplore={(id: string) => openRun(id, true)} onBack={() => selectTab("runs")} /> : <ChooseRun onChoose={() => selectTab("runs")} title="Choose runs to compare" />)}
       <footer>Balatro Horizons · Original runs remain immutable. Assisted branches are separate diagnostic evidence.</footer>
     </main>

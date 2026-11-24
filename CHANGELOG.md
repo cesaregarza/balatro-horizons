@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-11-24 — Dashboard: a Cloud runs view and a view-only mode
+
+- Add a Cloud runs tab that shows the report `bh cloud status` prints, from the
+  same function now kept in the cloud package: active alerts first, launch
+  refusals, the budget, the last inventory read and each run's cost, reservation
+  and settled amount. `bh cloud status` gains the same per-run fields and the time
+  it read the records. The new `GET /api/cloud/status` route reads the durable
+  records on every request, creates nothing, and answers `CLOUD_LEDGER_UNREADABLE`
+  or `CLOUD_SETTINGS_INVALID` instead of an empty list. See
+  [dashboard](docs/dashboard.md#cloud-runs).
+- Add `bh review --view-only`, which does not mount the routes that start or stop
+  a run, save settings, plan, run or export a batch, or write an annotation, and
+  hides their controls. It is refused together with `--workbench`. The mount
+  counts become 27 flag-off and 48 flag-on.
+- Treat a damaged cloud ledger as an error everywhere it is read: a path of the
+  wrong type, a directory that cannot be listed, a run record whose history is
+  missing or disagrees with its state, a `torn_down` record with no settled
+  amount, a time without a zone, and negative or non-finite amounts. Non-finite
+  budget or price settings are invalid. The dashboard answers 503
+  `CLOUD_LEDGER_UNREADABLE` or `CLOUD_SETTINGS_INVALID`, and `bh cloud status`
+  exits with an error instead of printing an empty report.
+- Fix `bh --data-dir DIR review`, which ignored DIR and served the checkout's own
+  data directory.
+- Raise the Python CI job's time limit from 10 to 15 minutes.
+- No file in the execution manifest changed; the native path and restore
+  compatibility are untouched.
+
 ## 2026-11-24 — Cloud runner: a Droplet per run that is always torn down
 
 - Add `bh cloud launch`, `status`, `cancel` and `reconcile` with a run ledger, a

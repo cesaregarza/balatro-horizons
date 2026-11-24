@@ -6,10 +6,10 @@ from pathlib import Path
 
 from balatro_horizons.cloud.controller import Controller, utc_now
 from balatro_horizons.cloud.digitalocean import client_from_environment
-from balatro_horizons.cloud.gate import blockers, launch_refusals, remaining_budget_usd
 from balatro_horizons.cloud.ledger import Ledger, LedgerBusy
 from balatro_horizons.cloud.reconcile import reconcile
 from balatro_horizons.cloud.settings import DEFAULT_PATH, load_settings
+from balatro_horizons.cloud.status import status_report
 
 PROVIDER_FLAG_HELP = "Required for any call that can reach DigitalOcean and cost money"
 
@@ -81,49 +81,6 @@ def reconcile_command(args, ledger, settings, provider):
 
 OPERATIONS = {"launch": launch_command, "cancel": cancel_command,
               "reconcile": reconcile_command}
-
-
-def status_report(ledger, settings, now):
-    runs, inventory = ledger.runs(), ledger.inventory()
-    refusals = launch_refusals(ledger, settings, now)
-    return {
-        "launches": "REFUSED" if refusals else "ALLOWED",
-        "refusals": refusals,
-        "alerts": active_alerts(ledger),
-        "inventory": None if inventory is None else {
-            "complete": inventory.complete, "checked_at": inventory.at.isoformat()},
-        "budget_usd": {
-            "total": settings.infrastructure_budget_usd,
-            "remaining": round(remaining_budget_usd(runs, settings, now), 6),
-            "worst_case_per_run": round(settings.worst_case_usd, 6),
-        },
-        "runs": [{
-            "run_id": record.run_id, "state": record.state,
-            "deadline": record.deadline.isoformat(), "teardown_reason": record.teardown_reason,
-            "settled_usd": record.settled_usd,
-        } for record in runs],
-    }
-
-
-ALERT_MESSAGES = {
-    "CLEANUP_UNVERIFIED": "Cleanup of run {run_id} is unverified. New launches are refused "
-                          "until a later sweep verifies its Droplets are gone.",
-    "CREATE_UNRESOLVED": "The create for run {run_id} may have succeeded. New launches are "
-                         "refused until its Droplet is found and its deletion verified; "
-                         "empty reads never clear it.",
-    "UNMATCHED_DROPLET": "Droplet {droplet_id} is one this controller may not delete: it lost "
-                         "its run's tags, or carries the owner tag with no usable run tag. New "
-                         "launches are refused, and no read clears it.",
-    "INVENTORY_UNVERIFIED": "The last read of the owned inventory failed. New launches are "
-                            "refused until a complete read.",
-}
-
-
-def active_alerts(ledger):
-    """One alert per durable blocker, from the same records the launch gate reads."""
-    return [blocker | {"since": blocker["since"].isoformat(),
-                       "message": ALERT_MESSAGES[blocker["code"]].format(**blocker)}
-            for blocker in blockers(ledger)]
 
 
 def show_status(ledger, settings):

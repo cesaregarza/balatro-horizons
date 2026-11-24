@@ -14,10 +14,15 @@ from balatro_horizons.review.service import ReviewService
 from balatro_horizons.service import RunService
 from balatro_horizons.storage.journal import Store
 
+from . import (
+    routes_annotate,
+    routes_batches,
+    routes_cloud,
+    routes_explore,
+    routes_runs,
+    routes_settings,
+)
 from .middleware import ensure_loopback, install_middleware, validate_public_origin
-from .routes_explore import router as explore_router
-from .routes_runs import router as runs_router
-from .routes_settings import router as settings_router
 
 
 def create_app(
@@ -28,10 +33,13 @@ def create_app(
     bind_host="127.0.0.1",
     output_root=None,
     workbench_enabled=None,
+    view_only=False,
 ):
     ensure_loopback(bind_host)
     store = Store(data_dir or ROOT / "data")
     cfg, settings_path = load_runtime_config(store, config, workbench_enabled)
+    if view_only and cfg.workbench_enabled:
+        raise ValueError("VIEW_ONLY_EXCLUDES_WORKBENCH")
     app = FastAPI(title="Balatro Horizons", docs_url=None, redoc_url=None, openapi_url=None)
     review = ReviewService(store)
     workbench = None
@@ -39,11 +47,11 @@ def create_app(
         from balatro_horizons.workbench.service import WorkbenchService
 
         workbench = WorkbenchService(store)
-    install_state(app, store, review, workbench, cfg, settings_path, output_root)
+    install_state(app, store, review, workbench, cfg, settings_path, output_root, view_only)
     allowed_hosts = ["127.0.0.1", "localhost", "testserver"]
     public_host, public_authority = validate_public_origin(public_origin, allowed_hosts)
     install_middleware(app, allowed_hosts, public_origin, public_host, public_authority)
-    include_routes(app, cfg.workbench_enabled)
+    include_routes(app, cfg.workbench_enabled, view_only)
     mount_static(app, app.state.output_root)
     return app
 
@@ -61,7 +69,7 @@ def load_runtime_config(store, config, workbench_enabled):
     return cfg, settings_path
 
 
-def install_state(app, store, review, workbench, config, settings_path, output_root):
+def install_state(app, store, review, workbench, config, settings_path, output_root, view_only):
     app.state.store = store
     app.state.review = review
     app.state.workbench = workbench
@@ -71,18 +79,20 @@ def install_state(app, store, review, workbench, config, settings_path, output_r
     app.state.config = config
     app.state.settings_path = settings_path
     app.state.output_root = output_root or ROOT
+    app.state.view_only = view_only
     app.state.operator_token = secrets.token_hex(32)
 
 
-def include_routes(app, workbench_enabled):
-    app.include_router(runs_router)
-    app.include_router(explore_router)
-    app.include_router(settings_router)
-    from .routes_annotate import router as annotate_router
-    from .routes_batches import router as batches_router
-
-    app.include_router(batches_router)
-    app.include_router(annotate_router)
+def include_routes(app, workbench_enabled, view_only):
+    modules = (routes_runs, routes_explore, routes_settings, routes_batches, routes_annotate,
+               routes_cloud)
+    for module in modules:
+        app.include_router(module.router)
+    if not view_only:
+        # What the operator does rather than reads: start or stop a run, save settings,
+        # plan and run batches, annotate.
+        for module in (routes_runs, routes_settings, routes_batches, routes_annotate):
+            app.include_router(module.actions)
     if not workbench_enabled:
         return
     from balatro_horizons.workbench.routes import router as workbench_router

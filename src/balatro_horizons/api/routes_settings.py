@@ -13,6 +13,8 @@ from .middleware import require_operator
 from .models import SettingsInput
 
 router = APIRouter()
+# Routes that act for the operator. View-only mode never mounts them.
+actions = APIRouter()
 # Agent names RunService runs as built-in players; a configured model may not use one.
 BUILT_IN_PLAYERS = frozenset({"heuristic", "random_legal", "human"})
 
@@ -35,6 +37,7 @@ def bootstrap(request: Request):
         "operator_token": request.app.state.operator_token,
         "config": public_config(config),
         "workbench": config.workbench_enabled,
+        "view_only": request.app.state.view_only,
         "paid_credentials": {
             name: bool(os.environ.get(key))
             for name, key in (("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"))
@@ -42,7 +45,7 @@ def bootstrap(request: Request):
     }
 
 
-@router.put("/api/settings", dependencies=[Depends(require_operator)])
+@actions.put("/api/settings", dependencies=[Depends(require_operator)])
 def update_settings(request: Request, data: SettingsInput):
     state = request.app.state
     if state.runs.thread and state.runs.thread.is_alive():

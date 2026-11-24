@@ -7,6 +7,8 @@ from balatro_horizons.contracts import AnnotationInput
 from .middleware import require_session
 
 router = APIRouter()
+# Routes that act for the operator. View-only mode never mounts them.
+actions = APIRouter()
 
 
 @router.get("/api/explore/annotations")
@@ -20,6 +22,6 @@ def annotations(
     return review.annotations_for_view(view)
 
 
-@router.post("/api/explore/annotations")
+@actions.post("/api/explore/annotations")
 def annotate(request: Request, data: AnnotationInput, token=Depends(require_session)):
     return request.app.state.review.annotate(token, data)

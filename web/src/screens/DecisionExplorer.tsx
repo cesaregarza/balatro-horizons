@@ -21,8 +21,8 @@ function inspectionError(caught: unknown) {
     : String(caught);
 }
 
-export function DecisionExplorer({ token, initialDecision, workbench = false, onRestored, onDecisionChange, onDirtyChange, active: screenActive = true }: {
-  token: string; initialDecision?: number; workbench?: boolean; onRestored?: (episodeId: string) => void;
+export function DecisionExplorer({ token, initialDecision, workbench = false, viewOnly = false, onRestored, onDecisionChange, onDirtyChange, active: screenActive = true }: {
+  token: string; initialDecision?: number; workbench?: boolean; viewOnly?: boolean; onRestored?: (episodeId: string) => void;
   onDecisionChange?: (decision: number) => void; onDirtyChange?: (dirty: boolean) => void; active?: boolean;
 }) {
   const [ledger, setLedger] = useState<DecisionLedger | null>(null);
@@ -158,7 +158,7 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
     setMobileDetail(false);
     requestAnimationFrame(() => document.getElementById(`choice-${active?.event_id}`)?.focus());
   }
-  async function annotate() {
+  async function openAnnotation() {
     if (!active) return;
     if (annotationView?.decision === active.decision) {
       annotationPanel.current?.scrollIntoView({ block: "start" });
@@ -174,6 +174,8 @@ export function DecisionExplorer({ token, initialDecision, workbench = false, on
       setAnnotationView(detail); setAnnotations(revisions);
     } catch (caught) { setDetailError(inspectionError(caught)); } finally { setBusy(false); }
   }
+  // View-only mode has no route that saves an annotation, so it offers no way to open one.
+  const annotate = viewOnly ? undefined : openAnnotation;
   async function runAnnotation(task: () => Promise<void>) { setBusy(true); try { await task(); } finally { setBusy(false); } }
   async function exportDecisions(format: DecisionExportFormat) {
     setExportError("");

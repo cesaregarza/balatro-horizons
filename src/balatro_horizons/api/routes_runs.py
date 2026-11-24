@@ -15,6 +15,8 @@ from .models import OperatorEpisodes, RunInput
 from .routes_settings import BUILT_IN_PLAYERS, model_revision
 
 router = APIRouter()
+# Routes that act for the operator. View-only mode never mounts them.
+actions = APIRouter()
 
 
 @router.get("/api/operator/runtime", dependencies=[Depends(require_operator)])
@@ -26,7 +28,7 @@ def new_seed():
     return "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(8))
 
 
-@router.post("/api/runs", dependencies=[Depends(require_operator)])
+@actions.post("/api/runs", dependencies=[Depends(require_operator)])
 def start_run(request: Request, data: RunInput):
     state = request.app.state
     # Settings can be replaced concurrently: resolve, check and start from this one copy.
@@ -85,7 +87,7 @@ def _configured_agent(models, requested):
     raise ValueError("MODEL_NOT_CONFIGURED" if not matches else "AMBIGUOUS_CONFIGURED_MODEL")
 
 
-@router.post("/api/stop", dependencies=[Depends(require_operator)])
+@actions.post("/api/stop", dependencies=[Depends(require_operator)])
 def stop_run(request: Request):
     request.app.state.runs.stop.set()
     return {"stop_requested": True}
