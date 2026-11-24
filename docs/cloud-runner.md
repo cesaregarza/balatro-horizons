@@ -215,7 +215,11 @@ reservation and the elapsed hours at the hourly price), next to `reserved_usd` a
 `settled_usd`. The report also carries `read_at`. The dashboard reads the ledger
 and the default settings file on every request, takes no lock and creates nothing,
 and answers `CLOUD_LEDGER_UNREADABLE` or `CLOUD_SETTINGS_INVALID` rather than an
-empty list. It builds no provider client and reads no token. See the
+empty list. A ledger path of the wrong type, a directory that cannot be listed, a
+run record with no history or a last transition that names another state, a
+`torn_down` record with no settled amount, a time without a zone and a negative or
+non-finite amount all count as unreadable, so `bh cloud status` now fails with an
+error on a damaged ledger instead of printing an empty report. It builds no provider client and reads no token. See the
 [dashboard](dashboard.md#cloud-runs) for the screen and its view-only serving mode.
 
 ## Budget

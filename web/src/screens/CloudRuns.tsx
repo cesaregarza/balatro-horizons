@@ -38,6 +38,7 @@ function Report({ status }: { status: CloudStatus }) {
     <p className="muted">Read by the server at {when(status.read_at)}. Refreshed every {REFRESH_MS / 1000} seconds.</p>
     <section className="panel" aria-label="Launches">
       <h2>{status.launches === "ALLOWED" ? "Launches are allowed" : "Launches are refused"}</h2>
+      <p className="muted">This is the launch gate's status. Cloud runs are started from the command line, not from this dashboard, and dollar amounts are estimates from the hourly price.</p>
       {status.refusals.length > 0 && <ul className="cloud-refusals">{status.refusals.map((code) => <li key={code}><code>{code}</code></li>)}</ul>}
     </section>
     <section className="panel" aria-label="Budget">

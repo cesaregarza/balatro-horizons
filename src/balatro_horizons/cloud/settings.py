@@ -14,7 +14,8 @@ TOKEN_VARIABLE = "DIGITALOCEAN_TOKEN"
 
 
 class CloudSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    # Budget and price feed sums and comparisons, so an infinite or NaN value is invalid.
+    model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 
     # Part of the owner tag: the controller only ever deletes resources carrying it.
     controller_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$")

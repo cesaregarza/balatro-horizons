@@ -1,13 +1,13 @@
 """One JSON file per run, plus the unmatched watch and the last inventory read, written durably."""
 
 import fcntl
+import stat
 import time
 from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from .durable import durable_json, ensure_directory
 
@@ -21,6 +21,10 @@ class LedgerBusy(RuntimeError):
     pass
 
 
+class LedgerDamaged(ValueError):
+    """A ledger path exists but is not what the ledger writes."""
+
+
 class Resource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -28,38 +32,39 @@ class Resource(BaseModel):
     kind: Literal["droplet"] = "droplet"
     id: int
     # When the provider acknowledged our DELETE; no read counts as gone before it.
-    acknowledged_at: datetime | None = None
+    acknowledged_at: AwareDatetime | None = None
 
 
 class Transition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    at: datetime
+    at: AwareDatetime
     state: str
     reason: str | None = None
 
 
 class RunRecord(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # Times must carry a zone and amounts must be finite: the gate subtracts and sums them.
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     run_id: str
     state: Literal["provisioning", "create_unresolved", "running", "tearing_down", "torn_down",
                    "cleanup_unverified"]
-    created_at: datetime
-    deadline: datetime
-    reserved_usd: float
+    created_at: AwareDatetime
+    deadline: AwareDatetime
+    reserved_usd: float = Field(ge=0)
     resources: list[Resource] = []
     # IDs whose tags stopped matching; the unmatched watch owns them from then on.
     released: list[int] = []
-    create_attempted_at: datetime | None = None
+    create_attempted_at: AwareDatetime | None = None
     # A 4xx answered the create, so the provider made nothing.
     create_rejected: bool = False
-    grace_from: datetime | None = None
+    grace_from: AwareDatetime | None = None
     cancel_requested: bool = False
     teardown_reason: str | None = None
-    teardown_started_at: datetime | None = None
-    verified_at: datetime | None = None
-    settled_usd: float | None = None
+    teardown_started_at: AwareDatetime | None = None
+    verified_at: AwareDatetime | None = None
+    settled_usd: float | None = Field(default=None, ge=0)
     history: list[Transition] = []
 
     @property
@@ -91,14 +96,14 @@ class UnmatchedDroplet(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     droplet_id: int
-    found_at: datetime
+    found_at: AwareDatetime
 
 
 class InventoryCheck(BaseModel):
     """The last read of the owner-tag inventory; an incomplete one closes the gate."""
 
     complete: bool
-    at: datetime
+    at: AwareDatetime
 
 
 class Ledger:
@@ -110,10 +115,10 @@ class Ledger:
 
     def get(self, run_id):
         path = self.runs_dir / f"{run_id}.json"
-        return RunRecord.model_validate_json(path.read_text()) if path.is_file() else None
+        return read_record(path) if present(path, "file") else None
 
     def runs(self):
-        return [RunRecord.model_validate_json(path.read_text()) for path in json_files(self.runs_dir)]
+        return [read_record(path) for path in json_files(self.runs_dir)]
 
     def save(self, record: RunRecord):
         durable_json(self.runs_dir / f"{record.run_id}.json", record.model_dump(mode="json"))
@@ -133,7 +138,7 @@ class Ledger:
         self.save_unmatched(UnmatchedDroplet(droplet_id=droplet_id, found_at=now))
 
     def inventory(self):
-        if not self.inventory_path.is_file():
+        if not present(self.inventory_path, "file"):
             return None
         return InventoryCheck.model_validate_json(self.inventory_path.read_text())
 
@@ -154,9 +159,43 @@ class Ledger:
             yield
 
 
+def present(path: Path, kind):
+    """Whether a ledger path exists as a "file" or a "directory".
+
+    Only a stat that says the path is not there counts as missing. A path of the wrong
+    type is damage, and any other error (no permission, a file where a parent directory
+    should be) is raised as it is: neither may read as an empty ledger.
+    """
+    try:
+        mode = path.stat().st_mode
+    except FileNotFoundError:
+        return False
+    if not (stat.S_ISREG(mode) if kind == "file" else stat.S_ISDIR(mode)):
+        raise LedgerDamaged("LEDGER_DAMAGED")
+    return True
+
+
 def json_files(directory: Path):
-    # Interrupted writes leave only *.tmp files, which never match this pattern.
-    return sorted(directory.glob("*.json")) if directory.is_dir() else []
+    if not present(directory, "directory"):
+        return []
+    # iterdir raises when the directory cannot be listed, where glob would hide it.
+    # Interrupted writes leave only *.tmp files, which never count.
+    return sorted(path for path in directory.iterdir() if path.name.endswith(".json"))
+
+
+def read_record(path: Path):
+    """Parse a run record, then check what every writer guarantees but the model cannot.
+
+    A new record has no history until its first move(), so these are checked on records
+    read back, not in the model: a record is always moved before it is saved, its state
+    is only ever assigned by move(), and teardown settles it before moving it to torn_down.
+    """
+    record = RunRecord.model_validate_json(path.read_text())
+    if not record.history or record.history[-1].state != record.state:
+        raise LedgerDamaged("LEDGER_DAMAGED")
+    if record.state == "torn_down" and record.settled_usd is None:
+        raise LedgerDamaged("LEDGER_DAMAGED")
+    return record
 
 
 @contextmanager

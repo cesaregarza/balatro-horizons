@@ -14,6 +14,13 @@
   a run, save settings, plan, run or export a batch, or write an annotation, and
   hides their controls. It is refused together with `--workbench`. The mount
   counts become 27 flag-off and 48 flag-on.
+- Treat a damaged cloud ledger as an error everywhere it is read: a path of the
+  wrong type, a directory that cannot be listed, a run record whose history is
+  missing or disagrees with its state, a `torn_down` record with no settled
+  amount, a time without a zone, and negative or non-finite amounts. Non-finite
+  budget or price settings are invalid. The dashboard answers 503
+  `CLOUD_LEDGER_UNREADABLE` or `CLOUD_SETTINGS_INVALID`, and `bh cloud status`
+  exits with an error instead of printing an empty report.
 - Fix `bh --data-dir DIR review`, which ignored DIR and served the checkout's own
   data directory.
 - Raise the Python CI job's time limit from 10 to 15 minutes.
