@@ -113,8 +113,11 @@ def unseen_create(ledger, provider):
 def assert_held(ledger, provider, flags, capsys):
     capsys.readouterr()
     assert ledger.get("r1").state == "create_unresolved"
-    assert main(["cloud", "status", *flags]) == 0
-    assert json.loads(capsys.readouterr().out)["launches"] == "REFUSED"
+    # Status exits nonzero while an alert is active.
+    assert main(["cloud", "status", *flags]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["launches"] == "REFUSED"
+    assert "CREATE_UNRESOLVED" in [alert["code"] for alert in report["alerts"]]
     assert [call for call in provider.calls if call[0] == "create"] == [
         ("create", "bh-r1", ("bh-owner:test-ctl", "bh-run:r1"))]
     assert provider.deleted() == []

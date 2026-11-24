@@ -28,6 +28,8 @@ class FakeProvider:
     action_failures: int = 0
     # New Droplets stay out of listings for this many listing calls, as a lagging index would.
     listing_lag: int = 0
+    # New creates show in the action log as in progress, with no resource ID yet.
+    pending_creates: bool = False
     clock: Callable[[], datetime] | None = None
     actions: list[CreateAction] = field(default_factory=list)
     hidden: dict[int, int] = field(default_factory=dict)
@@ -43,8 +45,13 @@ class FakeProvider:
 
     def log_create(self, droplet_id, at=None):
         started = at or (self.clock() if self.clock else None)
-        if started is not None:
-            self.actions.append(CreateAction(resource_id=droplet_id, started_at=started))
+        if started is None:
+            return
+        if self.pending_creates:
+            action = CreateAction(resource_id=None, started_at=started, status="in-progress")
+        else:
+            action = CreateAction(resource_id=droplet_id, started_at=started, status="completed")
+        self.actions.append(action)
 
     def allocate(self):
         self.next_id += 1

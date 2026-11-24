@@ -63,7 +63,8 @@ class Controller:
 
     def create_failed(self, record, error):
         if definite_rejection(error):
-            record = self.teardown.run(record, "create_failed")
+            record.create_rejected = True
+            record = self.resolver.tear_down(record, "create_failed")
         else:
             # The create may have succeeded; only positive evidence may release it.
             record = self.resolver.hold(record, "create_failed")
@@ -97,14 +98,12 @@ class Controller:
             return any(record.state in SUPERVISED_STATES for record in self.ledger.runs())
 
     def evaluate(self, record):
-        if record.state == "create_unresolved":
-            return self.resolver.resolve(record)
-        if record.state in ("tearing_down", "cleanup_unverified"):
-            return self.teardown.run(record, record.teardown_reason)
+        if record.state in ("create_unresolved", "tearing_down", "cleanup_unverified"):
+            return self.resolver.tear_down(record, record.teardown_reason)
         now = self.clock()
         reason = self.teardown_reason(record, now)
         if reason:
-            return self.teardown.run(record, reason)
+            return self.resolver.tear_down(record, reason)
         if record.state == "provisioning":
             return self.check_boot(record, now)
         return record
@@ -138,7 +137,7 @@ class Controller:
             return record
         booting_for = (now - record.created_at).total_seconds()
         if gone or booting_for > self.settings.boot_timeout_seconds:
-            return self.teardown.run(record, "boot_failed")
+            return self.resolver.tear_down(record, "boot_failed")
         return record
 
     def cancel(self, run_id, *, now=False):
@@ -173,10 +172,7 @@ class Controller:
 
     def abandon_provisioning(self, record):
         """Never adopt a half-made worker: its boot was not observed."""
-        if not record.resources:
-            # The crash may have come after the provider accepted the create.
-            return self.resolver.hold(record, "restart_while_provisioning")
-        return self.teardown.run(record, "restart_while_provisioning")
+        return self.resolver.tear_down(record, "restart_while_provisioning")
 
     def supervise(self):
         """Tick until no run needs supervision; any error tears live runs down first."""
@@ -191,4 +187,4 @@ class Controller:
         with self.ledger.lock(LOCK_WAIT_SECONDS):
             for record in self.ledger.runs():
                 if record.state in SUPERVISED_STATES:
-                    self.teardown.run(record, "controller_error")
+                    self.resolver.tear_down(record, "controller_error")

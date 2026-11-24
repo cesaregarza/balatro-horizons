@@ -19,6 +19,9 @@ MAX_PAGES = 50
 MAX_ATTEMPTS = 5
 
 
+# The statuses the API documents for an action.
+ACTION_STATUSES = ("in-progress", "completed", "errored")
+
 def retryable(status):
     return status == 429 or 500 <= status < 600
 
@@ -65,10 +68,11 @@ class DigitalOceanClient:
     def list_create_actions(self, since):
         # The API documents no order for the action log, so every page is read.
         actions = [parse_action(item) for item in self.read_all("/actions", "actions", {})]
-        return [CreateAction(resource_id=a["resource_id"], started_at=a["started_at"])
+        return [CreateAction(resource_id=a["resource_id"], started_at=a["started_at"],
+                             status=a["status"])
                 for a in actions
                 if a["type"] == "create" and a["resource_type"] == "droplet"
-                and a["resource_id"] is not None and a["started_at"] >= since]
+                and a["started_at"] >= since]
 
     def read_all(self, path, key, filters):
         """Every item across pages; anything short of a complete, well-formed read raises."""
@@ -170,13 +174,15 @@ def parse_action(item):
         raise ProviderError("MALFORMED_RESPONSE")
     started = parse_time(item.get("started_at"))
     kind, resource_type = item.get("type"), item.get("resource_type")
-    resource_id = item.get("resource_id")
+    resource_id, status = item.get("resource_id"), item.get("status")
     if started is None or not isinstance(kind, str) or not isinstance(resource_type, str):
+        raise ProviderError("MALFORMED_RESPONSE")
+    if status not in ACTION_STATUSES:
         raise ProviderError("MALFORMED_RESPONSE")
     if resource_id is not None:
         whole_number(resource_id)
     return {"type": kind, "resource_type": resource_type, "resource_id": resource_id,
-            "started_at": started}
+            "started_at": started, "status": status}
 
 
 def parse_time(value):

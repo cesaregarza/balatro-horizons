@@ -1,14 +1,16 @@
-"""Resolving a create whose outcome is unknown, only on positive evidence.
+"""Holding a create whose outcome is unknown, and releasing it only on sight.
 
 A lost response, timeout, dropped connection or 5xx may follow an accepted create,
-and a fresh Droplet can be missing from listings for a while. An empty listing
-right after such a create therefore proves nothing. The run holds its reservation
-and its slot, and blocks launches, until one of these holds:
+and so may a controller crash before the Droplet ID is recorded. A fresh Droplet
+can be missing from listings for a while, and the action log can show its create
+in progress with no resource ID yet. Empty reads therefore prove nothing, however
+long they last. The run keeps its reservation and its slot, and blocks launches,
+until its Droplet is found, by run tag, by exact name, or by an ID the action log
+names, carrying both tags, and its deletion is verified.
 
-- its Droplet is found by run tag or by its exact name, and deleted and verified; or
-- the settle window has passed, the account action log has been read completely back
-  to before the attempt, every Droplet create in it is resolved by ID, and the
-  run-tag and name listings are empty.
+Every teardown path goes through `CreateResolver.tear_down`, so none of them can
+settle such a run on empty listings and no recorded IDs. The one exception is an
+adopted orphan, which always has its Droplet ID recorded first.
 """
 
 import re
@@ -26,6 +28,13 @@ def definite_rejection(error):
     return isinstance(error, ProviderError) and re.fullmatch(r"HTTP_4\d\d", str(error))
 
 
+def create_outcome_unknown(record):
+    """A create was attempted, and neither a Droplet ID nor a rejection is recorded."""
+    if record.create_attempted_at is None or record.create_rejected:
+        return False
+    return not record.resources and not record.released
+
+
 class CreateResolver:
     def __init__(self, ledger, provider, settings, teardown, clock):
         self.ledger = ledger
@@ -33,6 +42,14 @@ class CreateResolver:
         self.settings = settings
         self.teardown = teardown
         self.clock = clock
+
+    def tear_down(self, record, reason):
+        """The one way in to teardown; a create with no known outcome is held instead."""
+        if record.state == "create_unresolved":
+            return self.resolve(record)
+        if create_outcome_unknown(record):
+            return self.hold(record, reason)
+        return self.teardown.run(record, reason)
 
     def hold(self, record, reason):
         now = self.clock()
@@ -43,36 +60,31 @@ class CreateResolver:
         return self.resolve(record)
 
     def resolve(self, record):
-        ours, strangers = self.find(record)
-        if ours is None:
-            return record
-        if ours:
-            return self.tear(record, ours)
-        waited = (self.clock() - record.create_attempted_at).total_seconds()
-        if strangers or waited < self.settings.create_settle_seconds:
-            return record
-        created = self.created_in_window(record)
-        return record if created is None else self.tear(record, created)
+        """Tear down what is found; anything less, including nothing, keeps the hold."""
+        found = self.listed(record) | self.named_by_actions(record)
+        return self.tear(record, found) if found else record
 
-    def find(self, record):
-        """Our Droplets by run tag or exact name, and whether a stranger has the name."""
-        tag = run_tag(record.run_id)
+    def listed(self, record):
         try:
-            tagged = self.provider.list_droplets(tag)
+            tagged = self.provider.list_droplets(run_tag(record.run_id))
             named = self.provider.find_droplets_by_name(droplet_name(record.run_id))
         except Exception:
-            return None, False
-        ours = {d.id for d in tagged + named if self.owned(d, record.run_id)}
-        return ours, any(d.id not in ours for d in named)
+            return set()
+        return {d.id for d in tagged + named if self.owned(d, record.run_id)}
 
-    def created_in_window(self, record):
+    def named_by_actions(self, record):
+        """Our Droplets among those the action log names by ID since the attempt.
+
+        An in-progress create with no ID yet, or an ID that answers 404, names nothing.
+        """
         since = record.create_attempted_at - timedelta(seconds=CLOCK_SKEW_SECONDS)
         try:
             actions = self.provider.list_create_actions(since)
-            current = [self.provider.get_droplet(a.resource_id) for a in actions]
+            current = [self.provider.get_droplet(action.resource_id) for action in actions
+                       if action.resource_id is not None]
         except Exception:
-            return None
-        # A 404 is gone; a Droplet with another owner's tags is never touched.
+            return set()
+        # A Droplet with another owner's tags is never touched.
         return {d.id for d in current if d is not None and self.owned(d, record.run_id)}
 
     def owned(self, droplet, run_id):

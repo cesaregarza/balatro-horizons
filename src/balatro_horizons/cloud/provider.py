@@ -39,7 +39,10 @@ class Provider(Protocol):
     def find_droplets_by_name(self, name: str) -> list[Droplet]: ...
 
     def list_create_actions(self, since: datetime) -> list["CreateAction"]:
-        """Every Droplet create action started at or after `since`, read completely."""
+        """Every Droplet create action started at or after `since`, read completely.
+
+        Creates that have no resource ID yet are kept, and so is each action's status.
+        """
 
     def delete_droplet(self, droplet_id: int) -> None:
         """Delete one Droplet by ID; a 404 means it is already gone."""
@@ -47,8 +50,10 @@ class Provider(Protocol):
 
 @dataclass(frozen=True)
 class CreateAction:
-    resource_id: int
+    # None while the provider has not yet named the Droplet it is making.
+    resource_id: int | None
     started_at: datetime
+    status: str
 
 
 @dataclass(frozen=True)

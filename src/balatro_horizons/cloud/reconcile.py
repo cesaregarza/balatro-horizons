@@ -39,7 +39,7 @@ def reconcile(ledger, provider, settings, *, clock=utc_now, sleep=time.sleep,
                 continue
             reason = stale_reason(record, clock(), settings)
             if reason:
-                torn.append(summary(teardown.run(record, reason)))
+                torn.append(summary(resolver.tear_down(record, reason)))
         return {"runs": torn} | reconcile_inventory(ledger, provider, settings, teardown, clock)
 
 

@@ -131,12 +131,13 @@ def test_controller_error_holds_an_unseen_create(cloud, monkeypatch):
     assert_recovers_only_on_sight(cloud, "controller_error")
 
 
-def http_controller(tmp_path, actions, droplets=()):
+def http_controller(tmp_path, actions, droplets=(), unlisted=()):
     """A controller over the real client and a fake HTTP API whose create answers 500."""
     stub = DigitalOceanStub()
     stub.create_status = 500
     stub.actions = list(actions)
     stub.droplets = {d["id"]: d for d in droplets}
+    stub.unlisted = set(unlisted)
     cloud = Cloud(tmp_path / "cloud")
     client = DigitalOceanClient("test-token", transport=httpx.MockTransport(stub),
                                 sleep=cloud.clock.advance)
@@ -183,10 +184,9 @@ def test_all_empty_reads_long_past_the_create_never_clear_it(tmp_path):
 def test_completed_create_naming_our_droplet_is_deleted_and_verified(tmp_path):
     ours = {"id": 7777, "name": "bh-r1", "status": "active", "created_at": "2026-11-24T12:00:00Z",
             "tags": ["bh-owner:test-ctl", "bh-run:r1"]}
+    # The by-ID read sees it even while every listing lags behind.
     cloud, controller, stub, _ = http_controller(
-        tmp_path, [create_action(7777, "completed")], [ours])
-    # The by-ID read sees it even while the run-tag and name listings lag behind.
-    stub.unlisted = {7777}
+        tmp_path, [create_action(7777, "completed")], [ours], unlisted={7777})
     controller.tick()
     record = cloud.ledger.get("r1")
     assert (record.state, record.teardown_reason) == ("torn_down", "create_failed")

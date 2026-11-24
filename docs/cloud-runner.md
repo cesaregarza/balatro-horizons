@@ -18,7 +18,7 @@ compatibility is untouched.
 | `bh cloud status` | none | Ledger, launch gate, budget, the last inventory read and active alerts. Exits 1 while an alert is active. |
 | `bh cloud launch RUN_ID --allow-provider-calls` | yes | Start the controller, re-evaluate existing runs and the owned inventory, launch one run and supervise until every run is torn down. Exits nonzero if any alert is active at the end. |
 | `bh cloud cancel RUN_ID [--allow-provider-calls]` | only with the flag | Without the flag, record the request for the controller. With it, also tear down now. |
-| `bh cloud reconcile --allow-provider-calls` | yes | Tear down expired runs and orphans, resolve unresolved creates, and verify each. Safe from a timer while the controller is down. |
+| `bh cloud reconcile --allow-provider-calls` | yes | Tear down expired runs and orphans, look for the Droplets of unresolved creates, and verify each. Safe from a timer while the controller is down. |
 
 Every command that can reach DigitalOcean refuses with
 `PROVIDER_CALLS_NOT_ALLOWED` unless `--allow-provider-calls` is given, as
@@ -54,7 +54,7 @@ Settings live in `configs/cloud.yaml`, not `config.py`; pass another file with
 | An owner-tagged Droplet with no live ledger run | `orphan` |
 
 On a controller restart, every live run is re-evaluated. A provisioning run is
-torn down, never adopted; one with no recorded Droplet ID becomes an unresolved
+torn down, never adopted; one with no recorded Droplet ID is held as an unresolved
 create, because the crash may have followed an accepted create. A running run is
 torn down if it is past its original deadline; otherwise it gets a fresh
 heartbeat grace window and is torn down if no heartbeat arrives. An interrupted
@@ -69,29 +69,51 @@ that read fails or is malformed, the launch is refused with
 
 ## Ambiguous creates
 
-A lost response, timeout, dropped connection, malformed reply or 5xx on create
-may follow an accepted create. A 4xx is the only definite rejection. An ambiguous
-create moves the run to `create_unresolved`: it keeps its reservation and its
+A create has a known outcome only when a Droplet ID is recorded for it, or when
+the API answered it with a 4xx, the only definite rejection. Anything else, from
+a lost response, timeout, dropped connection, malformed reply or 5xx to a
+controller crash before the ID was written, may have followed an accepted
+create. The run is persisted before the request is sent, so the ledger always
+knows a create was attempted.
+
+Such a run moves to `create_unresolved`. It keeps its reservation and its
 concurrency slot, records a `CREATE_UNRESOLVED` alert, and refuses launches.
+Every teardown path holds it this way rather than tearing it down: the
+controller's tick, boot check and restart recovery, the reconciler's expiry and
+boot-timeout checks, `cancel` with or without `--allow-provider-calls`, the
+deadline, and the error path of the supervising loop. None of them settles the
+run on empty listings and no recorded IDs.
 
-It resolves only on positive evidence:
+The evidence standard is a sighting. The run is released only when its Droplet
+is found carrying both tags, and its deletion is verified as for any teardown.
+It is looked for three ways on every controller tick and reconciler pass:
 
-1. Its Droplet is found, by run tag or by its exact name through the name filter,
-   carrying both tags, and its deletion is verified.
-2. Or, once `create_settle_seconds` (default 10 minutes) have passed since the
-   attempt, the account action log has been read completely, back to five
-   minutes before the attempt to allow for clock skew. Every Droplet create in
-   that window is then resolved by ID. A 404 means gone. A Droplet carrying this
-   run's tags is deleted and verified. A Droplet with other tags is left alone.
-   The run-tag and name listings must also be empty. A Droplet with this run's
-   name but not its tags keeps the run unresolved.
+1. In the run-tag listing.
+2. By its exact name, through the name filter.
+3. By ID, for each Droplet create the account action log names since five
+   minutes before the attempt, to allow for clock skew.
 
-If the action log or any listing cannot be read completely, the run stays
-unresolved. The basis is that listings can lag a fresh create, while the action
-log records the create itself, and the API keeps completed actions for querying.
+Nothing else clears the hold, however long it lasts. Empty listings prove
+nothing, because a fresh Droplet can be missing from them for a while. An action
+log create that is in progress, has no resource ID yet, or names an ID that
+answers 404 proves nothing either, because the create may still be under way. A
+read that fails or is malformed counts as nothing found. A Droplet that carries
+the run's name but not both tags is never touched.
+
+The backstop is that both tags go on in the create request itself, so the
+sweeps delete such a Droplet whenever it appears. While its run is held, the
+run-tag and name reads above find it. The owner-tag inventory sweeps, at
+startup, before each launch and on each reconciler pass, adopt and delete any
+owner-tagged Droplet whose run is no longer live.
+
+Clearing a create that the provider never shows is an open design question for
+a later slice. In this slice such a run holds launches and its reservation
+indefinitely, which is the intended fail-closed result.
+
 The API documents no order for the action log, so every page is read. A read is
 complete only when the page count stays within bounds and the items collected
-match `meta.total`.
+match `meta.total`. An action with a status other than `in-progress`,
+`completed` or `errored` makes the read fail.
 
 Listings are strict: a missing or wrongly typed `id`, `name`, `status`, `tags`,
 `created_at`, pagination link or `meta.total` makes the listing fail. It is never

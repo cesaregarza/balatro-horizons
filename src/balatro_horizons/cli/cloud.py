@@ -117,8 +117,8 @@ def active_alerts(alerts, runs, unmatched):
                        "until a later sweep verifies its Droplets are gone.")
         elif alert.code == "CREATE_UNRESOLVED" and state == "create_unresolved":
             message = (f"The create for run {alert.run_id} may have succeeded. New launches "
-                       "are refused until its Droplet is found and deleted, or the action log "
-                       "shows nothing of ours was made.")
+                       "are refused until its Droplet is found and its deletion verified; "
+                       "empty reads never clear it.")
         elif alert.code == "UNMATCHED_DROPLET" and alert.droplet_id in present:
             message = (f"Droplet {alert.droplet_id} carries this controller's owner tag but no "
                        "usable run tag. It is never deleted automatically; new launches are "

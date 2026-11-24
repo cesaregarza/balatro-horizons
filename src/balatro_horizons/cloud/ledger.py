@@ -50,6 +50,8 @@ class RunRecord(BaseModel):
     # IDs whose tags stopped matching; the unmatched watch owns them from then on.
     released: list[int] = []
     create_attempted_at: datetime | None = None
+    # A 4xx answered the create, so the provider made nothing.
+    create_rejected: bool = False
     grace_from: datetime | None = None
     cancel_requested: bool = False
     teardown_reason: str | None = None

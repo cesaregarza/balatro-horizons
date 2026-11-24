@@ -29,8 +29,6 @@ class CloudSettings(BaseModel):
     boot_timeout_seconds: int = Field(default=600, gt=0)
     heartbeat_grace_seconds: int = Field(default=300, gt=0)
     cleanup_verify_seconds: int = Field(default=600, gt=0)
-    # How long after an ambiguous create before the action log may settle it.
-    create_settle_seconds: int = Field(default=600, gt=0)
     retry_base_seconds: float = Field(default=2, gt=0)
     retry_max_seconds: float = Field(default=60, gt=0)
     poll_seconds: float = Field(default=15, gt=0)

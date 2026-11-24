@@ -11,7 +11,6 @@ infrastructure_budget_usd: 10
 boot_timeout_seconds: 600
 heartbeat_grace_seconds: 300
 cleanup_verify_seconds: 600
-create_settle_seconds: 600
 retry_base_seconds: 2
 retry_max_seconds: 60
 poll_seconds: 15

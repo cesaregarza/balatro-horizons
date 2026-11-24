@@ -214,3 +214,25 @@ def test_provider_unreachable_at_startup_blocks_launches_and_shows_unverified(tm
     reasons = restarted.launch("r2")["reasons"]
     assert {"CLEANUP_UNVERIFIED", "INVENTORY_UNVERIFIED"} <= set(reasons)
     cloud.assert_unrelated_survive()
+
+
+def test_rejected_create_whose_teardown_is_unverified_is_never_held_as_unresolved(
+    cloud, monkeypatch,
+):
+    cloud.provider.fail_create = True
+    cloud.provider.fail_create_code = "HTTP_422"
+    listings = {"calls": 0}
+    list_droplets = cloud.provider.list_droplets
+
+    def failing_after_the_inventory_read(tag):
+        listings["calls"] += 1
+        if listings["calls"] > 1:
+            raise RuntimeError("listing unavailable")
+        return list_droplets(tag)
+
+    monkeypatch.setattr(cloud.provider, "list_droplets", failing_after_the_inventory_read)
+    assert cloud.controller().launch("r1")["state"] == "cleanup_unverified"
+    monkeypatch.undo()
+    cloud.restarted().tick()
+    cloud.assert_torn_down("r1", "create_failed")
+    assert [a.code for a in cloud.ledger.alerts()] == ["CLEANUP_UNVERIFIED"]
