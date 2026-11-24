@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-11-24 — Cloud runner: a Droplet per run that is always torn down
+
+- Add `bh cloud launch`, `status`, `cancel` and `reconcile` with a run ledger, a
+  provider interface, a DigitalOcean API client and a fake provider. Settings live
+  in `configs/cloud.yaml`. See [cloud runner](docs/cloud-runner.md).
+- Tear a run's Droplet down on success, boot failure, a failed or partial create,
+  the deadline, cancellation, a lost heartbeat, a controller error and a restart.
+  A Droplet counts as gone only after the provider acknowledged our DELETE, then
+  a 404 by ID and an empty run-tag listing; no earlier read proves anything.
+- Fail closed: a run whose cleanup is unverified within the bound refuses every
+  new launch until a later verified absence. An owner-tagged Droplet with no
+  usable run tag, or a known ID that lost its tags, is never deleted; it holds
+  launches, and no read clears it. Status alerts and its exit code derive from
+  these durable blockers, through the gate's own function.
+- Hold a create with no recorded Droplet ID and no 4xx unresolved, on every
+  teardown path, with its reservation and slot, until its Droplet is
+  found and its deletion verified. Empty reads and pending action log creates
+  never clear it. Reconcile the owned inventory at startup and before each
+  launch. Write the ledger durably against power loss, check ownership before
+  deleting a known ID, reject malformed listings, and make `bh cloud launch` exit
+  nonzero when an alert is active.
+- Bound infrastructure spend with its own budget. Provider commands need
+  `--allow-provider-calls`. Nothing was deleted; the native path is unchanged,
+  and no file in the execution manifest changed.
+
 ## 2026-11-22 — Fable 5.2, GPT-6.1 and GPT-6.2, with presets for every model
 
 - Declare `claude-fable-5-2`, `gpt-6.2-astra`, `gpt-6.2-sol`, `gpt-6.1-terra` and

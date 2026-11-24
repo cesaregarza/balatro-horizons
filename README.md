@@ -109,6 +109,7 @@ retain the former scripts' defaults, guards, and output formats:
 | `native diagnose` | Authorized native startup diagnostics |
 | `review session` / `review status` | Preview/apply launch context / bounded worker status |
 | `credentials` | Preview/apply owner-only backend provider credentials without printing values or private paths |
+| `cloud launch` / `status` / `cancel` / `reconcile` | Throwaway Droplet workers that are always torn down and verified gone; provider calls require `--allow-provider-calls` ([cloud runner](docs/cloud-runner.md)) |
 
 `scripts/` keeps only native bootstrap and the two-line offline CI entry point.
 Browser-native verification lives at `web/scripts/verify_browser_native.mjs`;
