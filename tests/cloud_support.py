@@ -269,14 +269,27 @@ class DigitalOceanStub:
         # A status here answers a DELETE with it; the Droplet is removed regardless, and
         # unless the status is 404 the action log shows its destroy.
         self.delete_status = None
-        # Stamps the destroy actions DELETEs leave in the action log.
+        # A status here answers every read of a live Droplet by ID, as an outage would,
+        # with these headers.
+        self.read_status = None
+        self.read_headers = {}
+        # Stamps the destroy actions DELETEs leave in the action log, and the log.
         self.clock = FakeClock()
+        # Each request and each wait of a client that sleeps through `wait`, in order, as
+        # ("request", when, request) or ("wait", when, seconds).
+        self.log = []
         self.keys = {FINGERPRINT}
         self.firewalls = {FIREWALL_ID: admitting_firewall(settings.owner_tag)}
         self.sizes = [offered_size(settings)]
 
+    def wait(self, seconds):
+        """A client's sleep before a retry, spent on the clock."""
+        self.log.append(("wait", self.clock(), seconds))
+        self.clock.advance(seconds)
+
     def __call__(self, request):
         self.requests.append(request)
+        self.log.append(("request", self.clock(), request))
         path = request.url.path.removeprefix("/v2")
         if path == "/droplets" and request.method == "POST":
             return self.create(json.loads(request.content))
@@ -300,6 +313,8 @@ class DigitalOceanStub:
             return httpx.Response(404, json={"id": "not_found", "message": "gone"})
         if request.method == "DELETE":
             return self.delete(droplet_id)
+        if self.read_status is not None:
+            return httpx.Response(self.read_status, headers=self.read_headers)
         return httpx.Response(200, json={"droplet": self.droplets[droplet_id]})
 
     def preflight_read(self, path):

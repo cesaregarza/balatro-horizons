@@ -11,6 +11,7 @@ import shlex
 import stat
 from datetime import timedelta
 
+import httpx
 import pytest
 from cloud_support import (
     BUNDLE_BYTES,
@@ -19,11 +20,14 @@ from cloud_support import (
     FINGERPRINT,
     PINNED_KEY,
     Cloud,
+    DigitalOceanStub,
     cloud_settings,
     worker_status,
 )
 
+from balatro_horizons.cloud.digitalocean import DigitalOceanClient
 from balatro_horizons.cloud.ledger import Ledger
+from balatro_horizons.cloud.provider import ProviderError
 from balatro_horizons.cloud.status import status_report
 
 INSTALL = ["probe", "push_worker", "push_worker", "push_bundle", "start"]
@@ -290,6 +294,97 @@ def test_a_probe_cut_off_with_no_time_left_keeps_the_host_key_mismatch(tmp_path)
     controller.tick()
     cloud.assert_torn_down("r1", "host_key_mismatch")
     assert timeouts(cloud) == [60, 60, 5]
+
+
+def slow_reads(cloud, seconds, errors=()):
+    """Each read of a Droplet by ID takes `seconds` on the clock. The first reads then
+    raise `errors`, one each, instead of answering."""
+    read, pending = cloud.provider.get_droplet, list(errors)
+
+    def get_droplet(droplet_id, **limit):
+        cloud.clock.advance(seconds)
+        if pending:
+            raise ProviderError(pending.pop(0))
+        return read(droplet_id, **limit)
+
+    cloud.provider.get_droplet = get_droplet
+
+
+@pytest.mark.parametrize("answer", ["not_active", "failed"])
+def test_a_droplet_read_that_returns_after_the_boot_deadline_ends_the_boot_in_that_tick(
+        tmp_path, answer):
+    # The read starts a second before the boot deadline and returns two seconds later with
+    # no progress: the Droplet is not active yet, or the read failed.
+    cloud = timed_cloud(tmp_path)
+    cloud.provider.boot = answer == "failed"
+    slow_reads(cloud, 2, errors=["TRANSPORT_ERROR"] if answer == "failed" else ())
+    ticked_at(cloud, 1199)
+    record = cloud.assert_torn_down("r1", "boot_failed")
+    assert record.teardown_started_at - record.created_at == timedelta(seconds=1201)
+
+
+def http_cloud(tmp_path):
+    """A timed cloud over the real client and the fake HTTP API, on one clock. The client's
+    waits before a retry go on that clock and into the API's log."""
+    cloud = timed_cloud(tmp_path)
+    stub = DigitalOceanStub(cloud.settings)
+    stub.clock = cloud.clock
+    cloud.provider = DigitalOceanClient("test-token", transport=httpx.MockTransport(stub),
+                                        sleep=stub.wait)
+    return cloud, stub
+
+
+def read_by_id(kind, item):
+    return kind == "request" and item.method == "GET" and item.url.path.split("/")[-1].isdigit()
+
+
+@pytest.mark.parametrize(("status", "headers"), [(503, {}), (429, {"retry-after": "4"})],
+                         ids=["503", "429"])
+def test_a_provisioning_read_in_an_outage_spends_only_the_time_left(tmp_path, status, headers):
+    # The read starts 10 seconds before the boot deadline, and the API answers every read
+    # by ID with an error that the client retries.
+    cloud, stub = http_cloud(tmp_path)
+    stub.read_status, stub.read_headers = status, headers
+    controller = launched_and_ticked(cloud, 0)
+    since = len(stub.log)
+    cloud.clock.advance(1190)
+    controller.tick()
+    record = cloud.ledger.get("r1")
+    deadline = record.created_at + timedelta(seconds=1200)
+    reads, waits = [], []
+    # The boot's read ends where the teardown begins, with its listing.
+    for kind, at, item in stub.log[since:]:
+        if kind == "request" and item.url.path == "/v2/droplets":
+            break
+        if read_by_id(kind, item):
+            reads.append((at, item.extensions["timeout"]["read"]))
+        if kind == "wait":
+            waits.append((at, item))
+    assert len(reads) > 1
+    for at, timeout in reads:
+        assert at < deadline and timeout <= (deadline - at).total_seconds()
+    for at, seconds in waits:
+        assert seconds <= (deadline - at).total_seconds()
+    assert (record.teardown_reason, record.teardown_started_at) == ("boot_failed", deadline)
+
+
+def test_a_cleanup_read_keeps_its_full_retry_policy_past_the_boot_deadline(tmp_path):
+    # The boot deadline holds when the tick begins, so the first read by ID is the
+    # teardown's, in an outage that lasts.
+    cloud, stub = http_cloud(tmp_path)
+    stub.read_status = 503
+    controller = launched_and_ticked(cloud, 0)
+    since = len(stub.log)
+    cloud.clock.advance(1200)
+    controller.tick()
+    record = cloud.ledger.get("r1")
+    log = stub.log[since:]
+    reads = [((at - record.created_at).total_seconds(), item.extensions["timeout"]["read"])
+             for kind, at, item in log if read_by_id(kind, item)]
+    waits = [seconds for kind, _, seconds in log if kind == "wait"]
+    assert reads[:5] == [(1200, 30), (1201, 30), (1203, 30), (1207, 30), (1215, 30)]
+    assert waits[:4] == [1, 2, 4, 8]
+    assert record.teardown_reason == "boot_failed"
 
 
 def test_the_worker_starts_with_the_bundle_descriptor_and_the_run_deadline(cloud):
