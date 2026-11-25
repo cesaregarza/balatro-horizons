@@ -15,7 +15,7 @@ def cloud(tmp_path):
     return Cloud(tmp_path / "cloud")
 
 
-def test_run_and_absolute_deadline_are_durable_before_any_provider_call(cloud):
+def test_run_and_absolute_deadline_are_durable_before_the_create(cloud):
     cloud.provider.crash_at.add("before_create")
     with pytest.raises(SimulatedCrash):
         cloud.controller().launch("r1")

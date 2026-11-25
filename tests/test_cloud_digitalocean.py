@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
-from cloud_support import Cloud, DigitalOceanStub
+from cloud_support import FINGERPRINT, FIREWALL_ID, Cloud, DigitalOceanStub
 
 from balatro_horizons.cli import main
 from balatro_horizons.cloud.digitalocean import DigitalOceanClient, client_from_environment
@@ -14,6 +14,7 @@ from balatro_horizons.cloud.provider import DropletSpec, ProviderError
 
 TOKEN = "dop_v1_test-token-value-that-must-never-leak"
 DROPLET = {"id": 7, "name": "bh-r1", "status": "new", "tags": ["bh-owner:c", "bh-run:r1"]}
+USER_DATA = "#cloud-config\n{}\n"
 
 
 def client_for(handler, sleeps=None):
@@ -33,11 +34,17 @@ def replies(*responses):
     return handler, seen
 
 
+def droplet_spec():
+    """A spec with the registered key and the user data that every create carries."""
+    assert {"ssh_key", "user_data"} <= set(DropletSpec.__dataclass_fields__)
+    return DropletSpec(name="bh-r1", region="nyc3", size="s-2vcpu-8gb-amd",
+                       image="ubuntu-24-04-x64", tags=("bh-owner:c", "bh-run:r1"),
+                       ssh_key=FINGERPRINT, user_data=USER_DATA)
+
+
 def test_create_sends_the_spec_with_both_tags_and_bearer_auth():
     handler, seen = replies(httpx.Response(202, json={"droplet": DROPLET}))
-    spec = DropletSpec(name="bh-r1", region="nyc3", size="s-2vcpu-8gb-amd",
-                       image="ubuntu-24-04-x64", tags=("bh-owner:c", "bh-run:r1"))
-    droplet = client_for(handler).create_droplet(spec)
+    droplet = client_for(handler).create_droplet(droplet_spec())
     assert (droplet.id, droplet.tags) == (7, ("bh-owner:c", "bh-run:r1"))
     request = seen[0]
     assert (request.method, str(request.url)) == ("POST", "https://api.digitalocean.com/v2/droplets")
@@ -45,7 +52,21 @@ def test_create_sends_the_spec_with_both_tags_and_bearer_auth():
     assert json.loads(request.content) == {
         "name": "bh-r1", "region": "nyc3", "size": "s-2vcpu-8gb-amd",
         "image": "ubuntu-24-04-x64", "tags": ["bh-owner:c", "bh-run:r1"],
+        "ssh_keys": [FINGERPRINT], "user_data": USER_DATA,
     }
+
+
+@pytest.mark.parametrize("networks,expected", [
+    ({"v4": [{"ip_address": "192.0.2.200", "type": "private"},
+             {"ip_address": "198.51.100.7", "type": "public"}], "v6": []}, "198.51.100.7"),
+    ({"v4": [], "v6": [{"ip_address": "2001:db8::7", "type": "public"}]}, None),
+    ({"v4": [{"ip_address": "198.51.100.7/24", "type": "public"}]}, None),
+    ({"v4": "198.51.100.7"}, None),
+    (None, None),
+])
+def test_the_public_ipv4_address_is_read_or_left_unknown(networks, expected):
+    handler, _ = replies(httpx.Response(200, json={"droplet": DROPLET | {"networks": networks}}))
+    assert getattr(client_for(handler).get_droplet(7), "public_ipv4", "not read") == expected
 
 
 def test_list_by_tag_follows_pagination():
@@ -165,6 +186,108 @@ def test_action_log_with_a_malformed_entry_is_a_failed_read():
         method(datetime(2026, 11, 24, tzinfo=UTC))
 
 
+def client_method(handler, name):
+    method = getattr(client_for(handler), name, None)
+    assert method is not None, f"the client has {name}"
+    return method
+
+
+def test_a_key_is_registered_only_when_the_account_holds_its_fingerprint():
+    other = "ff:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:00"
+    handler, seen = replies(
+        httpx.Response(200, json={"ssh_key": {"id": 512, "fingerprint": FINGERPRINT}}),
+        httpx.Response(404, json={"id": "not_found"}),
+        httpx.Response(200, json={"ssh_key": {"id": 512, "fingerprint": other}}),
+        httpx.Response(200, json={"ssh_key": {"id": 512}}),
+    )
+    registered = client_method(handler, "ssh_key_registered")
+    assert [registered(FINGERPRINT) for _ in range(3)] == [True, False, False]
+    with pytest.raises(ProviderError):
+        registered(FINGERPRINT)
+    assert {r.url.path for r in seen} == {f"/v2/account/keys/{FINGERPRINT}"}
+
+
+FIREWALL = {"id": FIREWALL_ID, "name": "workers", "tags": ["bh-owner:c"],
+            "inbound_rules": [{"protocol": "tcp", "ports": "22",
+                               "sources": {"addresses": ["203.0.113.7/32"], "tags": ["web"]}}],
+            "outbound_rules": []}
+
+
+def test_a_firewall_is_read_by_id_with_every_source_it_admits():
+    handler, seen = replies(httpx.Response(200, json={"firewall": FIREWALL}),
+                            httpx.Response(404, json={"id": "not_found"}))
+    get_firewall = client_method(handler, "get_firewall")
+    firewall = get_firewall(FIREWALL_ID)
+    assert firewall.tags == ("bh-owner:c",)
+    assert [(rule.protocol, rule.ports, rule.sources) for rule in firewall.inbound_rules] == [
+        ("tcp", "22", (("addresses", "203.0.113.7/32"), ("tags", "web")))]
+    assert get_firewall(FIREWALL_ID) is None
+    assert {r.url.path for r in seen} == {f"/v2/firewalls/{FIREWALL_ID}"}
+
+
+@pytest.mark.parametrize("firewall", [
+    {"tags": ["bh-owner:c"]},
+    FIREWALL | {"tags": "bh-owner:c"},
+    FIREWALL | {"inbound_rules": [{"protocol": "tcp", "ports": "22"}]},
+    FIREWALL | {"inbound_rules": [{"protocol": "tcp", "ports": 22, "sources": {}}]},
+    FIREWALL | {"inbound_rules": [{"protocol": "tcp", "sources": {"addresses": "0.0.0.0/0"}}]},
+])
+def test_a_malformed_firewall_is_a_failed_read(firewall):
+    handler, _ = replies(httpx.Response(200, json={"firewall": firewall}))
+    with pytest.raises(ProviderError):
+        client_method(handler, "get_firewall")(FIREWALL_ID)
+
+
+SIZE = {"slug": "s-2vcpu-8gb-amd", "available": True, "price_hourly": 0.0625,
+        "regions": ["nyc3", "sfo3"]}
+
+
+def test_sizes_are_read_across_every_page():
+    next_link = {"pages": {"next": "https://api.digitalocean.com/v2/sizes?page=2"}}
+    handler, seen = replies(
+        httpx.Response(200, json={"sizes": [SIZE], "links": next_link, "meta": {"total": 2}}),
+        httpx.Response(200, json={"sizes": [SIZE | {"slug": "s-1vcpu-1gb", "price_hourly": 1}],
+                                  "links": {}, "meta": {"total": 2}}),
+    )
+    sizes = client_method(handler, "list_sizes")()
+    assert [(s.slug, s.available, s.price_hourly, s.regions) for s in sizes] == [
+        ("s-2vcpu-8gb-amd", True, 0.0625, ("nyc3", "sfo3")),
+        ("s-1vcpu-1gb", True, 1.0, ("nyc3", "sfo3"))]
+    assert [r.url.path for r in seen] == ["/v2/sizes", "/v2/sizes"]
+
+
+@pytest.mark.parametrize("change", [{"price_hourly": "0.0625"}, {"price_hourly": True},
+                                    {"available": "yes"}, {"regions": "nyc3"}, {"slug": None}])
+def test_a_malformed_size_is_a_failed_read(change):
+    handler, _ = replies(httpx.Response(200, json={"sizes": [SIZE | change], "links": {},
+                                                   "meta": {"total": 1}}))
+    with pytest.raises(ProviderError):
+        client_method(handler, "list_sizes")()
+
+
+def test_destroy_actions_are_read_completely_and_only_droplet_destroys_are_kept():
+    def action(action_id, kind="destroy", resource="droplet", status="completed", hour=12):
+        return {"id": action_id, "type": kind, "resource_type": resource, "resource_id": 70,
+                "status": status, "started_at": f"2026-11-24T{hour}:05:00Z"}
+
+    actions = [action(1), action(2, kind="create"), action(3, resource="volume"),
+               action(4, status="errored", hour=11)]
+    next_link = {"pages": {"next": "https://api.digitalocean.com/v2/actions?page=2"}}
+    handler, seen = replies(
+        httpx.Response(200, json={"actions": actions[:2], "links": next_link,
+                                  "meta": {"total": 4}}),
+        httpx.Response(200, json={"actions": actions[2:], "links": {}, "meta": {"total": 4}}),
+        httpx.Response(200, json={"actions": [action("1")], "links": {}, "meta": {"total": 1}}),
+    )
+    destroys = client_method(handler, "list_destroy_actions")
+    assert [(a.id, a.resource_id, a.status, a.started_at) for a in destroys()] == [
+        (1, 70, "completed", datetime(2026, 11, 24, 12, 5, tzinfo=UTC)),
+        (4, 70, "errored", datetime(2026, 11, 24, 11, 5, tzinfo=UTC))]
+    assert [r.url.path for r in seen] == ["/v2/actions", "/v2/actions"]
+    with pytest.raises(ProviderError):
+        destroys()
+
+
 def test_get_reads_404_as_gone():
     handler, _ = replies(httpx.Response(404, json={"id": "not_found"}))
     assert client_for(handler).get_droplet(7) is None
@@ -184,8 +307,7 @@ def test_429_and_5xx_are_retried_honoring_retry_after():
 def test_create_retries_429_but_never_a_5xx_that_may_have_created():
     handler, seen = replies(httpx.Response(429), httpx.Response(500))
     with pytest.raises(ProviderError, match="HTTP_500"):
-        client_for(handler).create_droplet(
-            DropletSpec(name="n", region="r", size="s", image="i", tags=()))
+        client_for(handler).create_droplet(droplet_spec())
     assert len(seen) == 2
 
 
@@ -197,8 +319,7 @@ def test_create_transport_error_is_not_retried():
         raise httpx.ConnectError("reset")
 
     with pytest.raises(ProviderError, match="TRANSPORT_ERROR"):
-        client_for(handler).create_droplet(
-            DropletSpec(name="n", region="r", size="s", image="i", tags=()))
+        client_for(handler).create_droplet(droplet_spec())
     assert len(seen) == 1
 
 

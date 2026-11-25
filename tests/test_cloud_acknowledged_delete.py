@@ -1,7 +1,8 @@
-"""A Droplet is gone only after the provider acknowledged our DELETE for it.
+"""A Droplet is gone only on evidence of its deletion: our acknowledged DELETE, or a
+completed destroy for it in the action log.
 
-No read-after-write guarantee is assumed: before an acknowledgment, a 404 by ID or
-an empty listing proves nothing, and the run keeps its reservation and its slot.
+No read-after-write guarantee is assumed: before that evidence, a 404 by ID or an empty
+listing proves nothing, and the run keeps its reservation and its slot.
 """
 
 from dataclasses import replace
@@ -10,7 +11,6 @@ import httpx
 import pytest
 from cloud_support import Cloud, DigitalOceanStub
 
-from balatro_horizons.cloud.controller import Controller
 from balatro_horizons.cloud.digitalocean import DigitalOceanClient
 from balatro_horizons.cloud.fake import SimulatedCrash
 from balatro_horizons.cloud.ledger import Ledger
@@ -82,7 +82,7 @@ def test_crash_between_the_ownership_loss_writes_keeps_the_id_held(cloud, monkey
 def test_known_id_that_reads_404_before_any_delete_leaves_the_run_unsettled(cloud):
     controller = cloud.launched()
     droplet_id = cloud.owned_ids("r1")[0]
-    # Deleted outside the controller, or a by-ID read that lags behind the provider.
+    # A by-ID read that lags behind the provider, or a deletion the action log never shows.
     cloud.provider.inventory.pop(droplet_id)
     controller.cancel("r1", now=True)
     assert_unsettled(cloud)
@@ -93,11 +93,9 @@ def test_known_id_that_reads_404_before_any_delete_leaves_the_run_unsettled(clou
 def http_cloud(tmp_path):
     stub = DigitalOceanStub()
     cloud = Cloud(tmp_path / "cloud")
-    client = DigitalOceanClient("test-token", transport=httpx.MockTransport(stub),
-                                sleep=cloud.clock.advance)
-    controller = Controller(cloud.ledger, client, cloud.settings, clock=cloud.clock,
-                            sleep=cloud.clock.advance)
-    return cloud, controller, stub
+    cloud.provider = DigitalOceanClient("test-token", transport=httpx.MockTransport(stub),
+                                        sleep=cloud.clock.advance)
+    return cloud, cloud.controller(), stub
 
 
 def methods(stub, method):
@@ -130,9 +128,7 @@ def test_name_sighting_then_404s_then_visible_again_holds_until_an_acknowledged_
 
 def test_delete_answered_404_is_not_an_acknowledgment(tmp_path):
     cloud, controller, stub = http_cloud(tmp_path)
-    assert controller.launch("r1")["outcome"] == "launched"
-    controller.tick()
-    assert cloud.ledger.get("r1").state == "running"
+    cloud.launched(controller=controller)
     stub.delete_status = 404
     controller.cancel("r1", now=True)
     record = cloud.ledger.get("r1")
