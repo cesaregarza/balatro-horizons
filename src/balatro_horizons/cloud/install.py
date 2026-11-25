@@ -121,12 +121,14 @@ class Install:
         return self.start_worker(record)
 
     def read_droplet(self, record):
-        """The Droplet, and whether it is known gone; a failed read is neither."""
+        """The Droplet, and whether it is known gone; a failed read is neither. The read may
+        take only the time left, and one that runs out of it has failed."""
         droplet_id = min(record.resource_ids(), default=None)
         if droplet_id is None:
             return None, True
         try:
-            droplet = self.provider.get_droplet(droplet_id)
+            droplet = self.provider.get_droplet(
+                droplet_id, time_left=lambda: self.time_left(record)[1])
         except Exception:
             return None, False
         return droplet, droplet is None

@@ -179,15 +179,15 @@ class Controller:
             record.worker_status = progress.status
         if progress.failure:
             return self.resolver.tear_down(record, progress.failure)
+        # The step took time, so a stop reason that holds once it has returned comes first:
+        # a ready game is then too late, and no news is not waited on.
+        returned_at = self.clock()
+        reason = boot_stop_reason(record, self.settings, returned_at)
+        if reason:
+            return self.resolver.tear_down(record, reason)
         if progress.ready:
-            # The read took time, so the game is ready in time only if no stop reason
-            # holds once it has returned.
-            ready_at = self.clock()
-            reason = boot_stop_reason(record, self.settings, ready_at)
-            if reason:
-                return self.resolver.tear_down(record, reason)
-            record.grace_from = ready_at
-            record.move("running", ready_at)
+            record.grace_from = returned_at
+            record.move("running", returned_at)
             self.ledger.save(record)
         return record
 

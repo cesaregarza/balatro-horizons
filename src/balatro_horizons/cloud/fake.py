@@ -103,7 +103,8 @@ class FakeProvider:
             raise ProviderError("TRANSPORT_ERROR")
         return droplet
 
-    def get_droplet(self, droplet_id):
+    def get_droplet(self, droplet_id, *, time_left=None):
+        # It answers at once, so a limit on the time the read may take never applies.
         self.calls.append(("get", droplet_id))
         droplet = self.inventory.get(droplet_id)
         if droplet is not None and self.boot and droplet.status == "new":

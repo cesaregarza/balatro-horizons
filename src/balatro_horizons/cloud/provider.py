@@ -1,5 +1,6 @@
 """The provider and worker interfaces the controller depends on."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -59,8 +60,15 @@ class Size:
 class Provider(Protocol):
     def create_droplet(self, spec: DropletSpec) -> Droplet: ...
 
-    def get_droplet(self, droplet_id: int) -> Droplet | None:
-        """Return None when the provider answers 404: the Droplet is gone."""
+    def get_droplet(self, droplet_id: int, *,
+                    time_left: Callable[[], float] | None = None) -> Droplet | None:
+        """Return None when the provider answers 404: the Droplet is gone.
+
+        `time_left`, when given, returns the seconds the read may still take. No attempt
+        starts once none is left, each attempt and each wait before a retry fits in what
+        is left, and a read that runs out raises. Without it, the read keeps its full
+        retry policy.
+        """
 
     def list_droplets(self, tag: str) -> list[Droplet]: ...
 

@@ -28,6 +28,9 @@ API_URL = "https://api.digitalocean.com/v2"
 PAGE_SIZE = 200
 MAX_PAGES = 50
 MAX_ATTEMPTS = 5
+# Each attempt's limit. httpx applies it separately to connecting, to each write and each
+# read, and to waiting for a pooled connection.
+REQUEST_SECONDS = 30
 
 
 # The statuses the API documents for an action.
@@ -43,7 +46,7 @@ class DigitalOceanClient:
         if not token:
             raise ValueError("DIGITALOCEAN_TOKEN_MISSING")
         self._client = httpx.Client(
-            base_url=API_URL, transport=transport, timeout=30, trust_env=False,
+            base_url=API_URL, transport=transport, timeout=REQUEST_SECONDS, trust_env=False,
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         )
         self.sleep = sleep
@@ -62,8 +65,8 @@ class DigitalOceanClient:
         response = self.request("POST", "/droplets", json=body, retry_server_errors=False)
         return parse_droplet(expect(response, 202).get("droplet"))
 
-    def get_droplet(self, droplet_id):
-        response = self.request("GET", f"/droplets/{int(droplet_id)}")
+    def get_droplet(self, droplet_id, *, time_left=None):
+        response = self.request("GET", f"/droplets/{int(droplet_id)}", time_left=time_left)
         if response.status_code == 404:
             return None
         return parse_droplet(expect(response, 200).get("droplet"))
@@ -133,19 +136,35 @@ class DigitalOceanClient:
             raise ProviderError(f"HTTP_{response.status_code}")
         return True
 
-    def request(self, method, path, *, retry_server_errors=True, **kwargs):
+    def request(self, method, path, *, retry_server_errors=True, time_left=None, **kwargs):
+        """Send with the retries `should_retry` allows. With `time_left`, which returns the
+        seconds left, no attempt starts once none is left, and each attempt's limit and each
+        wait before a retry are cut to fit."""
         for attempt in range(MAX_ATTEMPTS):
+            if time_left is not None:
+                left = time_left()
+                if left <= 0:
+                    raise ProviderError("NO_TIME_LEFT")
+                kwargs["timeout"] = min(REQUEST_SECONDS, left)
             try:
                 response = self._client.request(method, path, **kwargs)
             except httpx.TransportError:
                 if not retry_server_errors or attempt == MAX_ATTEMPTS - 1:
                     raise ProviderError("TRANSPORT_ERROR") from None
-                self.sleep(self.delay(attempt, None))
+                self.wait(self.delay(attempt, None), time_left)
                 continue
             if not self.should_retry(response, retry_server_errors, attempt):
                 return response
-            self.sleep(self.delay(attempt, response))
+            self.wait(self.delay(attempt, response), time_left)
         raise AssertionError("unreachable")
+
+    def wait(self, seconds, time_left):
+        """Sleep before a retry. A wait longer than the time left is cut to it. The next
+        attempt then finds no time left, so no retry is sent before its full wait, a
+        Retry-After hint included."""
+        if time_left is not None:
+            seconds = min(seconds, max(time_left(), 0))
+        self.sleep(seconds)
 
     def should_retry(self, response, retry_server_errors, attempt):
         if attempt == MAX_ATTEMPTS - 1:
