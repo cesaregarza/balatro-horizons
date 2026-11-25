@@ -375,3 +375,27 @@ def test_through_the_ssh_channel_an_unreadable_worker_is_no_news(cloud):
     cloud.clock.advance(21)
     controller.tick()
     cloud.assert_torn_down("r1", "heartbeat_lost")
+
+
+@pytest.mark.parametrize("returns_at", [7201, 7200])
+def test_through_the_ssh_channel_a_ready_report_read_by_the_run_deadline_does_not_succeed(
+        cloud, returns_at):
+    # The run deadline falls at t=7,200, and the read starts a second before it.
+    controller = cloud.launched(controller=cloud.controller(channel=None))
+    cloud.transport.durations = {"status": returns_at - 7199}
+    cloud.clock.advance(7199)
+    controller.tick()
+    assert cloud.transport.steps() == [*INSTALL, "status", "status"]
+    cloud.assert_torn_down("r1", "deadline")
+
+
+def test_through_the_ssh_channel_the_heartbeat_grace_is_judged_when_the_read_returns(cloud):
+    # The read starts 115 seconds into the 120-second grace and takes ten seconds to find
+    # the host unreachable, which is no news.
+    controller = cloud.launched(controller=cloud.controller(channel=None))
+    cloud.transport.refusals = ["unreachable"]
+    cloud.transport.durations = {"status": 10}
+    cloud.clock.advance(115)
+    controller.tick()
+    assert cloud.transport.steps() == [*INSTALL, "status", "status"]
+    cloud.assert_torn_down("r1", "heartbeat_lost")
