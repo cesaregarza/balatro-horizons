@@ -1,0 +1,48 @@
+# The worker's public dependencies. Each download is checked by size and SHA256 before it
+# is used. The apt packages are not pinned, so the worker records what it installed.
+apt_packages = [
+  "ca-certificates",
+  "curl",
+  "jq",
+  "xz-utils",
+  "zstd",
+  "xvfb",
+  "xauth",
+  "mesa-utils",
+  "libgl1-mesa-dri",
+  "libgl1",
+  "libglx-mesa0",
+  "libvulkan1",
+  "bubblewrap",
+  "dbus-x11",
+  "libasound2t64",
+  "libpulse0",
+  "fontconfig",
+  "fonts-dejavu-core",
+  "procps",
+  "python3",
+  "python3-venv",
+  "python3-psutil",
+  "rsync",
+]
+
+[[downloads]]
+name = "GE-Proton11-14-x86_64.tar.gz"
+url = "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-14/GE-Proton11-14-x86_64.tar.gz"
+bytes = 598620532
+sha256 = "26bcea3324b68dee68bf6b9b005f4425cdb9c29872e126d790df5abfebe332a8"
+use = "runner"
+
+[[downloads]]
+name = "python3-umu-launcher_1.4.4-1_amd64_ubuntu-noble.deb"
+url = "https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.4/python3-umu-launcher_1.4.4-1_amd64_ubuntu-noble.deb"
+bytes = 661336
+sha256 = "86b7a234f77fbcd13699654656192a12ed3852ec2bcc721506ae4f91436b3793"
+use = "package"
+
+[[downloads]]
+name = "umu-launcher_1.4.4-1_all_ubuntu-noble.deb"
+url = "https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.4/umu-launcher_1.4.4-1_all_ubuntu-noble.deb"
+bytes = 12954
+sha256 = "8d11aa5bf0edaa988a4cbb04a1414a3d2249128913e6130e6a2a8528c9ef31b1"
+use = "package"

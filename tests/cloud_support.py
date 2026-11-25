@@ -13,6 +13,7 @@ from pathlib import Path
 import httpx
 
 from balatro_horizons.cli.cloud import status_report
+from balatro_horizons.cloud.access import AccessSettings
 from balatro_horizons.cloud.controller import Controller
 from balatro_horizons.cloud.fake import FakeChannel, FakeProvider
 from balatro_horizons.cloud.ledger import Ledger
@@ -187,7 +188,9 @@ class Cloud:
                            "bytes": len(BUNDLE_BYTES), "sha256": BUNDLE_SHA256}}
 
     def wiring(self):
-        return {"channel": self.channel, "clock": self.clock, "sleep": self.clock.advance}
+        return {"channel": self.channel, "clock": self.clock, "sleep": self.clock.advance,
+                "access": AccessSettings.model_validate(self.access_file()),
+                "transport": self.transport}
 
     def controller(self, **overrides):
         return Controller(self.ledger, self.provider, self.settings, **self.wiring() | overrides)

@@ -8,10 +8,20 @@ import re
 import time
 from datetime import timedelta
 
+from .channel import SshChannel
 from .creation import CreateResolver, definite_rejection
 from .gate import launch_refusals
+from .hostkey import (
+    HostKeyError,
+    generate_host_key,
+    known_hosts_path,
+    pin_host_key,
+    user_data,
+)
+from .install import Install, WorkerLink, boot_timeout_reason
 from .ledger import RUN_ID_PATTERN, RunRecord
-from .provider import DropletSpec, SilentChannel
+from .preflight import preflight_refusals
+from .provider import DropletSpec
 from .reconcile import reconcile_inventory
 from .settings import droplet_name, run_tag, utc_now
 from .teardown import Teardown
@@ -29,16 +39,22 @@ def require_run_id(run_id):
 
 
 class Controller:
-    def __init__(self, ledger, provider, settings, *, channel=None, clock=utc_now,
-                 sleep=time.sleep):
+    """Launching and booting need the access settings and an SSH transport; teardown never does."""
+
+    def __init__(self, ledger, provider, settings, *, access=None, transport=None,
+                 channel=None, clock=utc_now, sleep=time.sleep):
         self.ledger = ledger
         self.provider = provider
         self.settings = settings
-        self.channel = channel or SilentChannel()
+        self.access = access
+        self.transport = transport
         self.clock = clock
         self.sleep = sleep
         self.teardown = Teardown(ledger, provider, settings, clock, sleep)
         self.resolver = CreateResolver(ledger, provider, settings, self.teardown, clock)
+        link = WorkerLink(transport, access, ledger.root)
+        self.install = Install(ledger, provider, link, settings)
+        self.channel = channel or SshChannel(ledger, link, clock)
 
     def launch(self, run_id):
         require_run_id(run_id)
@@ -46,20 +62,36 @@ class Controller:
             existing = self.ledger.get(run_id)
             if existing is not None:
                 return {"outcome": "duplicate", "run_id": run_id, "state": existing.state}
-            # Admit nothing until what we already own is accounted for.
-            reconcile_inventory(self.ledger, self.provider, self.settings, self.teardown,
-                                self.clock)
-            reasons = launch_refusals(self.ledger, self.settings, self.clock())
+            reasons = self.admission_refusals()
             if reasons:
                 return {"outcome": "refused", "run_id": run_id, "reasons": reasons}
-            record = self.persist_new(run_id)
-            try:
-                droplet = self.provider.create_droplet(self.spec(run_id))
-            except Exception as error:
-                return self.create_failed(record, error)
-            record.remember(droplet.id)
-            self.ledger.save(record)
-            return {"outcome": "launched", "run_id": run_id, "state": record.state}
+            return self.create(run_id)
+
+    def admission_refusals(self):
+        # Admit nothing until what we already own is accounted for.
+        reconcile_inventory(self.ledger, self.provider, self.settings, self.teardown,
+                            self.clock)
+        # The preflight only reads, and runs before the run is recorded, so its refusal
+        # leaves no record. It runs only once the gate admits the launch.
+        return (launch_refusals(self.ledger, self.settings, self.clock())
+                or preflight_refusals(self.provider, self.settings, self.access))
+
+    def create(self, run_id):
+        """Pin a fresh host key, persist the run, then create its Droplet."""
+        try:
+            host_key = generate_host_key(self.transport)
+            pin_host_key(known_hosts_path(self.ledger.root, run_id), host_key)
+        except (HostKeyError, OSError):
+            # Nothing is recorded or created yet, so this refuses like the preflight.
+            return {"outcome": "refused", "run_id": run_id, "reasons": ["HOST_KEY_UNAVAILABLE"]}
+        record = self.persist_new(run_id)
+        try:
+            droplet = self.provider.create_droplet(self.spec(run_id, host_key))
+        except Exception as error:
+            return self.create_failed(record, error)
+        record.remember(droplet.id)
+        self.ledger.save(record)
+        return {"outcome": "launched", "run_id": run_id, "state": record.state}
 
     def create_failed(self, record, error):
         if definite_rejection(error):
@@ -72,7 +104,7 @@ class Controller:
         return {"outcome": outcome, "run_id": record.run_id, "state": record.state}
 
     def persist_new(self, run_id):
-        """Write the run and its absolute deadline before any provider call."""
+        """Write the run and its absolute deadline before the create."""
         now = self.clock()
         record = RunRecord(
             run_id=run_id, state="provisioning", created_at=now,
@@ -83,10 +115,11 @@ class Controller:
         self.ledger.save(record)
         return record
 
-    def spec(self, run_id):
+    def spec(self, run_id, host_key):
         return DropletSpec(
             name=droplet_name(run_id), region=self.settings.region, size=self.settings.size,
             image=self.settings.image, tags=(self.settings.owner_tag, run_tag(run_id)),
+            ssh_key=self.access.ssh_key_fingerprint, user_data=user_data(host_key),
         )
 
     def tick(self):
@@ -124,20 +157,18 @@ class Controller:
         return None
 
     def check_boot(self, record, now):
-        droplet_id = min(record.resource_ids(), default=None)
-        try:
-            droplet = self.provider.get_droplet(droplet_id) if droplet_id else None
-            gone = droplet is None
-        except Exception:
-            droplet, gone = None, False  # Unknown: only the boot timeout applies.
-        if droplet is not None and droplet.status == "active":
+        """A run provisions from the create until its worker reports the game ready."""
+        if (now - record.created_at).total_seconds() > self.settings.boot_timeout_seconds:
+            return self.resolver.tear_down(record, boot_timeout_reason(record))
+        progress = self.install.step(record, now)
+        if progress.status is not None:
+            record.worker_status = progress.status
+        if progress.failure:
+            return self.resolver.tear_down(record, progress.failure)
+        if progress.ready:
             record.grace_from = now
             record.move("running", now)
             self.ledger.save(record)
-            return record
-        booting_for = (now - record.created_at).total_seconds()
-        if gone or booting_for > self.settings.boot_timeout_seconds:
-            return self.resolver.tear_down(record, "boot_failed")
         return record
 
     def cancel(self, run_id, *, now=False):

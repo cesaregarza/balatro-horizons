@@ -1,16 +1,27 @@
-"""DigitalOcean API v2 client for Droplets, with an injectable HTTP transport.
+"""DigitalOcean API v2 client for Droplets and the preflight reads, with an injectable transport.
 
 The bulk delete-by-tag endpoint is deliberately absent: deletion is by ID only,
 after the caller has listed and filtered on both tags.
 """
 
+import ipaddress
 import os
 import time
 from datetime import UTC, datetime
+from urllib.parse import quote
 
 import httpx
 
-from .provider import CreateAction, Droplet, DropletSpec, ProviderError
+from .provider import (
+    CreateAction,
+    DestroyAction,
+    Droplet,
+    DropletSpec,
+    Firewall,
+    InboundRule,
+    ProviderError,
+    Size,
+)
 from .settings import TOKEN_VARIABLE
 
 API_URL = "https://api.digitalocean.com/v2"
@@ -44,7 +55,8 @@ class DigitalOceanClient:
 
     def create_droplet(self, spec: DropletSpec) -> Droplet:
         body = {"name": spec.name, "region": spec.region, "size": spec.size,
-                "image": spec.image, "tags": list(spec.tags)}
+                "image": spec.image, "tags": list(spec.tags), "ssh_keys": [spec.ssh_key],
+                "user_data": spec.user_data}
         # A 5xx or dropped connection may follow a successful create, so only a
         # 429, which the API rejects before acting, is retried here.
         response = self.request("POST", "/droplets", json=body, retry_server_errors=False)
@@ -66,13 +78,37 @@ class DigitalOceanClient:
                                                               {"name": name})]
 
     def list_create_actions(self, since):
-        # The API documents no order for the action log, so every page is read.
-        actions = [parse_action(item) for item in self.read_all("/actions", "actions", {})]
         return [CreateAction(resource_id=a["resource_id"], started_at=a["started_at"],
                              status=a["status"])
-                for a in actions
-                if a["type"] == "create" and a["resource_type"] == "droplet"
-                and a["started_at"] >= since]
+                for a in self.droplet_actions("create") if a["started_at"] >= since]
+
+    def list_destroy_actions(self):
+        return [DestroyAction(id=whole_number(a["id"]), resource_id=a["resource_id"],
+                              started_at=a["started_at"], status=a["status"])
+                for a in self.droplet_actions("destroy")]
+
+    def droplet_actions(self, kind):
+        # The API documents no order for the action log, so every page is read.
+        actions = [parse_action(item) for item in self.read_all("/actions", "actions", {})]
+        return [a for a in actions if a["type"] == kind and a["resource_type"] == "droplet"]
+
+    def ssh_key_registered(self, fingerprint):
+        response = self.request("GET", f"/account/keys/{quote(fingerprint, safe=':')}")
+        if response.status_code == 404:
+            return False
+        key = expect(response, 200).get("ssh_key")
+        if not isinstance(key, dict) or not isinstance(key.get("fingerprint"), str):
+            raise ProviderError("MALFORMED_RESPONSE")
+        return key["fingerprint"] == fingerprint
+
+    def get_firewall(self, firewall_id):
+        response = self.request("GET", f"/firewalls/{quote(firewall_id, safe='')}")
+        if response.status_code == 404:
+            return None
+        return parse_firewall(expect(response, 200).get("firewall"))
+
+    def list_sizes(self):
+        return [parse_size(item) for item in self.read_all("/sizes", "sizes", {})]
 
     def read_all(self, path, key, filters):
         """Every item across pages; anything short of a complete, well-formed read raises."""
@@ -170,7 +206,21 @@ def parse_droplet(item):
     if not isinstance(name, str) or not isinstance(status, str):
         raise ProviderError("MALFORMED_RESPONSE")
     return Droplet(id=whole_number(item.get("id")), name=name, status=status,
-                   tags=tuple(tags), created_at=parse_time(created))
+                   tags=tuple(tags), created_at=parse_time(created),
+                   public_ipv4=public_ipv4(item.get("networks")))
+
+
+def public_ipv4(networks):
+    """The first public IPv4 address, or None: an odd shape must not block a teardown."""
+    entries = networks.get("v4") if isinstance(networks, dict) else None
+    for entry in entries if isinstance(entries, list) else ():
+        if isinstance(entry, dict) and entry.get("type") == "public":
+            address = entry.get("ip_address")
+            try:
+                return str(ipaddress.IPv4Address(address)) if isinstance(address, str) else None
+            except ValueError:
+                return None
+    return None
 
 
 def parse_action(item):
@@ -185,8 +235,48 @@ def parse_action(item):
         raise ProviderError("MALFORMED_RESPONSE")
     if resource_id is not None:
         whole_number(resource_id)
-    return {"type": kind, "resource_type": resource_type, "resource_id": resource_id,
-            "started_at": started, "status": status}
+    return {"id": item.get("id"), "type": kind, "resource_type": resource_type,
+            "resource_id": resource_id, "started_at": started, "status": status}
+
+
+def parse_firewall(item):
+    if not isinstance(item, dict) or not isinstance(item.get("inbound_rules"), list):
+        raise ProviderError("MALFORMED_RESPONSE")
+    return Firewall(tags=strings(item.get("tags")),
+                    inbound_rules=tuple(parse_rule(rule) for rule in item["inbound_rules"]))
+
+
+def parse_rule(rule):
+    """Every source of every kind is kept, so the preflight can refuse what it does not expect."""
+    if not isinstance(rule, dict) or not isinstance(rule.get("sources"), dict):
+        raise ProviderError("MALFORMED_RESPONSE")
+    protocol, ports = rule.get("protocol"), rule.get("ports", "")
+    if not isinstance(protocol, str) or not isinstance(ports, str):
+        raise ProviderError("MALFORMED_RESPONSE")
+    sources = []
+    for kind, values in rule["sources"].items():
+        if not isinstance(values, list):
+            raise ProviderError("MALFORMED_RESPONSE")
+        sources.extend((kind, str(value)) for value in values)
+    return InboundRule(protocol=protocol, ports=ports, sources=tuple(sources))
+
+
+def parse_size(item):
+    if not isinstance(item, dict):
+        raise ProviderError("MALFORMED_RESPONSE")
+    slug, available, price = item.get("slug"), item.get("available"), item.get("price_hourly")
+    if not isinstance(slug, str) or not isinstance(available, bool):
+        raise ProviderError("MALFORMED_RESPONSE")
+    if not isinstance(price, int | float) or isinstance(price, bool):
+        raise ProviderError("MALFORMED_RESPONSE")
+    return Size(slug=slug, available=available, price_hourly=float(price),
+                regions=strings(item.get("regions")))
+
+
+def strings(value):
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ProviderError("MALFORMED_RESPONSE")
+    return tuple(value)
 
 
 def parse_time(value):

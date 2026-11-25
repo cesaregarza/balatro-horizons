@@ -2,10 +2,10 @@
 
 The cloud runner runs each game on a throwaway DigitalOcean Droplet, one per run,
 and guarantees the Droplet is deleted and verified gone afterwards, including
-after an error, a crash or a lost worker. This first slice is the controller's run
-lifecycle and its teardown guarantees. It has no worker payload, no
-controller-to-worker channel and no deployment, so a real launch would boot an
-empty Ubuntu Droplet and tear it down when the heartbeat grace expires.
+after an error, a crash or a lost worker. In this slice the controller checks its
+access, creates the Droplet with a host key it pinned in advance, installs and
+starts the game over SSH, and tears the Droplet down once the game is ready. Each
+run is therefore a boot check: no game is played and no results come back yet.
 
 The laptop and desktop native path is unchanged. The package lives in
 `src/balatro_horizons/cloud/`, outside the execution manifest, so restore
@@ -16,7 +16,7 @@ compatibility is untouched.
 | Command | Provider calls | Purpose |
 | --- | --- | --- |
 | `bh cloud status` | none | Ledger, launch gate, budget, the last inventory read and active alerts. Exits 1 while an alert is active. |
-| `bh cloud launch RUN_ID --allow-provider-calls` | yes | Start the controller, re-evaluate existing runs and the owned inventory, launch one run and supervise until every run is torn down. Exits nonzero if any alert is active at the end. |
+| `bh cloud launch RUN_ID --allow-provider-calls [--access-config FILE]` | yes | Start the controller, re-evaluate existing runs and the owned inventory, run the preflight, launch one run and supervise until every run is torn down. Exits nonzero if any alert is active at the end. |
 | `bh cloud cancel RUN_ID [--allow-provider-calls]` | only with the flag | Without the flag, record the request for the controller. With it, also tear down now. |
 | `bh cloud reconcile --allow-provider-calls` | yes | Tear down expired runs and orphans, look for the Droplets of unresolved creates, and verify each. Safe from a timer while the controller is down. |
 
@@ -29,22 +29,107 @@ never logged, written to the ledger, sent as user data or printed.
 Settings live in `configs/cloud.yaml`, not `config.py`; pass another file with
 `--cloud-config`. The ledger lives under `--data-dir`, in `cloud/`.
 
+## Access settings
+
+Operations owns the controller's SSH key, the firewall and the game bundle, and
+sets up the key and the firewall once; no run creates either. Their values live in
+`private/cloud-access.yaml`, which git ignores, or in the file `--access-config`
+names. Only `launch` reads them, so `status`, `cancel` and `reconcile`, and with
+them every teardown path, work without the file. A missing file refuses the launch
+with `CLOUD_ACCESS_MISSING`, and an unreadable or invalid one, including one with an
+unknown field, with `CLOUD_ACCESS_INVALID`.
+
+| Field | Meaning |
+| --- | --- |
+| `ssh_key_path` | The absolute path of the private key the controller logs in with. |
+| `ssh_key_fingerprint` | That key's fingerprint as DigitalOcean records it: colon-separated MD5 hex. |
+| `firewall_id` | The firewall that covers the owner tag. |
+| `bundle.path` | The absolute path of the game bundle on the controller host. |
+| `bundle.name`, `bundle.bytes`, `bundle.sha256` | The bundle's descriptor. |
+
 ## Run lifecycle
 
-1. **Persist first.** The run and its absolute UTC deadline
-   (`now + max_run_hours`) are written before any provider call.
-2. **Create.** One Droplet is created with two tags: the owner tag
-   `bh-owner:<controller_id>` and the run tag `bh-run:<run_id>`.
-3. **Boot.** The run becomes `running` when the Droplet is `active`.
-4. **Supervise.** Each tick re-reads the ledger and tears the run down on the
+1. **Preflight.** Once the launch gate admits a launch, the controller reads the
+   provider and the bundle, and refuses with the codes listed below. The preflight
+   creates nothing and runs before the run is recorded, so a refusal leaves no
+   record. It is the one exception to persisting a run before any provider call.
+2. **Persist first.** The run and its absolute UTC deadline
+   (`now + max_run_hours`) are written before the create.
+3. **Create.** One Droplet is created with two tags, the owner tag
+   `bh-owner:<controller_id>` and the run tag `bh-run:<run_id>`, the registered SSH
+   key, and user data that installs the run's host key. See
+   [SSH and the host key](#ssh-and-the-host-key).
+4. **Install.** Once the Droplet is `active` and has a public IPv4 address, the
+   controller connects over SSH, pushes the worker program and its pins, pushes the
+   bundle, and starts the worker detached with `systemd-run`, so no tick waits on
+   the install. Each later tick reads the worker's status file over SSH.
+5. **Ready.** The run stays `provisioning` until the worker reports the game
+   ready, then moves to `running`. In this slice that ends the run: the next tick
+   tears it down as `succeeded`. The run record keeps the worker's final report.
+6. **Supervise.** Each tick re-reads the ledger and tears the run down on the
    first reason that applies.
-5. **Tear down and settle.** Verified teardown settles the elapsed time against
+7. **Tear down and settle.** Verified teardown settles the elapsed time against
    the infrastructure budget.
+
+The preflight reports every check that fails, in this order:
+
+| Code | Refused when |
+| --- | --- |
+| `SSH_KEY_NOT_REGISTERED` | The account has no key with `ssh_key_fingerprint`. |
+| `FIREWALL_NOT_RESTRICTED` | The firewall is missing, does not target the owner tag, has an inbound rule other than TCP port 22, or admits any source other than a single IPv4 address (/32), including a source by tag, Droplet or load balancer. Outbound rules are not checked, because the worker needs HTTPS and DNS out. |
+| `SIZE_NOT_OFFERED` | The size is unavailable, or not offered in the region. |
+| `PRICE_UNDERSTATED` | The size's hourly price is higher than `hourly_price_usd`, the price the budget reserves at. |
+| `BUNDLE_MISMATCH` | The bundle's file name, size or SHA256 differs from its descriptor. The size is checked first, then the SHA256, read in chunks. |
+
+A provider read that fails or is malformed refuses with `PREFLIGHT_UNVERIFIED`
+alone, since nothing was checked. A run's host key that cannot be made or pinned
+refuses with `HOST_KEY_UNAVAILABLE`, also before anything is recorded.
+
+### The worker's stages
+
+The worker is a standard-library Python program in `cloud/worker/`, copied to the
+Droplet with `pins.toml`, which pins each download by URL, size and SHA256. Before
+each stage starts, the worker writes the stage to its status file, renamed into
+place so a reader never sees half of it. A failure writes `failed` with the stage, a
+short reason, and capped tails of the worker's log and of the display's and the
+game's stderr. The worker then exits.
+
+1. `packages`: wait for cloud-init and record its final status, which shows
+   whether the user data's command failed. Then add the i386 architecture and
+   install the apt package list in `pins.toml`.
+2. `dependencies`: download GE-Proton and the two UMU packages and check each
+   one's size and SHA256. Only then install the packages and unpack the runner.
+3. `bundle`: check the pushed bundle's size and SHA256 against the descriptor
+   values the controller passes, then unpack it.
+4. `user`: create the unprivileged account if it does not exist yet, and move the
+   game and the runner into its home.
+5. `display`: start Xvfb in its own transient unit, check within a bound that
+   display `:99` answers while Xvfb is still running, and record `glxinfo -B`.
+6. `game`: start the game as that account in a transient unit, with only the
+   launch recipe's environment, `CPUQuota=200%`, `MemoryMax=6656M`, `UMask=0077`,
+   and `RuntimeMaxSec` set to the time left before the run's deadline. Past the
+   deadline, nothing starts.
+7. `ready`: an authenticated `bh_inspect` on 127.0.0.1:12346 reports the menu
+   within 180 seconds.
+
+The game's token and instance ID are made on the Droplet and never leave it. They
+are taken out of the log tails, and they reach the game through an owner-only
+environment file, never a command line. On the way out the worker records what it
+observed, because the apt packages and steamrt4 are not pinned: the kernel, a
+digest of the installed package list, the steamrt4 build, cloud-init's final
+status, the renderer and the game's version. Each is capped in size.
+
+### Teardown reasons
 
 | Trigger | Teardown reason |
 | --- | --- |
-| The worker reports it finished | `succeeded` |
-| Not `active` within `boot_timeout_seconds`, or gone during boot | `boot_failed` |
+| The game is ready; in this slice that ends the run | `succeeded` |
+| Not ready within `boot_timeout_seconds`, or gone during boot | `boot_failed` |
+| Not ready within `boot_timeout_seconds`, and the last SSH attempt met a host key other than the pinned one | `host_key_mismatch` |
+| The active Droplet has no public IPv4 address | `no_public_ipv4` |
+| The worker reports a failed stage | `worker_failed:<stage>` |
+| An SSH call fails or times out; the step is `probe`, `push_worker`, `push_bundle`, `start` or `status` | `ssh_failed:<step>` or `ssh_timed_out:<step>` |
+| The worker's status file does not parse | `worker_status_malformed` |
 | The create call is rejected with a 4xx, or an ambiguous create resolves | `create_failed` |
 | The absolute deadline passes | `deadline` |
 | A cancel request | `cancelled` |
@@ -53,19 +138,49 @@ Settings live in `configs/cloud.yaml`, not `config.py`; pass another file with
 | A run still provisioning when a controller starts | `restart_while_provisioning` |
 | An owner-tagged Droplet with no live ledger run | `orphan` |
 
-On a controller restart, every live run is re-evaluated. A provisioning run is
-torn down, never adopted; one with no recorded Droplet ID is held as an unresolved
-create, because the crash may have followed an accepted create. A running run is
-torn down if it is past its original deadline; otherwise it gets a fresh
-heartbeat grace window and is torn down if no heartbeat arrives. An interrupted
-teardown resumes. Only one controller can run at a time: it holds
-`controller.lock` for its lifetime, and a second one exits with
-`CONTROLLER_BUSY`.
+`boot_timeout_seconds` covers everything from the create until the game is ready,
+including the install. It is 1200 until a live run measures the real time.
+
+On a controller restart, every live run is re-evaluated. A provisioning run,
+including one whose worker is still installing, is torn down, never adopted; one
+with no recorded Droplet ID is held as an unresolved create, because the crash may
+have followed an accepted create. A running run is torn down if it is past its
+original deadline; otherwise it gets a fresh heartbeat grace window and is torn
+down if no heartbeat arrives. An interrupted teardown resumes. Only one controller
+can run at a time: it holds `controller.lock` for its lifetime, and a second one
+exits with `CONTROLLER_BUSY`.
 
 At startup, and again just before admitting each launch, the controller reads the
 whole owner-tag inventory, tears down orphans and records unmatched Droplets. If
 that read fails or is malformed, the launch is refused with
 `INVENTORY_UNVERIFIED`, and `status` shows the failed read.
+
+## SSH and the host key
+
+For each run, the controller makes a fresh ed25519 host key with `ssh-keygen`, in
+an owner-only temporary directory that is gone before the create is sent. It pins
+the public half in an owner-only known_hosts file for the run, in the ledger's
+`known_hosts/` directory. The user data is a cloud-config that installs the pair as
+the Droplet's only host key and runs one command, `systemctl try-restart
+ssh.service`, with nothing that hides its failure: an sshd that started before the
+key was installed then serves it, and an sshd that is not running is left alone.
+The user data carries nothing else: no login hardening, no sshd configuration, no
+token and no game files. A command that succeeds proves nothing on its own; the
+controller trusts the Droplet only once the pinned host key and the login both
+verify.
+
+Every SSH call uses the system OpenSSH client with one fixed set of options: no
+configuration file, only the access key, batch mode, strict checking against the
+run's known_hosts file with no global file, ed25519 host keys only, and bounded
+connect and keepalive waits. Every call also has a subprocess timeout. OpenSSH runs
+a command and sends its input only after both the host key and the login verify.
+An unreachable host, a refused login and a host key other than the pinned one are
+retried until the boot timeout, because sshd may answer before cloud-init installs
+the key. The pin is never replaced, accepted anew or deleted. Any other failed or
+timed-out call ends the boot with a named reason.
+
+The Droplet's public IPv4 address is kept in the run record for SSH only; `status`
+and the dashboard do not show it.
 
 ## Ambiguous creates
 
@@ -121,19 +236,29 @@ read as empty.
 
 ## Verified teardown
 
-The controller believes a Droplet is gone only after the provider has
-acknowledged our DELETE for it. DigitalOcean documents no read-after-write
-guarantee, so the controller relies on none: a by-ID read and a listing can
-each lag or disagree. An ID counts as gone only when all three of these hold,
-in order:
+The controller believes a Droplet is gone only on evidence that it was deleted.
+DigitalOcean documents no read-after-write guarantee, so the controller relies on
+none: a by-ID read and a listing can each lag or disagree. An ID counts as gone
+only when both of these hold, in order:
 
-1. A fresh by-ID read showed it with both tags.
-2. The provider acknowledged our DELETE with a 2xx. A 404 on DELETE is not an
-   acknowledgment. The acknowledgment is recorded durably on the run's resource
-   before any later read is trusted.
-3. Afterwards, a by-ID read returns 404 and the run-tag listing omits the ID.
+1. It was deleted, shown in one of two ways:
+   - A fresh by-ID read showed it with both tags, and the provider acknowledged our
+     DELETE with a 2xx. A 404 on DELETE is not an acknowledgment. The
+     acknowledgment is recorded durably on the run's resource before any later
+     read is trusted.
+   - The account action log shows a completed `destroy` action for that ID that
+     started no earlier than the run's creation, less the five-minute clock-skew
+     allowance. One that failed, is still in progress, names another ID or started
+     earlier proves nothing.
+2. Afterwards, a by-ID read returns 404 and the run-tag listing omits the ID.
 
-Before the acknowledgment, a 404 or an empty listing proves nothing. The run
+Each DELETE attempt is recorded durably on the resource before the request is
+sent. On every teardown pass, acknowledged or not, the controller also reads the
+action log for each ID's destroy action, and records the best one it found and when
+it looked, so every live run shows whether the action-log path would have held.
+Settling never waits for that read, and a read that fails records nothing.
+
+Before either kind of evidence, a 404 or an empty listing proves nothing. The run
 keeps its state, reservation and slot, and later passes read again; if the ID
 reads with both tags again, it is deleted then. The same rule applies to every
 run: a known ID, an adopted orphan, and a Droplet found for an unresolved
@@ -166,31 +291,28 @@ tags:
   reconciler.
 
 Each is recorded in the unmatched watch, `status` shows an `UNMATCHED_DROPLET`
-alert for it, and new launches are refused. With no DELETE of ours to acknowledge, no read clears them: a 404
-does not, and neither does absence from a listing. A run that holds such an ID
-never settles, so it keeps its reservation and its slot. Delete the Droplet by
-hand after checking what it is.
+alert for it, and new launches are refused. With no DELETE of ours behind them, no
+read clears them: not a 404, not absence from a listing, and not a destroy action
+in the log. A run that holds such an ID never settles, so it keeps its reservation
+and its slot. Delete the Droplet by hand after checking what it is.
 
 ### Cases that hold
 
-These hold launches, and the run's reservation where there is one, until an
-operator path is designed in a later slice:
+Two cases now clear on the action log, as described above, and still need the 404
+and the listing check that follow:
 
-- A create the provider never shows.
 - A DELETE whose acknowledgment was lost, for example to a crash before it was
   recorded.
 - A Droplet deleted outside the controller, which reads 404 with no
   acknowledgment.
+
+These still hold launches, and the run's reservation where there is one, until an
+operator path is designed in a later slice. Each needs an evidence-backed recovery
+path, with no force-clear:
+
+- A create the provider never shows.
 - An unmatched Droplet.
-
-A completed `destroy` action for the ID in the account action log is a candidate
-for conclusive evidence in some of these cases. It is not implemented; the first
-real-provider slice checks whether it is reliable.
-
-Live runs need an evidence-backed recovery path for these cases first, with no
-force-clear. Until then they are a documented limit of this offline slice: a lost
-DELETE acknowledgment, for example, blocks launches indefinitely even when the
-deletion really happened.
+- An ID the controller may not delete.
 
 ### Alerts
 
@@ -240,17 +362,26 @@ version readable. The intent record written before a create holds the run ID,
 the original absolute deadline and the spend reservation. The controller
 and the reconciler serialize on `cloud/ledger.lock`. The controller holds it for
 one operation at a time and waits up to 30 minutes for it. The reconciler waits
-30 seconds and then exits with `LEDGER_BUSY`.
+30 seconds and then exits with `LEDGER_BUSY`. Each run's pinned host key is in
+`cloud/known_hosts/`, in an owner-only file named after the run.
 
 ## Limits
 
-- No worker payload, channel or heartbeat transport exists yet. The worker
-  channel is an interface, and real launches use a silent channel.
+- No game is played yet. A run ends when its game is ready, so no heartbeat comes
+  from a running game, and no results are copied back. The scripted driver, its
+  heartbeat and the results copy come next.
+- The host-key bootstrap has never run on a real Droplet; the pilot set its
+  Droplet up by hand. The first live run is its first real check.
+- The shapes of the destroy action, the Droplet's network fields and the size
+  listing follow the API documentation. The first live run records the real ones,
+  and the action-log path is unproven until it shows a destroy in the expected
+  shape.
+- The bundle is assumed to be a tar archive whose top level is either the game
+  directory's contents or a `game/` directory holding them, with the mod directory
+  inside.
+- Xvfb runs in its own unit, outside the game's memory limit.
 - Only Droplets are created. The ledger records each resource's kind so firewalls
   and SSH keys can join later.
-- Unverified: the default size `s-2vcpu-8gb-amd` (2 vCPU, 8 GiB), its hourly
-  price of 0.063 and the region `nyc3` have not been checked against the live
-  API. A later real-provider smoke test, which needs the owner's approval,
-  confirms them.
-- All tests use a fake provider or a fake HTTP transport. No real provider call
-  has been made.
+- All tests use a fake provider or a fake HTTP transport, a fake SSH transport, and
+  a fake machine for the worker. No real provider call, SSH connection or worker
+  run has been made.
