@@ -111,7 +111,11 @@ class Teardown:
         self.ledger.save(record)
 
     def corroborate(self, record):
-        """Record each ID's destroy action, found or not. Settling never waits for it."""
+        """Record each ID's destroy action, found or not. Settling never waits for it.
+
+        A completed destroy, once recorded, is kept. A later read may no longer list it, or
+        may list only a failed or unfinished action for the ID, and neither undoes it.
+        """
         if not record.resources:
             return
         try:
@@ -121,7 +125,8 @@ class Teardown:
         checked_at = self.clock()
         for resource in record.resources:
             found = [action for action in actions if action.resource_id == resource.id]
-            if found:
+            recorded = resource.destroy_evidence
+            if found and (recorded is None or recorded.status != "completed"):
                 best = max(found, key=lambda action: (action.status == "completed",
                                                       action.started_at))
                 resource.destroy_evidence = DestroyEvidence(

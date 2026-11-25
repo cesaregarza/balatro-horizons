@@ -38,13 +38,14 @@ def provider_refusals(provider, settings, access):
 
 
 def restricted(firewall, owner_tag):
-    """It covers the owner tag and admits only TCP 22, only from single IPv4 addresses.
+    """It covers the owner tag and admits SSH from at least one single address, and nothing else.
 
-    Outbound rules are not checked: the worker needs HTTPS and DNS out.
+    No inbound rule, or a rule with no source, admits nothing, and the run would only wait
+    out its boot timeout. Outbound rules are not checked: the worker needs HTTPS and DNS out.
     """
-    if firewall is None or owner_tag not in firewall.tags:
+    if firewall is None or owner_tag not in firewall.tags or not firewall.inbound_rules:
         return False
-    return all(rule.protocol == "tcp" and rule.ports == "22"
+    return all(rule.protocol == "tcp" and rule.ports == "22" and rule.sources
                and all(single_ipv4(kind, value) for kind, value in rule.sources)
                for rule in firewall.inbound_rules)
 

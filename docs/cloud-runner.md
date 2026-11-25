@@ -76,7 +76,7 @@ The preflight reports every check that fails, in this order:
 | Code | Refused when |
 | --- | --- |
 | `SSH_KEY_NOT_REGISTERED` | The account has no key with `ssh_key_fingerprint`. |
-| `FIREWALL_NOT_RESTRICTED` | The firewall is missing, does not target the owner tag, has an inbound rule other than TCP port 22, or admits any source other than a single IPv4 address (/32), including a source by tag, Droplet or load balancer. Outbound rules are not checked, because the worker needs HTTPS and DNS out. |
+| `FIREWALL_NOT_RESTRICTED` | The firewall is missing, does not target the owner tag, or does not admit SSH from at least one single address, and nothing else. It needs at least one inbound rule. Each rule must be TCP port 22 with at least one source, and each source must be a single IPv4 address (/32), never a tag, Droplet or load balancer. Outbound rules are not checked, because the worker needs HTTPS and DNS out. |
 | `SIZE_NOT_OFFERED` | The size is unavailable, or not offered in the region. |
 | `PRICE_UNDERSTATED` | The size's hourly price is higher than `hourly_price_usd`, the price the budget reserves at. |
 | `BUNDLE_MISMATCH` | The bundle's file name, size or SHA256 differs from its descriptor. The size is checked first, then the SHA256, read in chunks. |
@@ -256,7 +256,9 @@ Each DELETE attempt is recorded durably on the resource before the request is
 sent. On every teardown pass, acknowledged or not, the controller also reads the
 action log for each ID's destroy action, and records the best one it found and when
 it looked, so every live run shows whether the action-log path would have held.
-Settling never waits for that read, and a read that fails records nothing.
+A completed destroy, once recorded, is never replaced, because a later read may no
+longer list it. Settling never waits for that read, and a read that fails records
+nothing.
 
 Before either kind of evidence, a 404 or an empty listing proves nothing. The run
 keeps its state, reservation and slot, and later passes read again; if the ID
