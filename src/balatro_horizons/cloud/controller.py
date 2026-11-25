@@ -38,6 +38,16 @@ def require_run_id(run_id):
     return run_id
 
 
+def stop_reason(record, now):
+    """Why a supervised run must stop at `now`, whatever its worker reports: a cancel, then
+    the run deadline."""
+    if record.cancel_requested:
+        return "cancelled"
+    if now >= record.deadline:
+        return "deadline"
+    return None
+
+
 class Controller:
     """Launching and booting need the access settings and an SSH transport; teardown never does."""
 
@@ -142,17 +152,20 @@ class Controller:
         return record
 
     def teardown_reason(self, record, now):
-        if record.cancel_requested:
-            return "cancelled"
-        if now >= record.deadline:
-            return "deadline"
-        if record.state != "running":
-            return None
+        reason = stop_reason(record, now)
+        if reason or record.state != "running":
+            return reason
         report = self.channel.report(record.run_id)
+        # The read took time, so its report counts only if no stop reason holds once it has
+        # returned, and the heartbeat grace is judged at that time too.
+        read_at = self.clock()
+        reason = stop_reason(record, read_at)
+        if reason:
+            return reason
         if report.finished:
             return "succeeded"
         seen = max(t for t in (report.last_seen, record.grace_from) if t is not None)
-        if now - seen > timedelta(seconds=self.settings.heartbeat_grace_seconds):
+        if read_at - seen > timedelta(seconds=self.settings.heartbeat_grace_seconds):
             return "heartbeat_lost"
         return None
 

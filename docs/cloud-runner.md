@@ -128,7 +128,7 @@ status, the renderer and the game's version. Each is capped in size.
 | Not ready within `boot_timeout_seconds`, and the last SSH attempt met a host key other than the pinned one | `host_key_mismatch` |
 | The active Droplet has no public IPv4 address | `no_public_ipv4` |
 | The worker reports a failed stage | `worker_failed:<stage>` |
-| An SSH call fails or times out; the step is `probe`, `push_worker`, `push_bundle`, `start` or `status` | `ssh_failed:<step>` or `ssh_timed_out:<step>` |
+| During boot, an SSH call fails, or it times out with time still left before the boot and run deadlines. The step is `probe`, `push_worker`, `push_bundle`, `start` or `status`. A call that times out with no time left is named by the deadline instead: `deadline`, `boot_failed` or `host_key_mismatch`. The bundle push may take all the time left, so it never gets `ssh_timed_out` | `ssh_failed:<step>` or `ssh_timed_out:<step>` |
 | The worker's status file does not parse | `worker_status_malformed` |
 | The create call is rejected with a 4xx, or an ambiguous create resolves | `create_failed` |
 | The absolute deadline passes | `deadline` |
