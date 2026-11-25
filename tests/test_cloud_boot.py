@@ -2,12 +2,14 @@
 
 The fake transport stands in for OpenSSH and ssh-keygen, so nothing connects. A run
 stays provisioning until the worker reports the game ready, and the boot timeout
-covers the whole install.
+covers the whole install. Calls can take time on the fake clock, so a tick can cross
+a deadline partway through.
 """
 
 import json
 import shlex
 import stat
+from datetime import timedelta
 
 import pytest
 from cloud_support import (
@@ -17,6 +19,7 @@ from cloud_support import (
     FINGERPRINT,
     PINNED_KEY,
     Cloud,
+    cloud_settings,
     worker_status,
 )
 
@@ -24,6 +27,7 @@ from balatro_horizons.cloud.ledger import Ledger
 from balatro_horizons.cloud.status import status_report
 
 INSTALL = ["probe", "push_worker", "push_worker", "push_bundle", "start"]
+STEPS = ["probe", "push_worker", "push_bundle", "start", "status"]
 
 
 @pytest.fixture
@@ -111,12 +115,21 @@ def test_a_failed_stage_tears_down_with_the_stage_as_the_reason(cloud):
     assert record.worker_status.reason == "umu.deb sha256 mismatch"
 
 
-@pytest.mark.parametrize("outcome", ["failed", "timed_out"])
-@pytest.mark.parametrize("step", ["probe", "push_worker", "push_bundle", "start", "status"])
-def test_a_failed_ssh_call_ends_the_boot_with_its_step(cloud, outcome, step):
+# These calls time out with time left. The bundle push may take all the time left, so
+# its timeout leaves none; the next test covers it.
+@pytest.mark.parametrize(("step", "outcome"), [
+    (step, outcome) for step in STEPS for outcome in ("failed", "timed_out")
+    if (step, outcome) != ("push_bundle", "timed_out")])
+def test_a_failed_ssh_call_ends_the_boot_with_its_step(cloud, step, outcome):
     cloud.transport.failures = {step: outcome}
     launched_and_ticked(cloud, 2)
     cloud.assert_torn_down("r1", f"ssh_{outcome}:{step}")
+
+
+def test_a_bundle_push_that_times_out_has_used_all_the_time_left(cloud):
+    cloud.transport.failures = {"push_bundle": "timed_out"}
+    launched_and_ticked(cloud, 1)
+    cloud.assert_torn_down("r1", "boot_failed")
 
 
 def test_a_malformed_status_file_ends_the_boot_with_a_named_reason(cloud):
@@ -169,6 +182,114 @@ def test_the_bundle_push_may_take_only_what_is_left_of_the_boot_timeout(cloud):
     assert len(pushes) == 1
     _, _, stdin, timeout = pushes[0]
     assert (stdin, timeout) == (cloud.bundle_path, 200)
+
+
+def timed_cloud(tmp_path, **settings):
+    """The documented 1,200-second boot timeout, for SSH calls that take time on the clock."""
+    return Cloud(tmp_path / "cloud",
+                 settings=cloud_settings(boot_timeout_seconds=1200, **settings))
+
+
+def ticked_at(cloud, seconds):
+    """Launch, then tick once `seconds` after the create."""
+    controller = launched_and_ticked(cloud, 0)
+    cloud.clock.advance(seconds)
+    controller.tick()
+    return controller
+
+
+def timeouts(cloud):
+    return [call[3] for call in cloud.transport.calls]
+
+
+def states(record):
+    return [transition.state for transition in record.history]
+
+
+def test_no_install_step_starts_once_no_time_is_left_in_the_tick(tmp_path):
+    # Ten seconds are left when the install starts. The probe and the first push take five
+    # each, so the second push would start at the boot deadline with none left.
+    cloud = timed_cloud(tmp_path)
+    cloud.transport.durations = {"probe": 5, "push_worker": 5}
+    ticked_at(cloud, 1190)
+    assert cloud.transport.steps() == ["probe", "push_worker"]
+    assert timeouts(cloud) == [10, 5]
+    record = cloud.assert_torn_down("r1", "boot_failed")
+    assert record.worker_started_at is None and "running" not in states(record)
+
+
+def test_an_earlier_run_deadline_stops_the_install_in_the_tick(tmp_path):
+    # The run deadline falls at t=900, before the boot deadline at t=1,200.
+    cloud = timed_cloud(tmp_path, max_run_hours=0.25)
+    cloud.transport.durations = {"probe": 5, "push_worker": 5}
+    ticked_at(cloud, 890)
+    assert cloud.transport.steps() == ["probe", "push_worker"]
+    assert timeouts(cloud) == [10, 5]
+    record = cloud.assert_torn_down("r1", "deadline")
+    assert record.worker_started_at is None and "running" not in states(record)
+
+
+def test_each_step_may_take_only_the_time_left_when_it_starts(tmp_path):
+    # Each call takes five seconds. The install runs from t=1,150 to t=1,175, and the next
+    # tick's read from t=1,185 to t=1,190, before the boot deadline.
+    cloud = timed_cloud(tmp_path)
+    cloud.transport.durations = dict.fromkeys(STEPS, 5)
+    controller = ticked_at(cloud, 1150)
+    cloud.clock.advance(cloud.settings.poll_seconds)
+    controller.tick()
+    assert cloud.transport.steps() == [*INSTALL, "status"]
+    assert timeouts(cloud) == [50, 45, 40, 35, 30, 15]
+    assert cloud.ledger.get("r1").state == "running"
+
+
+@pytest.mark.parametrize("returns_at", [1201, 1200])
+def test_a_ready_report_read_by_the_boot_deadline_does_not_count(tmp_path, returns_at):
+    cloud = timed_cloud(tmp_path)
+    cloud.transport.durations = {"status": returns_at - 1199}
+    controller = launched_and_ticked(cloud, 1)
+    cloud.clock.advance(1199)
+    controller.tick()
+    record = cloud.assert_torn_down("r1", "boot_failed")
+    assert "running" not in states(record)
+    assert calls_for(cloud, "status")[0][3] == 1
+
+
+def test_a_ready_report_read_in_time_runs_from_when_the_read_returns(tmp_path):
+    cloud = timed_cloud(tmp_path)
+    cloud.transport.durations = {"status": 5}
+    controller = launched_and_ticked(cloud, 1)
+    cloud.clock.advance(1190)
+    controller.tick()
+    record = cloud.ledger.get("r1")
+    returned = record.created_at + timedelta(seconds=1195)
+    assert (record.state, record.grace_from, record.history[-1].at) == (
+        "running", returned, returned)
+
+
+@pytest.mark.parametrize("path", ["tick", "reconcile"])
+def test_the_boot_deadline_holds_from_its_instant_on_both_paths(tmp_path, path):
+    cloud = timed_cloud(tmp_path)
+    cloud.provider.boot = False
+    controller = launched_and_ticked(cloud, 1)
+    cloud.clock.advance(1200)
+    if path == "tick":
+        controller.tick()
+    else:
+        cloud.reconcile()
+    cloud.assert_torn_down("r1", "boot_failed")
+
+
+def test_a_probe_cut_off_with_no_time_left_keeps_the_host_key_mismatch(tmp_path):
+    # Five seconds are left, less than the SSH connect timeout, so the last probe times out
+    # at its cap before it could meet the other host key again.
+    cloud = timed_cloud(tmp_path)
+    cloud.transport.refusals = ["host_key_mismatch", "host_key_mismatch"]
+    cloud.transport.failures = {"probe": "timed_out"}
+    controller = launched_and_ticked(cloud, 2)
+    cloud.clock.advance(1195)
+    controller.tick()
+    cloud.assert_torn_down("r1", "host_key_mismatch")
+    assert timeouts(cloud) == [60, 60, 5]
 
 
 def test_the_worker_starts_with_the_bundle_descriptor_and_the_run_deadline(cloud):

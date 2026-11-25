@@ -78,6 +78,10 @@ class FakeTransport:
         self.failures = {}
         # Status files the worker reports in turn, as dicts or raw bytes; the last repeats.
         self.statuses = [worker_status()]
+        # On the clock, a call that times out runs to its timeout. Any other call takes its
+        # step's seconds here, even past its timeout.
+        self.durations = {}
+        self.clock = None
         self.keygen_failure = False
         self.key_directories = []
 
@@ -86,9 +90,12 @@ class FakeTransport:
             return self.keygen(argv)
         step = step_of(argv[-1], stdin)
         self.calls.append((step, list(argv), stdin, timeout))
+        timed_out = not self.refusals and self.failures.get(step) == "timed_out"
+        if self.clock is not None:
+            self.clock.advance(timeout if timed_out else self.durations.get(step, 0))
         if self.refusals:
             return finished(argv, 255, stderr=REFUSED[self.refusals.pop(0)])
-        if self.failures.get(step) == "timed_out":
+        if timed_out:
             raise subprocess.TimeoutExpired(argv, timeout)
         if self.failures.get(step) == "failed":
             return finished(argv, 1, stderr=b"command failed\n")
@@ -164,6 +171,7 @@ class Cloud:
         self.ledger = Ledger(self.root)
         # The fake provider stamps creation times and its action log from this clock.
         self.provider.clock = self.clock
+        self.transport.clock = self.clock
         # Every DELETE the fake provider sees must already be recorded in this ledger.
         self.provider.ledger_root = self.ledger.root
         admit_preflight(self.provider, self.settings)
