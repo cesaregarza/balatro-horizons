@@ -18,7 +18,7 @@ from .hostkey import (
     pin_host_key,
     user_data,
 )
-from .install import Install, WorkerLink, boot_timeout_reason
+from .install import Install, WorkerLink, boot_stop_reason
 from .ledger import RUN_ID_PATTERN, RunRecord
 from .preflight import preflight_refusals
 from .provider import DropletSpec
@@ -53,7 +53,7 @@ class Controller:
         self.teardown = Teardown(ledger, provider, settings, clock, sleep)
         self.resolver = CreateResolver(ledger, provider, settings, self.teardown, clock)
         link = WorkerLink(transport, access, ledger.root)
-        self.install = Install(ledger, provider, link, settings)
+        self.install = Install(ledger, provider, link, settings, clock)
         self.channel = channel or SshChannel(ledger, link, clock)
 
     def launch(self, run_id):
@@ -158,16 +158,23 @@ class Controller:
 
     def check_boot(self, record, now):
         """A run provisions from the create until its worker reports the game ready."""
-        if (now - record.created_at).total_seconds() > self.settings.boot_timeout_seconds:
-            return self.resolver.tear_down(record, boot_timeout_reason(record))
-        progress = self.install.step(record, now)
+        reason = boot_stop_reason(record, self.settings, now)
+        if reason:
+            return self.resolver.tear_down(record, reason)
+        progress = self.install.step(record)
         if progress.status is not None:
             record.worker_status = progress.status
         if progress.failure:
             return self.resolver.tear_down(record, progress.failure)
         if progress.ready:
-            record.grace_from = now
-            record.move("running", now)
+            # The read took time, so the game is ready in time only if no stop reason
+            # holds once it has returned.
+            ready_at = self.clock()
+            reason = boot_stop_reason(record, self.settings, ready_at)
+            if reason:
+                return self.resolver.tear_down(record, reason)
+            record.grace_from = ready_at
+            record.move("running", ready_at)
             self.ledger.save(record)
         return record
 

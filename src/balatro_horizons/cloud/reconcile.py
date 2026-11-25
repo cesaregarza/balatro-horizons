@@ -4,7 +4,7 @@ import re
 import time
 
 from .creation import CreateResolver
-from .install import boot_timeout_reason
+from .install import boot_deadline, boot_timeout_reason
 from .ledger import RUN_ID_PATTERN, RunRecord
 from .settings import run_id_from_tags, utc_now
 from .teardown import Teardown
@@ -22,8 +22,7 @@ def stale_reason(record, now, settings):
         return "cancelled"
     if now >= record.deadline:
         return "deadline"
-    booting_for = (now - record.created_at).total_seconds()
-    if record.state == "provisioning" and booting_for > settings.boot_timeout_seconds:
+    if record.state == "provisioning" and now >= boot_deadline(record, settings):
         return boot_timeout_reason(record)
     return None
 
