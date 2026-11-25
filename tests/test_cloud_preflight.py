@@ -73,6 +73,15 @@ def test_a_firewall_that_admits_more_than_ssh_from_single_addresses_is_refused(c
     assert_refused(cloud, "FIREWALL_NOT_RESTRICTED")
 
 
+@pytest.mark.parametrize("rules", [[], [ssh_from()], [ssh_from(OPERATOR_SOURCE), ssh_from()]],
+                         ids=["no inbound rule", "a rule with no sources",
+                              "a second rule with no sources"])
+def test_a_firewall_with_no_rule_or_a_rule_without_a_source_is_refused(cloud, rules):
+    # Such a rule admits nothing, so the run could only wait out its boot timeout.
+    inbound(cloud, *rules)
+    assert_refused(cloud, "FIREWALL_NOT_RESTRICTED")
+
+
 def test_single_addresses_with_or_without_a_prefix_are_admitted(cloud):
     inbound(cloud, ssh_from("203.0.113.7", "198.51.100.9/32"))
     assert_admitted(cloud)

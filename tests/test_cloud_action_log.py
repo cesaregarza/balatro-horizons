@@ -99,6 +99,22 @@ def test_evidence_that_names_another_id_never_counts(cloud):
     assert teardown.verified_absent(with_evidence(resource.id)) is True
 
 
+@pytest.mark.parametrize("later", ["errored", "in-progress"])
+def test_completed_evidence_outlasts_a_later_lookup_that_shows_less(cloud, later):
+    controller = cloud.launched()
+    droplet_id = deleted_outside(cloud)
+    record = cloud.ledger.get("r1")
+    controller.teardown.corroborate(record)
+    assert record.resources[0].destroy_evidence.status == "completed"
+    # The log no longer lists the completed destroy, only a lesser action for the same ID.
+    cloud.provider.destroys.clear()
+    cloud.provider.log_destroy(droplet_id, status=later)
+    controller.teardown.corroborate(record)
+    assert record.resources[0].destroy_evidence.status == "completed"
+    controller.cancel("r1", now=True)
+    cloud.assert_torn_down("r1", "cancelled")
+
+
 def test_an_id_the_controller_may_not_delete_never_clears_on_a_destroy(cloud):
     controller = cloud.launched()
     droplet_id = cloud.owned_ids("r1")[0]
