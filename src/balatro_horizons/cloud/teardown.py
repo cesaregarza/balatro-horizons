@@ -1,15 +1,17 @@
 """Delete a run's Droplets by ID, retry with backoff, and verify they are gone.
 
-The controller believes a Droplet is gone only after the provider acknowledged our
-DELETE for it. An ID is gone when a fresh read showed it with both tags, our DELETE
-for it was acknowledged, and afterwards it reads 404 by ID and is missing from the
-run-tag listing. The provider documents no read-after-write guarantee, so a 404 or
-an empty listing before the acknowledgment proves nothing. Powering a Droplet off
-never counts: it still bills.
+An ID counts as deleted once the provider acknowledged our DELETE for it, or once the
+account action log shows a completed destroy action for that ID that started no earlier
+than the run's creation, less the clock-skew allowance. Either way, it is gone only
+when afterwards it reads 404 by ID and is missing from the run-tag listing. The
+provider documents no read-after-write guarantee, so a 404 or an empty listing on its
+own proves nothing. Powering a Droplet off never counts: it still bills.
 """
 
 from datetime import timedelta
 
+from .creation import CLOCK_SKEW_SECONDS
+from .ledger import DestroyEvidence
 from .settings import run_tag
 
 
@@ -53,6 +55,7 @@ class Teardown:
                 record.remember(droplet_id)
             self.ledger.save(record)
         deleted = [self.delete(record, droplet_id) for droplet_id in sorted(record.resource_ids())]
+        self.corroborate(record)
         return listed is not None and all(deleted) and self.verified_absent(record)
 
     def listing(self, run_id):
@@ -83,6 +86,9 @@ class Teardown:
         if not {self.settings.owner_tag, run_tag(record.run_id)} <= set(current.tags):
             self.lose_ownership(record, droplet_id)
             return False
+        # Durable before the request is sent, so a crash mid-request leaves the attempt known.
+        record.resource(droplet_id).delete_requested_at = self.clock()
+        self.ledger.save(record)
         try:
             acknowledged = self.provider.delete_droplet(droplet_id)
         except Exception:
@@ -104,12 +110,37 @@ class Teardown:
         record.release(droplet_id)
         self.ledger.save(record)
 
+    def corroborate(self, record):
+        """Record each ID's destroy action, found or not. Settling never waits for it.
+
+        A completed destroy, once recorded, is kept. A later read may no longer list it, or
+        may list only a failed or unfinished action for the ID, and neither undoes it.
+        """
+        if not record.resources:
+            return
+        try:
+            actions = self.provider.list_destroy_actions()
+        except Exception:
+            return
+        checked_at = self.clock()
+        for resource in record.resources:
+            found = [action for action in actions if action.resource_id == resource.id]
+            recorded = resource.destroy_evidence
+            if found and (recorded is None or recorded.status != "completed"):
+                best = max(found, key=lambda action: (action.status == "completed",
+                                                      action.started_at))
+                resource.destroy_evidence = DestroyEvidence(
+                    action_id=best.id, resource_id=best.resource_id, status=best.status,
+                    started_at=best.started_at)
+            resource.destroy_checked_at = checked_at
+        self.ledger.save(record)
+
     def verified_absent(self, record):
-        """Gone means our DELETE was acknowledged, then a 404 by ID and no run-tag listing."""
+        """Deleted by acknowledgment or by the action log, then a 404 and no run-tag listing."""
         if record.released:
-            # An ID we may not delete has no acknowledgment to wait for, so it never clears.
+            # An ID we may not delete has no DELETE of ours behind it, so it never clears.
             return False
-        if any(resource.acknowledged_at is None for resource in record.resources):
+        if not all(self.deleted(record, resource) for resource in record.resources):
             return False
         try:
             gone_by_id = all(
@@ -124,6 +155,21 @@ class Teardown:
         tags = {self.settings.owner_tag, run_tag(record.run_id)}
         listed = {d.id for d in droplets if d.id in record.resource_ids() or tags <= set(d.tags)}
         return gone_by_id and not listed
+
+    def deleted(self, record, resource):
+        """Our DELETE was acknowledged, or the action log shows this ID's completed destroy.
+
+        A destroy that started before the run existed, less the clock-skew allowance,
+        cannot be ours.
+        """
+        if resource.acknowledged_at is not None:
+            return True
+        evidence = resource.destroy_evidence
+        earliest = record.created_at - timedelta(seconds=CLOCK_SKEW_SECONDS)
+        return (evidence is not None
+                and evidence.status == "completed"
+                and evidence.resource_id == resource.id
+                and evidence.started_at >= earliest)
 
     def settle(self, record):
         """Charge the budget for the time actually elapsed, now that nothing bills."""

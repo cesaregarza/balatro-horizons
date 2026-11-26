@@ -7,11 +7,12 @@ from cloud_support import Cloud
 
 from balatro_horizons.cloud.fake import SimulatedCrash
 
-# The successful lifecycle writes the ledger six times: the new run, its Droplet ID,
-# running, teardown started, the acknowledged DELETE, and verified.
-LEDGER_WRITES = 6
+# The successful lifecycle writes the ledger ten times: the new run, its Droplet ID, its
+# address, the worker's start, running, teardown started, the DELETE attempt, the
+# acknowledged DELETE, the action-log check, and verified.
+LEDGER_WRITES = 10
 # A crash on this write loses the acknowledgment of a DELETE the provider carried out.
-ACKNOWLEDGMENT_WRITE = 5
+ACKNOWLEDGMENT_WRITE = 8
 
 
 @pytest.fixture
@@ -34,8 +35,10 @@ def crash_on_write(cloud, monkeypatch, number):
 
 
 def full_lifecycle(cloud):
+    """Launch, install, run once the game is ready, then finish and tear down."""
     controller = cloud.controller()
     controller.launch("r1")
+    controller.tick()
     controller.tick()
     cloud.channel.finish("r1", cloud.clock())
     controller.tick()
@@ -81,7 +84,7 @@ def test_crash_inside_a_provider_call_then_restart_leaves_nothing(cloud, point):
     cloud.assert_unrelated_survive()
 
 
-def test_crash_before_the_acknowledgment_is_written_holds_the_run(cloud, monkeypatch):
+def lose_the_acknowledgment(cloud, monkeypatch):
     restore = crash_on_write(cloud, monkeypatch, ACKNOWLEDGMENT_WRITE)
     with pytest.raises(SimulatedCrash):
         full_lifecycle(cloud)
@@ -91,6 +94,23 @@ def test_crash_before_the_acknowledgment_is_written_holds_the_run(cloud, monkeyp
     for _ in range(10):
         restarted.tick()
         cloud.reconcile()
+    return restarted
+
+
+def test_crash_before_the_acknowledgment_is_written_clears_on_the_action_log(cloud,
+                                                                              monkeypatch):
+    restarted = lose_the_acknowledgment(cloud, monkeypatch)
+    record = cloud.assert_torn_down("r1", "succeeded")
+    assert record.resources[0].acknowledged_at is None
+    assert len(cloud.provider.deleted()) == 1
+    assert restarted.launch("r2")["outcome"] == "launched"
+
+
+def test_crash_before_the_acknowledgment_is_written_holds_without_a_logged_destroy(
+    cloud, monkeypatch,
+):
+    cloud.provider.log_destroys = False
+    restarted = lose_the_acknowledgment(cloud, monkeypatch)
     record = cloud.ledger.get("r1")
     assert (record.state, record.settled_usd) == ("cleanup_unverified", None)
     assert len(cloud.provider.deleted()) == 1

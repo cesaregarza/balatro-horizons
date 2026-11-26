@@ -4,11 +4,13 @@ import argparse
 import json
 from pathlib import Path
 
+from balatro_horizons.cloud.access import load_access
 from balatro_horizons.cloud.controller import Controller, utc_now
 from balatro_horizons.cloud.digitalocean import client_from_environment
 from balatro_horizons.cloud.ledger import Ledger, LedgerBusy
 from balatro_horizons.cloud.reconcile import reconcile
-from balatro_horizons.cloud.settings import DEFAULT_PATH, load_settings
+from balatro_horizons.cloud.settings import ACCESS_PATH, DEFAULT_PATH, load_settings
+from balatro_horizons.cloud.ssh import OpenSsh
 from balatro_horizons.cloud.status import status_report
 
 PROVIDER_FLAG_HELP = "Required for any call that can reach DigitalOcean and cost money"
@@ -23,6 +25,9 @@ def configure_parser(parser):
     operations = parser.add_subparsers(dest="cloud_operation", required=True)
     launch = operations.add_parser("launch", help="Start the controller and launch one run")
     launch.add_argument("run_id")
+    # Only launch reads the private values, so every teardown path works without them.
+    launch.add_argument("--access-config", type=Path, default=ACCESS_PATH,
+                        help="The private SSH key, firewall and bundle settings")
     operations.add_parser("status", help="Ledger, launch gate and alerts; no provider call")
     cancel = operations.add_parser("cancel", help="Request cancellation; tear down now with the flag")
     cancel.add_argument("run_id")
@@ -55,7 +60,8 @@ def run(args):
 
 
 def launch_command(args, ledger, settings, provider):
-    controller = Controller(ledger, provider, settings)
+    access = load_access(args.access_config)
+    controller = Controller(ledger, provider, settings, access=access, transport=OpenSsh())
     with ledger.controller_lock():
         controller.recover()
         result = controller.launch(args.run_id)

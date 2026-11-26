@@ -177,14 +177,28 @@ def test_restart_after_accepted_create_with_lost_id_cleans_without_a_second_crea
     assert len(cloud.creates()) == 1
 
 
-def test_restart_after_a_delete_whose_acknowledgment_was_lost_holds_the_run(cloud):
+def crash_after_the_delete(cloud):
+    """The provider carries out the DELETE, then the controller dies before recording it."""
     controller = cloud.launched()
     cloud.clock.advance(1800)
     cloud.provider.crash_at.add("after_delete")
     with pytest.raises(BaseException, match="after_delete"):
         controller.cancel("r1", now=True)
     cloud.restarted().recover()
-    record = cloud.ledger.get("r1")
+    return cloud.ledger.get("r1")
+
+
+def test_restart_after_a_delete_whose_acknowledgment_was_lost_clears_on_the_action_log(cloud):
+    record = crash_after_the_delete(cloud)
+    assert (record.state, record.teardown_reason) == ("torn_down", "cancelled")
+    assert record.settled_usd == pytest.approx(0.05)
+    assert len(cloud.provider.deleted()) == 1
+    assert record.resources[0].acknowledged_at is None
+
+
+def test_restart_after_a_lost_acknowledgment_holds_while_the_log_shows_no_destroy(cloud):
+    cloud.provider.log_destroys = False
+    record = crash_after_the_delete(cloud)
     assert (record.state, record.settled_usd) == ("cleanup_unverified", None)
     assert len(cloud.provider.deleted()) == 1
     assert reserved_remaining(cloud) == pytest.approx(1.0 - cloud.settings.worst_case_usd)

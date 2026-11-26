@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from balatro_horizons.config import ROOT
 
 DEFAULT_PATH = ROOT / "configs/cloud.yaml"
+# Operations' private values; the directory is git-ignored.
+ACCESS_PATH = ROOT / "private/cloud-access.yaml"
 # The token is read at the moment a client is built and is never stored.
 TOKEN_VARIABLE = "DIGITALOCEAN_TOKEN"
 
@@ -27,7 +29,8 @@ class CloudSettings(BaseModel):
     # Parallel runs are a later slice; one controller supervises one worker.
     max_concurrent_workers: int = Field(default=1, ge=1, le=1)
     infrastructure_budget_usd: float = Field(gt=0)
-    boot_timeout_seconds: int = Field(default=600, gt=0)
+    # From the create until the worker reports the game ready.
+    boot_timeout_seconds: int = Field(default=1200, gt=0)
     heartbeat_grace_seconds: int = Field(default=300, gt=0)
     cleanup_verify_seconds: int = Field(default=600, gt=0)
     retry_base_seconds: float = Field(default=2, gt=0)

@@ -5,7 +5,7 @@ import stat
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
@@ -15,6 +15,10 @@ LIVE_STATES = (
     "provisioning", "create_unresolved", "running", "tearing_down", "cleanup_unverified",
 )
 RUN_ID_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
+# The worker's stages, in the order it runs them.
+Stage = Literal["packages", "dependencies", "bundle", "user", "display", "game", "ready"]
+# Text the worker reports is capped, so a run record stays small.
+Bounded = Annotated[str, Field(max_length=4000)]
 
 
 class LedgerBusy(RuntimeError):
@@ -25,14 +29,30 @@ class LedgerDamaged(ValueError):
     """A ledger path exists but is not what the ledger writes."""
 
 
+class DestroyEvidence(BaseModel):
+    """A destroy action the account action log showed for a resource."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action_id: int
+    resource_id: int
+    status: Literal["in-progress", "completed", "errored"]
+    started_at: AwareDatetime
+
+
 class Resource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # Firewalls and SSH keys join this list in a later slice.
     kind: Literal["droplet"] = "droplet"
     id: int
-    # When the provider acknowledged our DELETE; no read counts as gone before it.
+    # The latest DELETE attempt, written before the request is sent.
+    delete_requested_at: AwareDatetime | None = None
+    # When the provider acknowledged our DELETE.
     acknowledged_at: AwareDatetime | None = None
+    # The destroy action found for this ID, and when the action log was last read for it.
+    destroy_evidence: DestroyEvidence | None = None
+    destroy_checked_at: AwareDatetime | None = None
 
 
 class Transition(BaseModel):
@@ -41,6 +61,22 @@ class Transition(BaseModel):
     at: AwareDatetime
     state: str
     reason: str | None = None
+
+
+class WorkerStatus(BaseModel):
+    """The worker's status file: its stage, and on the way out, what it saw."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stage: Stage
+    state: Literal["running", "failed", "ready"]
+    reason: str | None = Field(default=None, max_length=200)
+    started_at: dict[Stage, AwareDatetime] = {}
+    finished_at: AwareDatetime | None = None
+    observed: dict[Literal["kernel", "packages_sha256", "steamrt4", "game_version",
+                           "renderer", "cloud_init"], Bounded] = {}
+    # Capped log tails, written only on failure.
+    evidence: dict[Literal["stage_log", "display_stderr", "game_stderr"], Bounded] = {}
 
 
 class RunRecord(BaseModel):
@@ -59,6 +95,13 @@ class RunRecord(BaseModel):
     create_attempted_at: AwareDatetime | None = None
     # A 4xx answered the create, so the provider made nothing.
     create_rejected: bool = False
+    # The Droplet's public IPv4 address, for SSH only; status never shows it.
+    address: str | None = None
+    # The latest SSH attempt's failure, cleared by a success; it names a boot timeout.
+    last_ssh_failure: Literal["unreachable", "host_key_mismatch"] | None = None
+    worker_started_at: AwareDatetime | None = None
+    # The worker's final ready or failed report, kept after the Droplet is gone.
+    worker_status: WorkerStatus | None = None
     grace_from: AwareDatetime | None = None
     cancel_requested: bool = False
     teardown_reason: str | None = None

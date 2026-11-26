@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-25 — Cloud runner: install and start the game on the Droplet
+
+- `bh cloud launch` now checks the SSH key, the firewall, the size, its price and
+  the bundle before recording anything, creates the Droplet with a host key it
+  pinned in advance, installs and starts the game over SSH, and tears the Droplet
+  down once the game is ready; a lost DELETE acknowledgment and a Droplet deleted
+  outside the controller now clear on a completed destroy action in the account
+  action log. See [cloud runner](docs/cloud-runner.md). No file in the execution
+  manifest changed.
+
 ## 2026-11-24 — Dashboard: a Cloud runs view and a view-only mode
 
 - Add a Cloud runs tab that shows the report `bh cloud status` prints, from the

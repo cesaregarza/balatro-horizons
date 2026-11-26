@@ -1,14 +1,21 @@
 """In-memory provider and worker channel for offline tests; never a real Droplet."""
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from pathlib import Path
 
-from .provider import CreateAction, Droplet, ProviderError, WorkerReport
+from .digitalocean import parse_firewall, parse_size, parse_time
+from .provider import CreateAction, DestroyAction, Droplet, ProviderError, WorkerReport
 
 
 class SimulatedCrash(BaseException):
     """Stands in for the controller process dying; nothing in the controller catches it."""
+
+
+class DeleteNotRecorded(BaseException):
+    """A DELETE was sent before the ledger on disk held the attempt; teardown cannot catch it."""
 
 
 @dataclass
@@ -32,9 +39,23 @@ class FakeProvider:
     pending_creates: bool = False
     clock: Callable[[], datetime] | None = None
     actions: list[CreateAction] = field(default_factory=list)
+    destroys: list[DestroyAction] = field(default_factory=list)
+    # Our DELETEs show in the action log as completed destroys.
+    log_destroys: bool = True
+    # Created Droplets get no public IPv4 address.
+    no_public_ipv4: bool = False
+    # The preflight's reads: registered fingerprints, then firewalls and sizes as the API
+    # returns them.
+    ssh_keys: set[str] = field(default_factory=set)
+    firewalls: dict[str, dict] = field(default_factory=dict)
+    sizes: list[dict] = field(default_factory=list)
+    preflight_failures: int = 0
+    # With a ledger directory, every DELETE must already be recorded there.
+    ledger_root: Path | None = None
     hidden: dict[int, int] = field(default_factory=dict)
     crash_at: set[str] = field(default_factory=set)
     calls: list[tuple] = field(default_factory=list)
+    specs: list = field(default_factory=list)
 
     def seed(self, *tags, status="active", created_at=None):
         droplet = Droplet(id=self.allocate(), name="seeded", status=status, tags=tuple(tags),
@@ -64,12 +85,15 @@ class FakeProvider:
 
     def create_droplet(self, spec):
         self.calls.append(("create", spec.name, spec.tags))
+        self.specs.append(spec)
         self.crash("before_create")
         if self.fail_create:
             raise ProviderError(self.fail_create_code)
         created = self.clock() if self.clock else None
-        droplet = Droplet(id=self.allocate(), name=spec.name, status="new", tags=spec.tags,
-                          created_at=created)
+        droplet_id = self.allocate()
+        address = None if self.no_public_ipv4 else f"192.0.2.{droplet_id % 254 + 1}"
+        droplet = Droplet(id=droplet_id, name=spec.name, status="new", tags=spec.tags,
+                          created_at=created, public_ipv4=address)
         self.inventory[droplet.id] = droplet
         self.log_create(droplet.id)
         if self.listing_lag:
@@ -79,7 +103,8 @@ class FakeProvider:
             raise ProviderError("TRANSPORT_ERROR")
         return droplet
 
-    def get_droplet(self, droplet_id):
+    def get_droplet(self, droplet_id, *, time_left=None):
+        # It answers at once, so a limit on the time the read may take never applies.
         self.calls.append(("get", droplet_id))
         droplet = self.inventory.get(droplet_id)
         if droplet is not None and self.boot and droplet.status == "new":
@@ -105,13 +130,27 @@ class FakeProvider:
 
     def list_create_actions(self, since):
         self.calls.append(("actions", since))
+        self.read_actions()
+        return [action for action in self.actions if action.started_at >= since]
+
+    def list_destroy_actions(self):
+        self.calls.append(("destroys",))
+        self.read_actions()
+        return list(self.destroys)
+
+    def read_actions(self):
         if self.action_failures:
             self.action_failures -= 1
             raise ProviderError("HTTP_503")
-        return [action for action in self.actions if action.started_at >= since]
+
+    def log_destroy(self, droplet_id, status="completed", at=None):
+        started = at or self.clock()
+        self.destroys.append(DestroyAction(id=len(self.destroys) + 1, resource_id=droplet_id,
+                                           started_at=started, status=status))
 
     def delete_droplet(self, droplet_id):
         self.calls.append(("delete", droplet_id))
+        self.require_recorded_delete(droplet_id)
         if self.delete_failures:
             self.delete_failures -= 1
             raise ProviderError("HTTP_500")
@@ -119,8 +158,42 @@ class FakeProvider:
         found = droplet_id in self.inventory
         if not self.ghost_deletes:
             self.inventory.pop(droplet_id, None)
+        if found and self.log_destroys and self.clock:
+            self.log_destroy(droplet_id)
         self.crash("after_delete")
         return found
+
+    def require_recorded_delete(self, droplet_id):
+        """The run's file on disk must already hold this attempt, stamped now."""
+        if self.ledger_root is None or self.clock is None:
+            return
+        stamps = [parse_time(resource.get("delete_requested_at"))
+                  for path in sorted((self.ledger_root / "runs").glob("*.json"))
+                  for resource in json.loads(path.read_text())["resources"]
+                  if resource["id"] == droplet_id]
+        if self.clock() not in stamps:
+            raise DeleteNotRecorded(droplet_id)
+
+    def ssh_key_registered(self, fingerprint):
+        self.calls.append(("ssh_key", fingerprint))
+        self.read_preflight()
+        return fingerprint in self.ssh_keys
+
+    def get_firewall(self, firewall_id):
+        self.calls.append(("firewall", firewall_id))
+        self.read_preflight()
+        found = self.firewalls.get(firewall_id)
+        return None if found is None else parse_firewall(found)
+
+    def list_sizes(self):
+        self.calls.append(("sizes",))
+        self.read_preflight()
+        return [parse_size(size) for size in self.sizes]
+
+    def read_preflight(self):
+        if self.preflight_failures:
+            self.preflight_failures -= 1
+            raise ProviderError("HTTP_503")
 
     def deleted(self):
         return [call[1] for call in self.calls if call[0] == "delete"]

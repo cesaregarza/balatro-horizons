@@ -10,7 +10,6 @@ import httpx
 import pytest
 from cloud_support import Cloud, DigitalOceanStub
 
-from balatro_horizons.cloud.controller import Controller
 from balatro_horizons.cloud.digitalocean import DigitalOceanClient
 from balatro_horizons.cloud.fake import SimulatedCrash
 from balatro_horizons.cloud.ledger import Ledger
@@ -141,8 +140,8 @@ def http_controller(tmp_path, actions, droplets=(), unlisted=()):
     cloud = Cloud(tmp_path / "cloud")
     client = DigitalOceanClient("test-token", transport=httpx.MockTransport(stub),
                                 sleep=cloud.clock.advance)
-    controller = Controller(cloud.ledger, client, cloud.settings, clock=cloud.clock,
-                            sleep=cloud.clock.advance)
+    cloud.provider = client
+    controller = cloud.controller()
     controller.launch("r1")
     return cloud, controller, stub, client
 
