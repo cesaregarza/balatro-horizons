@@ -187,6 +187,42 @@ def test_a_copy_cut_off_by_the_run_deadline_is_named_for_it(cloud):
     assert cloud.transport.calls[-1][3] == 5
 
 
+def supervised(controller):
+    """Supervise until no run needs it; the name of any error that escaped, or None."""
+    try:
+        controller.supervise()
+    except Exception as error:
+        return type(error).__name__
+    return None
+
+
+def test_a_copy_the_controller_cannot_write_is_named_and_the_run_still_succeeds(cloud):
+    # A file where the results directory belongs stops the write, as a full disk would.
+    controller = running(cloud)
+    cloud.transport.statuses = [worker_status("finished", "play", actions=5)]
+    (cloud.root / "results").write_text("")
+    cloud.clock.advance(10)
+    escaped = supervised(controller)
+    record = cloud.ledger.get("r1")
+    assert (escaped, record.teardown_reason, getattr(record, "results_copy", None)) == (
+        None, "succeeded", "results_unwritable")
+    cloud.assert_torn_down("r1", "succeeded")
+
+
+def test_a_results_file_nested_too_deeply_to_parse_is_malformed(cloud):
+    # Well within the size cap, and far deeper than the parser goes.
+    controller = running(cloud)
+    cloud.transport.statuses = [worker_status("finished", "play", actions=5)]
+    cloud.transport.results = b"[" * (RESULTS_BYTES // 2)
+    cloud.clock.advance(10)
+    escaped = supervised(controller)
+    record = cloud.ledger.get("r1")
+    assert (escaped, record.teardown_reason, getattr(record, "results_copy", None)) == (
+        None, "succeeded", "results_malformed")
+    cloud.assert_torn_down("r1", "succeeded")
+    assert not copied(cloud).exists()
+
+
 def test_a_cancel_during_play_tears_down_without_a_read_or_a_copy(cloud):
     controller = running(cloud)
     cloud.transport.statuses = [worker_status("finished", "play", actions=5)]
