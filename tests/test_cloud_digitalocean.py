@@ -2,6 +2,8 @@
 
 import json
 import logging
+import threading
+import time
 from datetime import UTC, datetime
 
 import httpx
@@ -328,6 +330,68 @@ def test_persistent_server_errors_exhaust_retries():
     with pytest.raises(ProviderError, match="HTTP_502"):
         client_for(handler).delete_droplet(7)
     assert len(seen) == 5
+
+
+# A read is answered in steps, each a pause in seconds and then the bytes it sends: the
+# headers come after the first pause, and the body after the others, in parts. Each pause
+# fits in the limit the attempt carries on one phase of a request, which is the whole
+# budget, but all of them together take longer than the budget. The budget runs on the real
+# clock: a blocked attempt is waited on until `time_left` finds no time left, so blocking
+# one against a fake clock that never advances would wait forever.
+BUDGET, EARLY, LATE = 1.2, 0.05, 0.5
+BODY = json.dumps({"droplet": DROPLET}).encode()
+TWO_WAITS = 1.0, [(1.0, BODY)]
+DRIP = 0, [(0.4, BODY[len(BODY) * i // 6:len(BODY) * (i + 1) // 6]) for i in range(6)]
+
+
+class Parts(httpx.SyncByteStream):
+    def __init__(self, parts):
+        self.parts = parts
+
+    def __iter__(self):
+        for pause, part in self.parts:
+            time.sleep(pause)
+            yield part
+
+
+def paced(steps):
+    """A transport that answers in `steps`, noting for each request the thread that sent it
+    and the limit it carries on one phase."""
+    first, parts = steps
+    seen = []
+
+    def handler(request):
+        seen.append((threading.get_ident(), request.extensions["timeout"]["read"]))
+        time.sleep(first)
+        return httpx.Response(200, headers={"content-length": str(len(BODY))},
+                              stream=Parts(parts))
+
+    return httpx.MockTransport(handler), seen
+
+
+@pytest.mark.parametrize("steps", [TWO_WAITS, DRIP], ids=["two_waits", "drip"])
+def test_a_budgeted_read_ends_at_its_budget_though_each_phase_is_in_time(steps):
+    transport, seen = paced(steps)
+    client = DigitalOceanClient(TOKEN, transport=transport)
+    started = time.monotonic()
+    try:
+        outcome = client.get_droplet(7, time_left=lambda: started + BUDGET - time.monotonic())
+    except ProviderError as error:
+        outcome = str(error)
+    elapsed = time.monotonic() - started
+    pauses = [steps[0], *(pause for pause, _ in steps[1])]
+    assert (outcome, BUDGET - EARLY <= elapsed < BUDGET + LATE, max(pauses) < seen[0][1]) == (
+        "NO_TIME_LEFT", True, True)
+
+
+def test_a_cleanup_read_waits_for_the_whole_answer_on_the_calling_thread():
+    # The Droplet arrives only after both pauses.
+    transport, seen = paced(TWO_WAITS)
+    try:
+        outcome = DigitalOceanClient(TOKEN, transport=transport).get_droplet(7).id
+    except ProviderError as error:
+        outcome = str(error)
+    assert (outcome, [thread for thread, _ in seen]) == (7, [threading.get_ident()])
 
 
 def test_missing_token_is_refused_before_any_request(monkeypatch):
