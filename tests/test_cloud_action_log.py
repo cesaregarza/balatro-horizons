@@ -104,15 +104,39 @@ def test_completed_evidence_outlasts_a_later_lookup_that_shows_less(cloud, later
     controller = cloud.launched()
     droplet_id = deleted_outside(cloud)
     record = cloud.ledger.get("r1")
-    controller.teardown.corroborate(record)
+    controller.teardown.corroborate(record, lambda: 60)
     assert record.resources[0].destroy_evidence.status == "completed"
     # The log no longer lists the completed destroy, only a lesser action for the same ID.
     cloud.provider.destroys.clear()
     cloud.provider.log_destroy(droplet_id, status=later)
-    controller.teardown.corroborate(record)
+    controller.teardown.corroborate(record, lambda: 60)
     assert record.resources[0].destroy_evidence.status == "completed"
     controller.cancel("r1", now=True)
     cloud.assert_torn_down("r1", "cancelled")
+
+
+@pytest.mark.parametrize("later", ["failed", "timed_out"])
+def test_completed_evidence_outlasts_a_later_lookup_that_fails_or_runs_out(cloud, later):
+    controller = cloud.launched()
+    deleted_outside(cloud)
+    reads = []
+    read = cloud.provider.list_destroy_actions
+
+    def first_in_time(**kwargs):
+        reads.append(cloud.clock())
+        actions = read(**kwargs)
+        # Every read after this one fails, or takes 50 pages at 30 seconds each.
+        if later == "failed":
+            cloud.provider.action_failures = 10**9
+        else:
+            cloud.provider.destroy_pages, cloud.provider.destroy_page_seconds = 50, 30
+        return actions
+
+    cloud.provider.list_destroy_actions = first_in_time
+    controller.cancel("r1", now=True)
+    resource = cloud.assert_torn_down("r1", "cancelled").resources[0]
+    assert (len(reads), resource.destroy_evidence.status,
+            getattr(resource, "destroy_check", None)) == (2, "completed", later)
 
 
 def test_an_id_the_controller_may_not_delete_never_clears_on_a_destroy(cloud):
@@ -147,7 +171,7 @@ def test_a_failed_action_log_read_never_delays_settling(cloud):
     controller.tick()
     resource = cloud.assert_torn_down("r1", "succeeded").resources[0]
     assert ("destroys",) in cloud.provider.calls
-    assert (resource.destroy_evidence, resource.destroy_checked_at) == (None, None)
+    assert resource.destroy_evidence is None
 
 
 def test_each_delete_attempt_is_recorded_before_it_is_sent(cloud):
@@ -175,3 +199,48 @@ def test_a_delete_answered_with_a_server_error_clears_on_the_logged_destroy(tmp_
     assert (record.state, record.teardown_reason) == ("torn_down", "cancelled")
     assert stub.droplets == {}
     assert record.resources[0].acknowledged_at is None
+
+
+def test_an_acknowledged_teardown_settles_before_a_slow_action_log_is_read(cloud):
+    controller = cloud.launched()
+    # Half an hour at 0.1 an hour, then a log of 50 pages at 30 seconds each.
+    cloud.clock.advance(1800)
+    cloud.provider.destroy_pages, cloud.provider.destroy_page_seconds = 50, 30
+    reads = []
+    read = cloud.provider.list_destroy_actions
+
+    def noted(**kwargs):
+        reads.append((cloud.clock(), Ledger(cloud.root).get("r1")))
+        return read(**kwargs)
+
+    cloud.provider.list_destroy_actions = noted
+    cancelled_at = cloud.clock()
+    controller.cancel("r1", now=True)
+    record = cloud.assert_torn_down("r1", "cancelled")
+    assert (record.verified_at, record.settled_usd) == (cancelled_at, 0.05)
+    # The one read came once the run had settled, and changed nothing settled.
+    assert [(at, before.state, before.verified_at) for at, before in reads] == [
+        (cancelled_at, "torn_down", cancelled_at)]
+    settled = reads[0][1]
+    assert record.model_dump(exclude={"resources"}) == settled.model_dump(exclude={"resources"})
+    # It ran out at its deadline, a minute on, and recorded when.
+    resource, deadline = record.resources[0], cancelled_at + timedelta(seconds=60)
+    assert (getattr(resource, "destroy_check", None), resource.destroy_checked_at,
+            cloud.clock()) == ("timed_out", deadline, deadline)
+
+
+@pytest.mark.parametrize("outcome", ["found", "not_found", "failed", "timed_out"])
+def test_the_lookup_after_settling_records_how_it_ended_and_when(cloud, outcome):
+    controller = cloud.launched()
+    cloud.provider.log_destroys = outcome != "not_found"
+    cloud.provider.action_failures = int(outcome == "failed")
+    if outcome == "timed_out":
+        # Three pages at 30 seconds each need more than the lookup's minute.
+        cloud.provider.destroy_pages, cloud.provider.destroy_page_seconds = 3, 30
+    controller.cancel("r1", now=True)
+    record = cloud.assert_torn_down("r1", "cancelled")
+    resource = record.resources[0]
+    ended = record.verified_at + timedelta(seconds=60 if outcome == "timed_out" else 0)
+    status = resource.destroy_evidence and resource.destroy_evidence.status
+    assert (getattr(resource, "destroy_check", None), resource.destroy_checked_at, status) == (
+        outcome, ended, "completed" if outcome == "found" else None)

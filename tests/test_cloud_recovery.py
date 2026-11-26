@@ -1,6 +1,7 @@
 """Ambiguous creates, startup inventory, ownership before delete, and Pi restarts."""
 
 from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 from cloud_support import Cloud, cloud_settings
@@ -202,6 +203,68 @@ def test_restart_after_a_lost_acknowledgment_holds_while_the_log_shows_no_destro
     assert (record.state, record.settled_usd) == ("cleanup_unverified", None)
     assert len(cloud.provider.deleted()) == 1
     assert reserved_remaining(cloud) == pytest.approx(1.0 - cloud.settings.worst_case_usd)
+
+
+# A slow action log: 50 pages at 30 seconds each, against a cleanup window of a minute.
+SLOW_LOG = 50, 30
+
+
+def test_restart_after_a_lost_acknowledgment_cuts_a_slow_log_read_off_at_the_window(cloud):
+    cloud.provider.destroy_pages, cloud.provider.destroy_page_seconds = SLOW_LOG
+    record = crash_after_the_delete(cloud)
+    resource = record.resources[0]
+    window_end = resource.delete_requested_at + timedelta(seconds=60)
+    assert (record.state, record.verified_at, record.settled_usd) == (
+        "cleanup_unverified", None, None)
+    # Held at the window's end, not when the read would have finished, 25 minutes on.
+    assert (record.history[-1].at, cloud.clock()) == (window_end, window_end)
+    assert (resource.destroy_evidence, getattr(resource, "destroy_check", None),
+            resource.destroy_checked_at) == (None, "timed_out", window_end)
+    assert "CLEANUP_UNVERIFIED" in cloud.alert_codes()
+
+
+def test_restart_after_a_lost_acknowledgment_clears_on_a_destroy_read_in_time(cloud):
+    # One page, read in 30 seconds, within the window.
+    cloud.provider.destroy_pages, cloud.provider.destroy_page_seconds = 1, 30
+    record = crash_after_the_delete(cloud)
+    resource = record.resources[0]
+    assert (record.state, resource.acknowledged_at, resource.destroy_evidence.status) == (
+        "torn_down", None, "completed")
+    assert record.verified_at == resource.delete_requested_at + timedelta(seconds=30)
+
+
+@pytest.mark.parametrize("log", ["no destroy", "too slow"])
+def test_a_lost_acknowledgment_never_clears_on_a_404_or_on_a_log_read_that_ran_out(cloud, log):
+    if log == "no destroy":
+        cloud.provider.log_destroys = False
+    else:
+        cloud.provider.destroy_pages, cloud.provider.destroy_page_seconds = SLOW_LOG
+    crash_after_the_delete(cloud)
+    for _ in range(3):
+        cloud.controller().tick()
+        cloud.reconcile()
+    record = cloud.ledger.get("r1")
+    assert (record.state, record.settled_usd) == ("cleanup_unverified", None)
+    assert getattr(record.resources[0], "destroy_check", None) == {
+        "no destroy": "not_found", "too slow": "timed_out"}[log]
+    assert "CLEANUP_UNVERIFIED" in cloud.controller().launch("r2")["reasons"]
+
+
+def test_each_retry_of_a_held_run_reads_the_log_within_a_fresh_window(cloud):
+    cloud.provider.destroy_pages, cloud.provider.destroy_page_seconds = SLOW_LOG
+    crash_after_the_delete(cloud)
+    cloud.clock.advance(HOUR)
+    window_end = cloud.clock() + timedelta(seconds=60)
+    cloud.reconcile()
+    record = cloud.ledger.get("r1")
+    resource = record.resources[0]
+    assert (record.state, getattr(resource, "destroy_check", None),
+            resource.destroy_checked_at, cloud.clock()) == (
+        "cleanup_unverified", "timed_out", window_end, window_end)
+    # Once the log reads in time, the next retry clears the run.
+    cloud.provider.destroy_pages = 1
+    cloud.reconcile()
+    cloud.assert_torn_down("r1", "cancelled")
 
 
 def test_running_worker_kept_only_within_its_original_deadline_after_restart(cloud):

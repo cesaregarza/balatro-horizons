@@ -9,7 +9,7 @@ from balatro_horizons.cloud.fake import SimulatedCrash
 
 # The successful lifecycle writes the ledger ten times: the new run, its Droplet ID, its
 # address, the worker's start, running, teardown started, the DELETE attempt, the
-# acknowledged DELETE, the action-log check, and verified.
+# acknowledged DELETE, verified, and the action-log lookup.
 LEDGER_WRITES = 10
 # A crash on this write loses the acknowledgment of a DELETE the provider carried out.
 ACKNOWLEDGMENT_WRITE = 8
@@ -184,3 +184,22 @@ def test_interrupted_ledger_replace_keeps_the_previous_record_readable(cloud, mo
     monkeypatch.undo()
     assert list((cloud.root / "runs").glob("*.tmp"))
     assert cloud.ledger.runs() == [before]
+
+
+def test_a_crash_before_the_lookup_leaves_the_run_settled_and_the_lookup_never_retried(cloud):
+    controller = cloud.launched()
+
+    def crash(**kwargs):
+        raise SimulatedCrash("before the lookup")
+
+    cloud.provider.list_destroy_actions = crash
+    with pytest.raises(SimulatedCrash):
+        controller.cancel("r1", now=True)
+    del cloud.provider.list_destroy_actions
+    settled = cloud.assert_torn_down("r1", "cancelled")
+    restart_and_settle(cloud)
+    cloud.reconcile()
+    assert cloud.ledger.get("r1") == settled
+    resource = settled.resources[0]
+    assert (resource.destroy_checked_at, getattr(resource, "destroy_check", None)) == (None, None)
+    assert ("destroys",) not in cloud.provider.calls
