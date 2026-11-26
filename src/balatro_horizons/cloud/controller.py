@@ -18,11 +18,12 @@ from .hostkey import (
     pin_host_key,
     user_data,
 )
-from .install import Install, WorkerLink, boot_stop_reason
+from .install import CALL_SECONDS, Install, WorkerLink, stop_reason
 from .ledger import RUN_ID_PATTERN, RunRecord
 from .preflight import preflight_refusals
 from .provider import DropletSpec
 from .reconcile import reconcile_inventory
+from .results import copy_results
 from .settings import droplet_name, run_tag, utc_now
 from .teardown import Teardown
 
@@ -36,16 +37,6 @@ def require_run_id(run_id):
     if not re.fullmatch(RUN_ID_PATTERN, run_id):
         raise ValueError("INVALID_RUN_ID")
     return run_id
-
-
-def stop_reason(record, now):
-    """Why a supervised run must stop at `now`, whatever its worker reports: a cancel, then
-    the run deadline."""
-    if record.cancel_requested:
-        return "cancelled"
-    if now >= record.deadline:
-        return "deadline"
-    return None
 
 
 class Controller:
@@ -62,9 +53,9 @@ class Controller:
         self.sleep = sleep
         self.teardown = Teardown(ledger, provider, settings, clock, sleep)
         self.resolver = CreateResolver(ledger, provider, settings, self.teardown, clock)
-        link = WorkerLink(transport, access, ledger.root)
-        self.install = Install(ledger, provider, link, settings, clock)
-        self.channel = channel or SshChannel(ledger, link, clock)
+        self.link = WorkerLink(transport, access, ledger.root)
+        self.install = Install(ledger, provider, self.link, settings, clock)
+        self.channel = channel or SshChannel(ledger, self.link)
 
     def launch(self, run_id):
         require_run_id(run_id)
@@ -143,35 +134,47 @@ class Controller:
     def evaluate(self, record):
         if record.state in ("create_unresolved", "tearing_down", "cleanup_unverified"):
             return self.resolver.tear_down(record, record.teardown_reason)
-        now = self.clock()
-        reason = self.teardown_reason(record, now)
-        if reason:
-            return self.resolver.tear_down(record, reason)
         if record.state == "provisioning":
-            return self.check_boot(record, now)
-        return record
+            return self.check_boot(record)
+        reason = self.teardown_reason(record)
+        return self.resolver.tear_down(record, reason) if reason else record
 
-    def teardown_reason(self, record, now):
-        reason = stop_reason(record, now)
-        if reason or record.state != "running":
+    def teardown_reason(self, record):
+        """Why a running run ends in this tick, if it does. Only a higher committed-move
+        count, read by this controller, restarts the heartbeat grace."""
+        now = self.clock()
+        reason = stop_reason(record, self.settings, now)
+        if reason:
             return reason
-        report = self.channel.report(record.run_id)
+        left = (record.deadline - now).total_seconds()
+        report = self.channel.report(record.run_id, timeout=min(CALL_SECONDS, left))
+        if report.status is not None:
+            # Saved with this tick's teardown or progress, as evidence even when a stop
+            # reason wins; a read that brings neither changes nothing worth keeping.
+            record.worker_status = report.status
         # The read took time, so its report counts only if no stop reason holds once it has
         # returned, and the heartbeat grace is judged at that time too.
         read_at = self.clock()
-        reason = stop_reason(record, read_at)
+        reason = stop_reason(record, self.settings, read_at)
         if reason:
             return reason
+        if report.failure:
+            return report.failure
         if report.finished:
+            record.results_copy = copy_results(self.link, record, self.ledger.root,
+                                               self.clock)
             return "succeeded"
-        seen = max(t for t in (report.last_seen, record.grace_from) if t is not None)
-        if read_at - seen > timedelta(seconds=self.settings.heartbeat_grace_seconds):
+        if report.actions is not None and report.actions > record.actions_seen:
+            record.actions_seen = report.actions
+            record.grace_from = read_at
+            self.ledger.save(record)
+        if read_at - record.grace_from > timedelta(seconds=self.settings.heartbeat_grace_seconds):
             return "heartbeat_lost"
         return None
 
-    def check_boot(self, record, now):
-        """A run provisions from the create until its worker reports the game ready."""
-        reason = boot_stop_reason(record, self.settings, now)
+    def check_boot(self, record):
+        """A run provisions from the create until its worker reports that play has started."""
+        reason = stop_reason(record, self.settings, self.clock())
         if reason:
             return self.resolver.tear_down(record, reason)
         progress = self.install.step(record)
@@ -180,12 +183,13 @@ class Controller:
         if progress.failure:
             return self.resolver.tear_down(record, progress.failure)
         # The step took time, so a stop reason that holds once it has returned comes first:
-        # a ready game is then too late, and no news is not waited on.
+        # play is then too late, and no news is not waited on.
         returned_at = self.clock()
-        reason = boot_stop_reason(record, self.settings, returned_at)
+        reason = stop_reason(record, self.settings, returned_at)
         if reason:
             return self.resolver.tear_down(record, reason)
-        if progress.ready:
+        if progress.playing:
+            record.actions_seen = progress.status.actions
             record.grace_from = returned_at
             record.move("running", returned_at)
             self.ledger.save(record)

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-26 — Cloud runner: play one scripted game and copy its results back
+
+- The worker now plays one scripted game after the game is ready, reports each
+  committed move, and writes its results; the controller keeps a run alive only
+  while the move count grows, copies the results back owner-only once play
+  finishes, then tears the Droplet down, and `bh cloud status` shows how the copy
+  went. See [cloud runner](docs/cloud-runner.md). No file in the execution
+  manifest changed.
+
 ## 2026-11-25 — Cloud runner: install and start the game on the Droplet
 
 - `bh cloud launch` now checks the SSH key, the firewall, the size, its price and

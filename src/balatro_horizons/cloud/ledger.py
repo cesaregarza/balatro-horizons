@@ -16,7 +16,8 @@ LIVE_STATES = (
 )
 RUN_ID_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
 # The worker's stages, in the order it runs them.
-Stage = Literal["packages", "dependencies", "bundle", "user", "display", "game", "ready"]
+Stage = Literal["packages", "dependencies", "bundle", "user", "display", "game", "ready",
+                "play"]
 # Text the worker reports is capped, so a run record stays small.
 Bounded = Annotated[str, Field(max_length=4000)]
 
@@ -64,17 +65,21 @@ class Transition(BaseModel):
 
 
 class WorkerStatus(BaseModel):
-    """The worker's status file: its stage, and on the way out, what it saw."""
+    """The worker's status file: its stage, its committed moves, and on the way out, what
+    it saw and how play ended."""
 
     model_config = ConfigDict(extra="forbid")
 
     stage: Stage
-    state: Literal["running", "failed", "ready"]
+    # Only records kept from before play existed carry "ready".
+    state: Literal["running", "finished", "failed", "ready"]
     reason: str | None = Field(default=None, max_length=200)
+    actions: int = Field(default=0, ge=0)
+    outcome: Literal["game_over", "won", "action_cap"] | None = None
     started_at: dict[Stage, AwareDatetime] = {}
     finished_at: AwareDatetime | None = None
     observed: dict[Literal["kernel", "packages_sha256", "steamrt4", "game_version",
-                           "renderer", "cloud_init"], Bounded] = {}
+                           "renderer", "cloud_init", "seed"], Bounded] = {}
     # Capped log tails, written only on failure.
     evidence: dict[Literal["stage_log", "display_stderr", "game_stderr"], Bounded] = {}
 
@@ -100,9 +105,13 @@ class RunRecord(BaseModel):
     # The latest SSH attempt's failure, cleared by a success; it names a boot timeout.
     last_ssh_failure: Literal["unreachable", "host_key_mismatch"] | None = None
     worker_started_at: AwareDatetime | None = None
-    # The worker's final ready or failed report, kept after the Droplet is gone.
+    # The worker's latest report, kept after the Droplet is gone.
     worker_status: WorkerStatus | None = None
+    # The most committed moves a read has shown; only a higher count restarts the grace.
+    actions_seen: int = Field(default=0, ge=0)
     grace_from: AwareDatetime | None = None
+    # How the results copy went: "copied", or why not. Unset when none was tried.
+    results_copy: str | None = None
     cancel_requested: bool = False
     teardown_reason: str | None = None
     teardown_started_at: AwareDatetime | None = None

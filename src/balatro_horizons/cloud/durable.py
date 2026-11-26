@@ -11,10 +11,13 @@ import uuid
 from pathlib import Path
 
 
-def durable_json(path: Path, value):
+def durable_json(path: Path, value, *, private=False):
+    """Write `value` as JSON in place of `path`; `private` makes the file owner-only."""
     ensure_directory(path.parent)
     temporary = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
-    with temporary.open("x", encoding="utf8") as stream:
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                         0o600 if private else 0o666)
+    with os.fdopen(descriptor, "w", encoding="utf8") as stream:
         stream.write(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n")
         stream.flush()
         os.fsync(stream.fileno())
