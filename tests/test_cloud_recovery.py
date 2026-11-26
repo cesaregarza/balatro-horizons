@@ -233,10 +233,13 @@ def test_restart_after_a_lost_acknowledgment_clears_on_a_destroy_read_in_time(cl
     assert record.verified_at == resource.delete_requested_at + timedelta(seconds=30)
 
 
-@pytest.mark.parametrize("log", ["no destroy", "too slow"])
-def test_a_lost_acknowledgment_never_clears_on_a_404_or_on_a_log_read_that_ran_out(cloud, log):
+@pytest.mark.parametrize("log", ["no destroy", "failed", "too slow"])
+def test_a_lost_acknowledgment_never_clears_on_a_404_a_failed_read_or_a_read_that_ran_out(
+        cloud, log):
     if log == "no destroy":
         cloud.provider.log_destroys = False
+    elif log == "failed":
+        cloud.provider.action_failures = NEVER
     else:
         cloud.provider.destroy_pages, cloud.provider.destroy_page_seconds = SLOW_LOG
     crash_after_the_delete(cloud)
@@ -246,7 +249,7 @@ def test_a_lost_acknowledgment_never_clears_on_a_404_or_on_a_log_read_that_ran_o
     record = cloud.ledger.get("r1")
     assert (record.state, record.settled_usd) == ("cleanup_unverified", None)
     assert getattr(record.resources[0], "destroy_check", None) == {
-        "no destroy": "not_found", "too slow": "timed_out"}[log]
+        "no destroy": "not_found", "failed": "failed", "too slow": "timed_out"}[log]
     assert "CLEANUP_UNVERIFIED" in cloud.controller().launch("r2")["reasons"]
 
 
@@ -264,7 +267,11 @@ def test_each_retry_of_a_held_run_reads_the_log_within_a_fresh_window(cloud):
     # Once the log reads in time, the next retry clears the run.
     cloud.provider.destroy_pages = 1
     cloud.reconcile()
-    cloud.assert_torn_down("r1", "cancelled")
+    record = cloud.assert_torn_down("r1", "cancelled")
+    resource = record.resources[0]
+    # Then the lookup runs. Only it stamps a time after `verified_at`: one page, 30 s on.
+    assert (resource.destroy_check, resource.destroy_checked_at) == (
+        "found", record.verified_at + timedelta(seconds=30))
 
 
 def test_running_worker_kept_only_within_its_original_deadline_after_restart(cloud):
