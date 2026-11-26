@@ -410,7 +410,7 @@ def test_token_never_reaches_ledger_logs_user_data_or_status(
     cloud.provider = client_from_environment(transport=httpx.MockTransport(stub),
                                              sleep=cloud.clock.advance)
     controller = cloud.launched()
-    cloud.channel.finish("r1", cloud.clock())
+    cloud.channel.finish("r1")
     controller.tick()
     assert cloud.ledger.get("r1").state == "torn_down"
     config = tmp_path / "cloud.yaml"

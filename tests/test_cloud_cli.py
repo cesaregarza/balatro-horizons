@@ -9,10 +9,12 @@ from cloud_support import (
     BUNDLE_NAME,
     FINGERPRINT,
     FIREWALL_ID,
+    RESULTS,
     Cloud,
     FakeTransport,
     admit_preflight,
     cloud_settings,
+    worker_status,
 )
 
 from balatro_horizons.cli import cloud as cloud_cli
@@ -53,6 +55,8 @@ def access_flags(tmp_path, monkeypatch):
                    "bytes": len(BUNDLE_BYTES), "sha256": hashlib.sha256(BUNDLE_BYTES).hexdigest()},
     }))
     transport = FakeTransport()
+    # The worker reports play, then a finished game.
+    transport.statuses = [worker_status(), worker_status("finished", "play", actions=5)]
     monkeypatch.setattr(cloud_cli, "OpenSsh", lambda: transport, raising=False)
     return ["--access-config", str(access)]
 
@@ -87,15 +91,20 @@ def test_missing_token_is_reported_without_a_launch(paths, monkeypatch, capsys):
     assert ledger.runs() == []
 
 
-def test_launch_supervises_until_the_ready_game_is_torn_down(paths, access_flags, capsys):
+def test_launch_supervises_until_the_finished_game_is_copied_and_torn_down(paths, access_flags,
+                                                                           capsys):
     flags, ledger, provider = paths
     assert run_cli(["launch", "r1", "--allow-provider-calls", *access_flags, *flags]) == 0
     first, _, rest = capsys.readouterr().out.partition("\n")
     assert json.loads(first)["outcome"] == "launched"
-    assert json.loads(rest)["launches"] == "ALLOWED"
+    report = json.loads(rest)
+    assert report["launches"] == "ALLOWED"
     record = ledger.get("r1")
     assert (record.state, record.teardown_reason) == ("torn_down", "succeeded")
     assert provider.inventory == {}
+    assert [run.get("results_copy") for run in report["runs"]] == ["copied"]
+    copied = ledger.root / "results" / "r1.json"
+    assert copied.is_file() and json.loads(copied.read_text()) == RESULTS
 
 
 @pytest.mark.parametrize("contents,code", [(None, "CLOUD_ACCESS_MISSING"),

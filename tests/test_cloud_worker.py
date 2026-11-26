@@ -2,11 +2,14 @@
 
 Each test runs the worker against a temporary layout. The fake machine records every
 command, simulates what the commands would leave on disk, serves the pinned
-downloads from memory and answers the game's API as scripted.
+downloads from memory, and answers the game's API in process, as a test scripts it or
+as the fake local API plays one short game.
 """
 
 import ast
 import hashlib
+import http.client
+import io
 import json
 import shlex
 import stat
@@ -17,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from local_api_support import FakeLocalApi
 
 from balatro_horizons.cloud import install
 from balatro_horizons.cloud.access import Bundle
@@ -65,7 +69,11 @@ class FakeMachine:
         self.display_up = True
         self.units = {}
         self.posts = []
-        self.reply = menu
+        # A scripted answer to every request, in place of the local API.
+        self.reply = None
+        self.local_api = None
+        # The committed-move count the status file held as each request was sent.
+        self.counts_at_post = []
         self.broken = None
 
     def run(self, argv, *, timeout=worker.COMMAND_SECONDS, check=True, env=None):
@@ -110,9 +118,11 @@ class FakeMachine:
         umu = self.layout.home / ".local/share/umu/steamrt4"
         umu.mkdir(parents=True)
         (umu / "VERSIONS.txt").write_text(f"depot\t{BUILD}\n")
-        token = dict(line.split("=", 1) for line in self.layout.env_file.read_text().split("\n")
-                     if line)["BH_TOKEN"].strip("'")
+        environment = {name: value.strip("'") for name, value in (
+            line.split("=", 1) for line in self.layout.env_file.read_text().split("\n") if line)}
+        token = environment["BH_TOKEN"]
         (self.layout.evidence / "game.err").write_text("x" * 5000 + f"\ntoken={token}\n")
+        self.local_api = FakeLocalApi(token, environment["BH_INSTANCE_ID"], end_after=5)
 
     def download(self, url, path, limit):
         if url not in self.files:
@@ -127,18 +137,16 @@ class FakeMachine:
 
     def post(self, url, body, timeout):
         self.posts.append((url, body, timeout))
-        return self.reply(body)
+        self.counts_at_post.append(json.loads(self.layout.status.read_text()).get("actions"))
+        if self.reply is not None:
+            return self.reply(body)
+        return self.local_api(url, body, timeout)
 
     def sleep(self, seconds):
         self.clock.now += timedelta(seconds=seconds)
 
     def started(self, unit):
         return next(c for c in self.commands if c[0] == "systemd-run" and f"--unit={unit}" in c)
-
-
-def menu(body):
-    return {"jsonrpc": "2.0", "id": body["id"],
-            "result": {"state": "MENU", "bh": {"game_version": "9.9.9-test"}}}
 
 
 @pytest.fixture
@@ -172,18 +180,35 @@ def run(machine, layout, **arguments):
 
 def test_stages_run_in_order_each_written_before_its_commands(machine, layout):
     code, status, _ = run(machine, layout)
-    assert (code, status["state"], status["stage"], status["reason"]) == (0, "ready", "ready", None)
+    assert (code, status["state"], status["stage"], status["reason"]) == (
+        0, "finished", "play", None)
     first = {}
     for command, stage in machine.stages:
         first.setdefault(stage, command)
-    # The ready stage runs no command of its own; its first is the final observation.
+    # The ready and play stages run no command of their own; play's first is the final
+    # observation.
     assert first == {"packages": "cloud-init", "dependencies": "apt-get", "bundle": "tar",
                      "user": "id", "display": "systemd-run", "game": "systemd-run",
-                     "ready": "dpkg-query"}
-    assert set(status["started_at"]) == set(first)
+                     "play": "dpkg-query"}
+    assert set(status["started_at"]) == set(first) | {"ready"}
     assert machine.posts, "readiness is checked over the game's API"
     assert stat.S_IMODE(layout.status.stat().st_mode) == 0o600
-    assert WorkerStatus.model_validate(status).state == "ready"
+    assert (status.get("outcome"), status.get("actions")) == ("game_over", 5)
+
+
+def test_play_follows_ready_and_the_status_is_written_after_each_committed_move(machine,
+                                                                               layout):
+    _, status, _ = run(machine, layout)
+    methods = [body["method"] for _, body, _ in machine.posts]
+    starts = [index for index, method in enumerate(methods) if method == "start"]
+    # Ready ends on an inspect that finds the menu; play starts the game next.
+    assert len(starts) == 1 and methods[:starts[0]] and set(methods[:starts[0]]) == {
+        "bh_inspect"}
+    committed = 0
+    for method, count in zip(methods, machine.counts_at_post, strict=True):
+        assert count == committed
+        committed += method not in ("bh_inspect", "bh_request_status")
+    assert committed == status.get("actions") == 5
 
 
 def test_packages_follow_the_pilot_order(machine, layout):
@@ -194,6 +219,81 @@ def test_packages_follow_the_pilot_order(machine, layout):
         ["dpkg", "--add-architecture", "i386"],
         ["apt-get", "-o", "DPkg::Lock::Timeout=600", "update"],
         ["apt-get", "-o", "DPkg::Lock::Timeout=600", "install", "-y", "xvfb", "python3"]]
+
+
+def test_the_seed_is_observed_before_play_and_starts_the_game(machine, layout):
+    _, status, _ = run(machine, layout)
+    seed = status["observed"].get("seed")
+    assert isinstance(seed, str) and len(seed) == 8
+    assert set(seed) <= set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+    starts = [body["params"] for _, body, _ in machine.posts if body["method"] == "start"]
+    assert [(p["seed"], p["deck"], p["stake"]) for p in starts] == [(seed, "RED", "WHITE")]
+
+
+def test_the_results_are_written_owner_only_before_the_finished_status(machine, layout,
+                                                                      monkeypatch):
+    written = []
+    write = worker.write_private
+
+    def recording(path, text):
+        if path == layout.status:
+            written.append(("status", json.loads(text)["state"]))
+        else:
+            written.append((path.name, None))
+        write(path, text)
+
+    monkeypatch.setattr(worker, "write_private", recording)
+    code, status, runner = run(machine, layout)
+    assert (code, status["state"]) == (0, "finished")
+    results_path = layout.worker / "results.json"
+    assert written[-2:] == [("results.json", None), ("status", "finished")]
+    assert stat.S_IMODE(results_path.stat().st_mode) == 0o600
+    text = results_path.read_text()
+    results = json.loads(text)
+    assert set(results) == {"outcome", "actions", "ante", "round", "seed", "deck", "stake",
+                            "moves", "started_at", "observed"}
+    assert (results["outcome"], results["actions"], results["ante"], results["round"]) == (
+        "game_over", 5, 1, 1)
+    assert (results["seed"], results["deck"], results["stake"]) == (
+        status["observed"]["seed"], "RED", "WHITE")
+    assert results["moves"][0] == {"method": "start", "action": None, "state": "BLIND_SELECT"}
+    assert [move["action"] for move in results["moves"]][2:] == [
+        "discard", "discard", "play_hand"]
+    assert (results["started_at"], results["observed"]) == (
+        status["started_at"], status["observed"])
+    request_ids = [body["id"] for _, body, _ in machine.posts]
+    for secret in (runner.token, runner.instance_id, *request_ids):
+        assert secret not in text
+
+
+def test_a_refused_move_fails_the_play_stage_without_results(machine, layout):
+    original = machine.start
+
+    def refusing(argv):
+        original(argv)
+        if machine.local_api is not None:
+            machine.local_api.faults = {("select", 1): "refuse"}
+
+    machine.start = refusing
+    code, status, _ = run(machine, layout)
+    assert (code, status["state"], status["stage"], status["reason"]) == (
+        1, "failed", "play", "move refused: select")
+    assert status.get("actions") == 1 and "game_stderr" in status["evidence"]
+    assert not (layout.worker / "results.json").exists()
+
+
+def test_the_game_exiting_during_play_fails_the_play_stage(machine, layout):
+    post = machine.post
+
+    def exits_after_two_moves(url, body, timeout):
+        reply = post(url, body, timeout)
+        if machine.local_api.committed >= 2:
+            machine.units["bh-game"] = False
+        return reply
+
+    machine.post = exits_after_two_moves
+    code, status, _ = run(machine, layout)
+    assert (code, status["stage"], status["reason"]) == (1, "play", "game exited")
 
 
 def test_ready_reports_what_the_run_observed(machine, layout):
@@ -229,6 +329,23 @@ def test_the_bundle_is_checked_against_its_descriptor_before_it_is_unpacked(mach
     code, status, _ = run(machine, layout)
     assert (code, status["stage"], status["reason"]) == (1, "bundle", reason)
     assert not [c for c in machine.commands if c[0] == "tar" and "bundle.tar" in c[2]]
+
+
+def test_a_bundle_nested_under_a_game_directory_is_refused(machine, layout):
+    def nested(argv):
+        destination = Path(argv[3].removeprefix("--directory="))
+        if "--strip-components=1" in argv:
+            (destination / "proton").write_text("stand-in")
+            return
+        (destination / "game").mkdir()
+        (destination / "game" / worker.GAME_EXECUTABLE).write_text("stand-in")
+        (destination / "game" / worker.MOD_DIRECTORY).mkdir()
+
+    machine.extract = nested
+    code, status, _ = run(machine, layout)
+    assert (code, status["stage"], status["reason"]) == (
+        1, "bundle", "bundle has no game executable")
+    assert not [c for c in machine.commands if c[0] == "useradd"]
 
 
 @pytest.mark.parametrize("missing,reason", [
@@ -417,13 +534,42 @@ def test_bad_arguments_are_reported_in_the_status_file_not_by_a_bare_exit(machin
     assert machine.commands == [["dpkg-query", "-W", "-f", "${binary:Package}=${Version}\\n"]]
 
 
-def test_the_worker_imports_only_the_standard_library():
-    tree = ast.parse(Path(worker.__file__).read_text())
+@pytest.mark.parametrize("name", ["worker.py", "driver.py"])
+def test_the_worker_and_its_driver_import_only_the_standard_library(name):
+    path = Path(worker.__file__).with_name(name)
+    assert path.is_file()
+    tree = ast.parse(path.read_text())
+    assert not [node for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom) and node.level], "no relative import"
     imported = {alias.name.split(".")[0] for node in ast.walk(tree)
                 if isinstance(node, ast.Import) for alias in node.names}
     imported |= {node.module.split(".")[0] for node in ast.walk(tree)
                  if isinstance(node, ast.ImportFrom)}
     assert imported and imported <= sys.stdlib_module_names
+
+
+def test_a_missing_driver_fails_at_packages_before_any_install(machine, layout, tmp_path,
+                                                               monkeypatch):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setattr(worker, "__file__", str(elsewhere / "worker.py"))
+    code, status, _ = run(machine, layout)
+    assert (code, status["state"], status["stage"], status["reason"]) == (
+        1, "failed", "packages", "driver unreadable")
+    assert [c[0] for c in machine.commands] == ["dpkg-query"]
+
+
+def test_the_driver_is_the_file_beside_the_worker(machine, layout, tmp_path, monkeypatch):
+    beside = tmp_path / "beside"
+    beside.mkdir()
+    driver = Path(worker.__file__).with_name("driver.py")
+    assert driver.is_file()
+    (beside / "driver.py").write_text(driver.read_text() + '\nDECK = "BLUE"\n')
+    monkeypatch.setattr(worker, "__file__", str(beside / "worker.py"))
+    code, status, _ = run(machine, layout)
+    decks = [body["params"]["deck"] for _, body, _ in machine.posts if body["method"] == "start"]
+    assert (code, decks) == (0, ["BLUE"])
+    assert json.loads((layout.worker / "results.json").read_text())["deck"] == "BLUE"
 
 
 def test_the_shipped_pins_are_the_public_pilot_downloads():
@@ -444,8 +590,8 @@ def test_the_shipped_pins_are_the_public_pilot_downloads():
 
 def test_the_controller_starts_the_worker_where_the_worker_expects_to_be():
     layout = worker.Layout()
-    assert (install.WORKER_DIR, install.WORKER_FILES) == (str(layout.worker),
-                                                          ("worker.py", "pins.toml"))
+    assert (install.WORKER_DIR, install.WORKER_FILES) == (
+        str(layout.worker), ("worker.py", "driver.py", "pins.toml"))
     assert str(layout.status) in install.STATUS_COMMAND
     deadline = START + timedelta(hours=2)
     bundle = Bundle(path=Path("/stand-in") / "bundle.tar", name="bundle.tar",
@@ -463,6 +609,34 @@ def test_an_environment_value_that_cannot_be_quoted_is_refused():
         "A='Z:\\srv'\nB='two words'\n")
     with pytest.raises(worker.StageFailed, match="cannot be quoted"):
         worker.environment_file({"A": "it's"})
+
+
+class Opener:
+    """Stands in for urllib's opener: it raises `error` or answers `body`, and connects
+    nowhere."""
+
+    def __init__(self, error=None, body=b""):
+        self.error = error
+        self.body = body
+
+    def open(self, request, timeout):
+        if self.error is not None:
+            raise self.error
+        return io.BytesIO(self.body)
+
+
+@pytest.mark.parametrize(("opener", "named"), [
+    (Opener(http.client.RemoteDisconnected("closed")), "RemoteDisconnected"),
+    (Opener(http.client.IncompleteRead(b"")), "IncompleteRead"),
+    (Opener(TimeoutError("timed out")), "TimeoutError"),
+    (Opener(body=b"not json"), "JSONDecodeError"),
+], ids=["disconnected", "incomplete", "timeout", "garbled"])
+def test_the_machine_reports_a_reply_it_cannot_read_as_a_lost_answer(monkeypatch, opener,
+                                                                     named):
+    monkeypatch.setattr(worker.urllib.request, "build_opener", lambda *handlers: opener)
+    with pytest.raises(Exception) as caught:
+        worker.Machine().post("http://127.0.0.1:12346/", {"id": "x"}, 10)
+    assert (caught.type, str(caught.value)) == (OSError, named)
 
 
 def test_the_machine_names_a_command_that_times_out_or_cannot_start(tmp_path):

@@ -132,7 +132,7 @@ def test_an_id_the_controller_may_not_delete_never_clears_on_a_destroy(cloud):
 
 def test_every_teardown_records_what_the_action_log_showed(cloud):
     controller = cloud.launched()
-    cloud.channel.finish("r1", cloud.clock())
+    cloud.channel.finish("r1")
     controller.tick()
     resource = cloud.assert_torn_down("r1", "succeeded").resources[0]
     assert getattr(resource, "destroy_checked_at", None) is not None
@@ -143,7 +143,7 @@ def test_every_teardown_records_what_the_action_log_showed(cloud):
 def test_a_failed_action_log_read_never_delays_settling(cloud):
     controller = cloud.launched()
     cloud.provider.action_failures = 10
-    cloud.channel.finish("r1", cloud.clock())
+    cloud.channel.finish("r1")
     controller.tick()
     resource = cloud.assert_torn_down("r1", "succeeded").resources[0]
     assert ("destroys",) in cloud.provider.calls

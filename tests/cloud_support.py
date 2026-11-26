@@ -60,11 +60,22 @@ def cloud_settings(**overrides):
     return CloudSettings(**values | overrides)
 
 
-def worker_status(state="ready", stage="ready", reason=None):
-    """A status file as the worker writes it."""
-    return {"stage": stage, "state": state, "reason": reason,
-            "started_at": {stage: "2026-11-24T12:04:00+00:00"},
-            "observed": {"kernel": "6.8.0-test"}}
+def worker_status(state="running", stage="play", reason=None, actions=None):
+    """A status file as the worker writes it. The committed-move count is written only when
+    a test gives one, and a finished game ends in a game over."""
+    status = {"stage": stage, "state": state, "reason": reason,
+              "started_at": {stage: "2026-11-24T12:04:00+00:00"},
+              "observed": {"kernel": "6.8.0-test"}}
+    if actions is not None:
+        status["actions"] = actions
+    if state == "finished":
+        status["outcome"] = "game_over"
+    return status
+
+
+# The results file a finished worker leaves, as the copy reads it.
+RESULTS = {"outcome": "game_over", "actions": 5, "ante": 1, "round": 1, "seed": "TESTSEED",
+           "deck": "RED", "stake": "WHITE", "moves": []}
 
 
 class FakeTransport:
@@ -74,10 +85,13 @@ class FakeTransport:
         self.calls = []
         # Answers for the next SSH calls, given before any command could run.
         self.refusals = []
-        # A step that fails ("failed") or times out ("timed_out") on every call.
+        # A step that fails ("failed"), times out ("timed_out") or finds the host unreachable
+        # ("unreachable") on every call.
         self.failures = {}
         # Status files the worker reports in turn, as dicts or raw bytes; the last repeats.
         self.statuses = [worker_status()]
+        # What a read of the results file prints.
+        self.results = json.dumps(RESULTS).encode()
         # On the clock, a call that times out runs to its timeout. Any other call takes its
         # step's seconds here, even past its timeout.
         self.durations = {}
@@ -99,6 +113,10 @@ class FakeTransport:
             raise subprocess.TimeoutExpired(argv, timeout)
         if self.failures.get(step) == "failed":
             return finished(argv, 1, stderr=b"command failed\n")
+        if self.failures.get(step) in REFUSED:
+            return finished(argv, 255, stderr=REFUSED[self.failures[step]])
+        if step == "results":
+            return finished(argv, 0, stdout=self.results)
         if step != "status":
             return finished(argv, 0)
         status = self.statuses.pop(0) if len(self.statuses) > 1 else self.statuses[0]
@@ -129,6 +147,8 @@ def step_of(command, stdin):
         return "start"
     if "status.json" in command:
         return "status"
+    if "results.json" in command:
+        return "results"
     raise AssertionError("unexpected remote command")
 
 
@@ -226,7 +246,7 @@ class Cloud:
         return [d.id for d in self.provider.inventory.values() if tags <= set(d.tags)]
 
     def launched(self, run_id="r1", controller=None):
-        """Launch one run and tick until its game is ready and it is running."""
+        """Launch one run and tick until its worker reports play and the run is running."""
         controller = controller or self.controller()
         assert controller.launch(run_id)["outcome"] == "launched"
         for _ in range(5):

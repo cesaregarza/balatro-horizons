@@ -13,7 +13,7 @@ from balatro_horizons.cloud import settings as cloud_settings_module
 from balatro_horizons.config import Config
 
 ROUTE = "/api/cloud/status"
-RUN_FIELDS = {"run_id", "state", "created_at", "deadline", "teardown_reason",
+RUN_FIELDS = {"run_id", "state", "created_at", "deadline", "teardown_reason", "results_copy",
               "cost_usd", "reserved_usd", "settled_usd"}
 
 
