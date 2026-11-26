@@ -39,9 +39,15 @@ def copy_results(link, record, ledger_root, clock):
         return "results_too_large"
     try:
         results = json.loads(reply.stdout)
-    except ValueError:
+    except (ValueError, RecursionError):
+        # A file nested deeper than the parser goes raises RecursionError, not ValueError.
         return "results_malformed"
     if not isinstance(results, dict):
         return "results_malformed"
-    durable_json(results_path(ledger_root, record.run_id), results, private=True)
+    try:
+        durable_json(results_path(ledger_root, record.run_id), results, private=True)
+    except OSError:
+        # A full disk, or a results directory that cannot be made, is named like any other
+        # failed copy, so the teardown still follows in this tick.
+        return "results_unwritable"
     return "copied"

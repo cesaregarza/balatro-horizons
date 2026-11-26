@@ -230,7 +230,8 @@ status` shows, names how it went:
 | `ssh_<outcome>` | The call failed: `ssh_failed`, `ssh_unreachable`, `ssh_host_key_mismatch` or `ssh_timed_out`. |
 | `results_missing` | The file was not there, or was empty. |
 | `results_too_large` | The file is larger than 1 MiB. |
-| `results_malformed` | The file is not a JSON object. |
+| `results_malformed` | The file is not a JSON object, or is nested too deeply to parse. |
+| `results_unwritable` | The controller could not write the copy, as on a full disk. |
 | `no_time_left` | The run deadline cut the copy short. |
 
 Teardown follows in the same tick whatever the copy's outcome, and a failed copy
