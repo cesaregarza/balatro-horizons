@@ -162,7 +162,7 @@ class DigitalOceanClient:
         raise AssertionError("unreachable")
 
     def send(self, method, path, kwargs, time_left):
-        """Make one attempt. Without `time_left` it runs here, as every cleanup read does.
+        """Make one attempt. Without `time_left` it runs here, as cleanup's by-ID and tag reads do.
         With it, since httpx limits each phase of a request but not the whole, it runs on a
         daemon thread: once `time_left` finds no time left while it still runs, it is
         abandoned and NO_TIME_LEFT raised. An abandoned attempt uses only the HTTP client,
