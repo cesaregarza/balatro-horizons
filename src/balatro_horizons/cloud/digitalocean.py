@@ -6,6 +6,7 @@ after the caller has listed and filtered on both tags.
 
 import ipaddress
 import os
+import threading
 import time
 from datetime import UTC, datetime
 from urllib.parse import quote
@@ -28,8 +29,8 @@ API_URL = "https://api.digitalocean.com/v2"
 PAGE_SIZE = 200
 MAX_PAGES = 50
 MAX_ATTEMPTS = 5
-# Each attempt's limit. httpx applies it separately to connecting, to each write and each
-# read, and to waiting for a pooled connection.
+# The limit on each phase of an attempt. httpx applies it separately to connecting, to each
+# write and each read, and to waiting for a pooled connection.
 REQUEST_SECONDS = 30
 
 
@@ -138,8 +139,8 @@ class DigitalOceanClient:
 
     def request(self, method, path, *, retry_server_errors=True, time_left=None, **kwargs):
         """Send with the retries `should_retry` allows. With `time_left`, which returns the
-        seconds left, no attempt starts once none is left, and each attempt's limit and each
-        wait before a retry are cut to fit."""
+        seconds left, no attempt starts or is waited on once none is left, and the limit on
+        each phase of an attempt and each wait before a retry are cut to fit."""
         for attempt in range(MAX_ATTEMPTS):
             if time_left is not None:
                 left = time_left()
@@ -147,7 +148,7 @@ class DigitalOceanClient:
                     raise ProviderError("NO_TIME_LEFT")
                 kwargs["timeout"] = min(REQUEST_SECONDS, left)
             try:
-                response = self._client.request(method, path, **kwargs)
+                response = self.send(method, path, kwargs, time_left)
             except httpx.TransportError:
                 if not retry_server_errors or attempt == MAX_ATTEMPTS - 1:
                     raise ProviderError("TRANSPORT_ERROR") from None
@@ -157,6 +158,33 @@ class DigitalOceanClient:
                 return response
             self.wait(self.delay(attempt, response), time_left)
         raise AssertionError("unreachable")
+
+    def send(self, method, path, kwargs, time_left):
+        """Make one attempt. Without `time_left` it runs here, as every cleanup read does.
+        With it, since httpx limits each phase of a request but not the whole, it runs on a
+        daemon thread: once `time_left` finds no time left while it still runs, it is
+        abandoned and NO_TIME_LEFT raised. An abandoned attempt uses only the HTTP client,
+        which threads may share, and its result, if one comes, is dropped."""
+        if time_left is None:
+            return self._client.request(method, path, **kwargs)
+        outcome = {}
+
+        def attempt():
+            try:
+                outcome["response"] = self._client.request(method, path, **kwargs)
+            except BaseException as error:
+                outcome["error"] = error
+
+        worker = threading.Thread(target=attempt, daemon=True)
+        worker.start()
+        while worker.is_alive():
+            left = time_left()
+            if left <= 0:
+                raise ProviderError("NO_TIME_LEFT")
+            worker.join(left)
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome["response"]
 
     def wait(self, seconds, time_left):
         """Sleep before a retry. A wait longer than the time left is cut to it. The next
