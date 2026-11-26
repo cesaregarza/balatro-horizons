@@ -86,14 +86,15 @@ class DigitalOceanClient:
                              status=a["status"])
                 for a in self.droplet_actions("create") if a["started_at"] >= since]
 
-    def list_destroy_actions(self):
+    def list_destroy_actions(self, *, time_left=None):
         return [DestroyAction(id=whole_number(a["id"]), resource_id=a["resource_id"],
                               started_at=a["started_at"], status=a["status"])
-                for a in self.droplet_actions("destroy")]
+                for a in self.droplet_actions("destroy", time_left)]
 
-    def droplet_actions(self, kind):
+    def droplet_actions(self, kind, time_left=None):
         # The API documents no order for the action log, so every page is read.
-        actions = [parse_action(item) for item in self.read_all("/actions", "actions", {})]
+        actions = [parse_action(item)
+                   for item in self.read_all("/actions", "actions", {}, time_left)]
         return [a for a in actions if a["type"] == kind and a["resource_type"] == "droplet"]
 
     def ssh_key_registered(self, fingerprint):
@@ -114,12 +115,13 @@ class DigitalOceanClient:
     def list_sizes(self):
         return [parse_size(item) for item in self.read_all("/sizes", "sizes", {})]
 
-    def read_all(self, path, key, filters):
-        """Every item across pages; anything short of a complete, well-formed read raises."""
+    def read_all(self, path, key, filters, time_left=None):
+        """Every item across pages; anything short of a complete, well-formed read raises.
+        With `time_left`, every page is a budgeted request, so the budget bounds the whole."""
         items = []
         for page in range(1, MAX_PAGES + 1):
             params = filters | {"page": page, "per_page": PAGE_SIZE}
-            body = expect(self.request("GET", path, params=params), 200)
+            body = expect(self.request("GET", path, params=params, time_left=time_left), 200)
             batch, more, total = page_parts(body, key)
             items.extend(batch)
             if not more:

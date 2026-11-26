@@ -50,9 +50,11 @@ class Resource(BaseModel):
     delete_requested_at: AwareDatetime | None = None
     # When the provider acknowledged our DELETE.
     acknowledged_at: AwareDatetime | None = None
-    # The destroy action found for this ID, and when the action log was last read for it.
+    # The destroy action found for this ID, and when the action log was last read for it
+    # and how that read ended.
     destroy_evidence: DestroyEvidence | None = None
     destroy_checked_at: AwareDatetime | None = None
+    destroy_check: Literal["found", "not_found", "failed", "timed_out"] | None = None
 
 
 class Transition(BaseModel):

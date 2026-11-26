@@ -42,6 +42,10 @@ class FakeProvider:
     destroys: list[DestroyAction] = field(default_factory=list)
     # Our DELETEs show in the action log as completed destroys.
     log_destroys: bool = True
+    # A destroy read takes this many pages, each this many seconds on the clock, which must
+    # then be one that advances.
+    destroy_pages: int = 1
+    destroy_page_seconds: float = 0
     # Created Droplets get no public IPv4 address.
     no_public_ipv4: bool = False
     # The preflight's reads: registered fingerprints, then firewalls and sizes as the API
@@ -133,10 +137,22 @@ class FakeProvider:
         self.read_actions()
         return [action for action in self.actions if action.started_at >= since]
 
-    def list_destroy_actions(self):
+    def list_destroy_actions(self, *, time_left=None):
         self.calls.append(("destroys",))
         self.read_actions()
+        for _ in range(self.destroy_pages):
+            # As in the client, with `time_left` no page starts once no time is left, and a
+            # page that needs more than is left runs until none is, then raises.
+            left = None if time_left is None else time_left()
+            if left is not None and (left <= 0 or self.destroy_page_seconds > left):
+                self.spend(max(left, 0))
+                raise ProviderError("NO_TIME_LEFT")
+            self.spend(self.destroy_page_seconds)
         return list(self.destroys)
+
+    def spend(self, seconds):
+        if seconds:
+            self.clock.advance(seconds)
 
     def read_actions(self):
         if self.action_failures:

@@ -80,8 +80,14 @@ class Provider(Protocol):
         Creates that have no resource ID yet are kept, and so is each action's status.
         """
 
-    def list_destroy_actions(self) -> list["DestroyAction"]:
-        """Every Droplet destroy action in the account action log, read completely."""
+    def list_destroy_actions(self, *,
+                             time_left: Callable[[], float] | None = None) -> list["DestroyAction"]:
+        """Every Droplet destroy action in the account action log, read completely.
+
+        `time_left`, when given, bounds the whole read as it bounds `get_droplet`: every
+        page's attempts and waits fit in what is left, and a read that runs out raises
+        NO_TIME_LEFT. Without it, every page keeps the full retry policy.
+        """
 
     def delete_droplet(self, droplet_id: int) -> bool:
         """Delete one Droplet by ID; True only when the provider acknowledged the DELETE."""
