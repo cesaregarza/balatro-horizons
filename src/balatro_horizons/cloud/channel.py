@@ -1,20 +1,25 @@
 """The worker channel over SSH: each tick reads the running worker's status file.
 
-In this slice a run is done once its game is ready, which makes the run a boot check.
-Anything else, including a read that fails, is no news, so the heartbeat grace applies.
+A read that fails or finds nothing is no news, so the heartbeat grace applies. A status
+reports how many moves have committed, that play finished, or the stage that failed.
 """
 
 from .provider import WorkerReport
 
 
 class SshChannel:
-    def __init__(self, ledger, link, clock):
+    def __init__(self, ledger, link):
         self.ledger = ledger
         self.link = link
-        self.clock = clock
 
-    def report(self, run_id):
-        read = self.link.read_status(self.ledger.get(run_id))
-        if read.status is None or read.status.state != "ready":
-            return WorkerReport(last_seen=None, finished=False)
-        return WorkerReport(last_seen=self.clock(), finished=True)
+    def report(self, run_id, timeout):
+        read = self.link.read_status(self.ledger.get(run_id), timeout=timeout)
+        if read.malformed:
+            return WorkerReport(failure="worker_status_malformed")
+        status = read.status
+        if status is None:
+            return WorkerReport()
+        if status.state == "failed":
+            return WorkerReport(failure=f"worker_failed:{status.stage}", status=status)
+        return WorkerReport(actions=status.actions, finished=status.state == "finished",
+                            status=status)

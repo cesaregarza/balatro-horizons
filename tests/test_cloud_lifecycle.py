@@ -35,7 +35,7 @@ def test_droplet_is_tagged_with_owner_and_run_tags_at_creation(cloud):
 def test_success_tears_down_and_settles_elapsed_time(cloud):
     controller = cloud.launched()
     cloud.clock.advance(1800)
-    cloud.channel.finish("r1", cloud.clock())
+    cloud.channel.finish("r1")
     controller.tick()
     record = cloud.assert_torn_down("r1", "succeeded")
     assert record.settled_usd == pytest.approx(0.05)
@@ -81,14 +81,14 @@ def test_partial_create_deletes_the_droplet_the_failed_call_left(cloud):
 def test_deadline_tears_down_even_with_a_live_heartbeat(cloud):
     controller = cloud.launched()
     cloud.clock.advance(2 * 3600)
-    cloud.channel.beat("r1", cloud.clock())
+    cloud.channel.progress("r1")
     controller.tick()
     cloud.assert_torn_down("r1", "deadline")
 
 
 def test_cancel_request_is_honored_on_the_next_tick(cloud):
     controller = cloud.launched()
-    cloud.channel.beat("r1", cloud.clock())
+    cloud.channel.progress("r1")
     assert controller.cancel("r1")["state"] == "running"
     controller.tick()
     cloud.assert_torn_down("r1", "cancelled")
@@ -101,9 +101,11 @@ def test_cancel_now_tears_down_in_the_same_call(cloud):
 
 
 def test_lost_heartbeat_tears_down_after_the_grace_window(cloud):
+    # Progress counts from the tick that reads it, at t=100.
     controller = cloud.launched()
     cloud.clock.advance(100)
-    cloud.channel.beat("r1", cloud.clock())
+    cloud.channel.progress("r1")
+    controller.tick()
     cloud.clock.advance(100)
     controller.tick()
     assert cloud.ledger.get("r1").state == "running"
@@ -115,7 +117,7 @@ def test_lost_heartbeat_tears_down_after_the_grace_window(cloud):
 def test_controller_error_tears_live_runs_down_before_raising(cloud):
     cloud.launched()
 
-    def broken(run_id):
+    def broken(run_id, timeout):
         raise RuntimeError("channel exploded")
 
     cloud.channel.report = broken
@@ -136,7 +138,7 @@ def test_settled_spend_reduces_the_budget_for_later_launches(tmp_path):
     cloud = Cloud(tmp_path, settings=cloud_settings(infrastructure_budget_usd=0.3))
     controller = cloud.launched()
     cloud.clock.advance(3600 + 1800)
-    cloud.channel.finish("r1", cloud.clock())
+    cloud.channel.finish("r1")
     controller.tick()
     assert cloud.ledger.get("r1").settled_usd == pytest.approx(0.15)
     assert controller.launch("r2")["reasons"] == ["INFRASTRUCTURE_BUDGET"]

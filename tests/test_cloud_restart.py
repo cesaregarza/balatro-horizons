@@ -35,12 +35,12 @@ def crash_on_write(cloud, monkeypatch, number):
 
 
 def full_lifecycle(cloud):
-    """Launch, install, run once the game is ready, then finish and tear down."""
+    """Launch, install, run once play starts, then finish, copy the results and tear down."""
     controller = cloud.controller()
     controller.launch("r1")
     controller.tick()
     controller.tick()
-    cloud.channel.finish("r1", cloud.clock())
+    cloud.channel.finish("r1")
     controller.tick()
 
 
@@ -149,7 +149,7 @@ def test_running_run_keeps_going_if_a_heartbeat_arrives_within_grace(cloud):
     restarted.recover()
     assert cloud.ledger.get("r1").state == "running"
     cloud.clock.advance(60)
-    cloud.channel.beat("r1", cloud.clock())
+    cloud.channel.progress("r1")
     cloud.clock.advance(100)
     restarted.tick()
     assert cloud.ledger.get("r1").state == "running"

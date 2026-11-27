@@ -59,7 +59,7 @@ def status_report(ledger, settings, now):
         "runs": [{
             "run_id": record.run_id, "state": record.state,
             "created_at": record.created_at.isoformat(), "deadline": record.deadline.isoformat(),
-            "teardown_reason": record.teardown_reason,
+            "teardown_reason": record.teardown_reason, "results_copy": record.results_copy,
             # The gate's own estimate, so the runs add up to the total less the remainder.
             "cost_usd": round(exposure_usd(record, settings, now), 6),
             "reserved_usd": record.reserved_usd, "settled_usd": record.settled_usd,

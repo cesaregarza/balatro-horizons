@@ -4,7 +4,7 @@ import re
 import time
 
 from .creation import CreateResolver
-from .install import boot_deadline, boot_timeout_reason
+from .install import stop_reason
 from .ledger import RUN_ID_PATTERN, RunRecord
 from .settings import run_id_from_tags, utc_now
 from .teardown import Teardown
@@ -18,13 +18,7 @@ def stale_reason(record, now, settings):
         return record.teardown_reason
     if not record.live:
         return None
-    if record.cancel_requested:
-        return "cancelled"
-    if now >= record.deadline:
-        return "deadline"
-    if record.state == "provisioning" and now >= boot_deadline(record, settings):
-        return boot_timeout_reason(record)
-    return None
+    return stop_reason(record, settings, now)
 
 
 def reconcile(ledger, provider, settings, *, clock=utc_now, sleep=time.sleep,

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from .ledger import WorkerStatus
+
 
 class ProviderError(Exception):
     """A provider call that failed; the message is a short code, never a response body."""
@@ -112,11 +114,22 @@ class DestroyAction:
 
 @dataclass(frozen=True)
 class WorkerReport:
-    last_seen: datetime | None
-    finished: bool
+    """One read of a running worker. It carries no time: only the controller's clock decides.
+
+    It says one of four things: no news, when the read failed or found nothing, and every
+    field is unset; a committed-move count; finished, with the count; or a named failure.
+    """
+
+    actions: int | None = None
+    finished: bool = False
+    # worker_failed:<stage>, or worker_status_malformed for a status that does not parse.
+    failure: str | None = None
+    # The status the read found, which the run keeps.
+    status: WorkerStatus | None = None
 
 
 class WorkerChannel(Protocol):
-    """Heartbeat and completion reported by a running worker."""
+    """Progress, completion and failure reported by a running worker."""
 
-    def report(self, run_id: str) -> WorkerReport: ...
+    def report(self, run_id: str, timeout: float) -> WorkerReport:
+        """One read, which may take no more than `timeout` seconds."""

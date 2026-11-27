@@ -201,13 +201,19 @@ class FakeProvider:
 
 @dataclass
 class FakeChannel:
+    """Each run's latest report stands until the next, as a status file does."""
+
     reports: dict[str, WorkerReport] = field(default_factory=dict)
 
-    def beat(self, run_id, at):
-        self.reports[run_id] = WorkerReport(last_seen=at, finished=False)
+    def progress(self, run_id):
+        """The worker commits one more move."""
+        self.reports[run_id] = WorkerReport(actions=self.actions(run_id) + 1)
 
-    def finish(self, run_id, at):
-        self.reports[run_id] = WorkerReport(last_seen=at, finished=True)
+    def finish(self, run_id):
+        self.reports[run_id] = WorkerReport(actions=self.actions(run_id), finished=True)
 
-    def report(self, run_id):
-        return self.reports.get(run_id, WorkerReport(last_seen=None, finished=False))
+    def actions(self, run_id):
+        return self.reports.get(run_id, WorkerReport()).actions or 0
+
+    def report(self, run_id, timeout):
+        return self.reports.get(run_id, WorkerReport())

@@ -209,14 +209,14 @@ def test_running_worker_kept_only_within_its_original_deadline_after_restart(clo
     deadline = cloud.ledger.get("r1").deadline
     stale = cloud.provider.seed(cloud.settings.owner_tag, run_tag("old"))
     cloud.clock.advance(2 * 3600 - 60)
-    cloud.channel.beat("r1", cloud.clock())
+    cloud.channel.progress("r1")
     restarted = cloud.restarted()
     restarted.recover()
     assert stale.id not in cloud.provider.inventory
     assert cloud.ledger.get("r1").state == "running"
     assert cloud.ledger.get("r1").deadline == deadline
     cloud.clock.advance(61)
-    cloud.channel.beat("r1", cloud.clock())
+    cloud.channel.progress("r1")
     restarted.tick()
     cloud.assert_torn_down("r1", "deadline")
 

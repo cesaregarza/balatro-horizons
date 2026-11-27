@@ -1,11 +1,11 @@
 """Install and start the worker on an active Droplet, then read its status file.
 
-The order is fixed: wait for SSH with the pinned host key, push the worker and its pins,
-push the bundle, then start the worker detached, so no tick waits on the install. Each
-later tick reads the worker's status file. The boot timeout covers all of it, from the
-create until the worker reports the game ready. Each step starts only while time is left
-before the earlier of the boot and run deadlines, read from the clock as it starts, and
-may take no more than that time.
+The order is fixed: wait for SSH with the pinned host key, push the worker, its driver
+and its pins, push the bundle, then start the worker detached, so no tick waits on the
+install. Each later tick reads the worker's status file. The boot timeout covers all of
+it, from the create until the worker reports that play has started. Each step starts
+only while time is left before the earlier of the boot and run deadlines, read from the
+clock as it starts, and may take no more than that time.
 """
 
 import math
@@ -24,7 +24,7 @@ from .ssh import RETRIED, Reply, ssh
 WORKER_DIR = "/var/lib/bh-worker"
 STATUS_COMMAND = f"cat {WORKER_DIR}/status.json 2>/dev/null || true"
 WORKER_SOURCE = Path(__file__).parent / "worker"
-WORKER_FILES = ("worker.py", "pins.toml")
+WORKER_FILES = ("worker.py", "driver.py", "pins.toml")
 CALL_SECONDS = 60
 # The bundle push may take all the time left, and no more.
 BUNDLE_SECONDS = math.inf
@@ -33,11 +33,12 @@ STATUS_BYTES = 64 * 1024
 
 @dataclass(frozen=True)
 class Progress:
-    """One boot step's result. With neither failure nor ready set, the run waits."""
+    """One boot step's result. With neither failure nor playing set, the run waits."""
 
     failure: str | None = None
-    ready: bool = False
-    # The worker's final report, kept on the run.
+    # Play has started, or has already finished.
+    playing: bool = False
+    # The worker's report, kept on the run.
     status: WorkerStatus | None = None
 
 
@@ -58,14 +59,14 @@ def boot_deadline(record, settings):
     return record.created_at + timedelta(seconds=settings.boot_timeout_seconds)
 
 
-def boot_stop_reason(record, settings, now):
-    """Why a provisioning run must stop at `now`, in the controller's order: a cancel, the
-    run deadline, then the boot deadline. Once no time is left, one of them holds."""
+def stop_reason(record, settings, now):
+    """Why a supervised run must stop at `now`, whatever its worker reports: a cancel, the
+    run deadline, then while it provisions, the boot deadline. Every check uses this."""
     if record.cancel_requested:
         return "cancelled"
     if now >= record.deadline:
         return "deadline"
-    if now >= boot_deadline(record, settings):
+    if record.state == "provisioning" and now >= boot_deadline(record, settings):
         return boot_timeout_reason(record)
     return None
 
@@ -96,7 +97,7 @@ class WorkerLink:
 
 
 class Install:
-    """Boot steps for one provisioning run, from an active Droplet to a ready game."""
+    """Boot steps for one provisioning run, from an active Droplet to the start of play."""
 
     def __init__(self, ledger, provider, link, settings, clock):
         self.ledger = ledger
@@ -146,7 +147,7 @@ class Install:
         return Progress()
 
     def install_calls(self, record):
-        """The pinned probe, the worker files, the bundle, then the detached start."""
+        """The pinned probe, the worker's files, the bundle, then the detached start."""
         bundle = self.link.access.bundle
         yield "probe", "true", None, CALL_SECONDS
         for name in WORKER_FILES:
@@ -166,18 +167,20 @@ class Install:
         if read.malformed:
             return Progress(failure="worker_status_malformed")
         status = read.status
-        if status is None or status.state == "running":
+        if status is None:
             return Progress()
         if status.state == "failed":
             return Progress(failure=f"worker_failed:{status.stage}", status=status)
-        return Progress(ready=True, status=status)
+        if status.state == "finished" or (status.stage, status.state) == ("play", "running"):
+            return Progress(playing=True, status=status)
+        return Progress()
 
     def time_left(self, record):
         """Read the clock: why the boot must stop now, if it must, and the seconds left
         before the earlier of the boot and run deadlines. Earlier calls' time is spent."""
         now = self.clock()
         ends = min(boot_deadline(record, self.settings), record.deadline)
-        return boot_stop_reason(record, self.settings, now), (ends - now).total_seconds()
+        return stop_reason(record, self.settings, now), (ends - now).total_seconds()
 
     def call(self, record, command, *, stdin, timeout):
         reply = self.link.call(record, command, stdin=stdin, timeout=timeout)

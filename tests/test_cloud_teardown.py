@@ -121,9 +121,9 @@ def test_untagged_and_foreign_resources_survive_every_path(cloud, path):
         controller = cloud.launched()
         cloud.clock.advance({"deadline": 7200, "heartbeat_lost": 121}.get(path, 0))
         if path == "deadline":
-            cloud.channel.beat("r1", cloud.clock())
+            cloud.channel.progress("r1")
         if path == "succeeded":
-            cloud.channel.finish("r1", cloud.clock())
+            cloud.channel.finish("r1")
         if path == "cancelled":
             controller.cancel("r1")
     controller.tick()

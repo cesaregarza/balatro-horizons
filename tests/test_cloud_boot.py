@@ -1,7 +1,7 @@
-"""Booting a run: SSH with the pinned host key, the install, and the worker's readiness.
+"""Booting a run: SSH with the pinned host key, the install, and the start of play.
 
 The fake transport stands in for OpenSSH and ssh-keygen, so nothing connects. A run
-stays provisioning until the worker reports the game ready, and the boot timeout
+stays provisioning until the worker reports that play has started, and the boot timeout
 covers the whole install. Calls can take time on the fake clock, so a tick can cross
 a deadline partway through.
 """
@@ -26,11 +26,12 @@ from cloud_support import (
 )
 
 from balatro_horizons.cloud.digitalocean import DigitalOceanClient
+from balatro_horizons.cloud.install import WORKER_SOURCE
 from balatro_horizons.cloud.ledger import Ledger
 from balatro_horizons.cloud.provider import ProviderError
 from balatro_horizons.cloud.status import status_report
 
-INSTALL = ["probe", "push_worker", "push_worker", "push_bundle", "start"]
+INSTALL = ["probe", "push_worker", "push_worker", "push_worker", "push_bundle", "start"]
 STEPS = ["probe", "push_worker", "push_bundle", "start", "status"]
 
 
@@ -51,22 +52,46 @@ def calls_for(cloud, step):
     return [call for call in cloud.transport.calls if call[0] == step]
 
 
-def test_an_active_droplet_stays_provisioning_until_the_game_is_ready(cloud):
-    cloud.transport.statuses = [b"", worker_status("running", "dependencies"), worker_status()]
+def test_an_active_droplet_stays_provisioning_until_play_starts(cloud):
+    # A ready game is not play yet, nor is a status kept from before play existed.
+    cloud.transport.statuses = [b"", worker_status("running", "dependencies"),
+                                worker_status("running", "ready"), worker_status("ready", "ready"),
+                                worker_status()]
     controller = launched_and_ticked(cloud, 0)
     states = []
-    for _ in range(4):
+    for _ in range(6):
         controller.tick()
         states.append(cloud.ledger.get("r1").state)
-    assert states == ["provisioning", "provisioning", "provisioning", "running"]
+    assert states == ["provisioning"] * 5 + ["running"]
 
 
-def test_a_ready_game_runs_and_the_run_keeps_the_worker_report(cloud):
-    cloud.launched()
-    report = getattr(cloud.ledger.get("r1"), "worker_status", None)
-    assert report is not None and (report.state, report.stage) == ("ready", "ready")
+def test_play_runs_and_the_run_keeps_the_worker_report(cloud):
+    launched_and_ticked(cloud, 2)
+    record = cloud.ledger.get("r1")
+    report = record.worker_status
+    assert record.state == "running"
+    assert report is not None and (report.state, report.stage) == ("running", "play")
     assert report.observed["kernel"] == "6.8.0-test"
     assert cloud.transport.steps() == [*INSTALL, "status"]
+
+
+def test_a_game_that_finished_by_the_first_read_runs_then_succeeds(cloud):
+    cloud.transport.statuses = [worker_status("finished", "play", actions=3)]
+    controller = launched_and_ticked(cloud, 2, channel=None)
+    assert cloud.ledger.get("r1").state == "running"
+    controller.tick()
+    record = cloud.assert_torn_down("r1", "succeeded")
+    assert getattr(record, "results_copy", None) == "copied"
+    assert cloud.transport.steps() == [*INSTALL, "status", "status", "results"]
+
+
+def test_the_install_pushes_the_worker_its_driver_and_its_pins(cloud):
+    launched_and_ticked(cloud, 1)
+    pushes = calls_for(cloud, "push_worker")
+    names = [shlex.split(call[1][-1])[-1].rsplit("/", 1)[-1] for call in pushes]
+    assert names == ["worker.py", "driver.py", "pins.toml"]
+    for name, (_, _, stdin, _) in zip(names, pushes, strict=True):
+        assert stdin == (WORKER_SOURCE / name).read_bytes()
 
 
 def test_nothing_is_pushed_until_the_pinned_host_key_answers(cloud):
@@ -234,20 +259,20 @@ def test_an_earlier_run_deadline_stops_the_install_in_the_tick(tmp_path):
 
 
 def test_each_step_may_take_only_the_time_left_when_it_starts(tmp_path):
-    # Each call takes five seconds. The install runs from t=1,150 to t=1,175, and the next
-    # tick's read from t=1,185 to t=1,190, before the boot deadline.
+    # Each call takes five seconds. The install runs from t=1,150 to t=1,180, and the next
+    # tick's read from t=1,190 to t=1,195, before the boot deadline.
     cloud = timed_cloud(tmp_path)
     cloud.transport.durations = dict.fromkeys(STEPS, 5)
     controller = ticked_at(cloud, 1150)
     cloud.clock.advance(cloud.settings.poll_seconds)
     controller.tick()
     assert cloud.transport.steps() == [*INSTALL, "status"]
-    assert timeouts(cloud) == [50, 45, 40, 35, 30, 15]
+    assert timeouts(cloud) == [50, 45, 40, 35, 30, 25, 10]
     assert cloud.ledger.get("r1").state == "running"
 
 
 @pytest.mark.parametrize("returns_at", [1201, 1200])
-def test_a_ready_report_read_by_the_boot_deadline_does_not_count(tmp_path, returns_at):
+def test_a_play_report_read_by_the_boot_deadline_does_not_count(tmp_path, returns_at):
     cloud = timed_cloud(tmp_path)
     cloud.transport.durations = {"status": returns_at - 1199}
     controller = launched_and_ticked(cloud, 1)
@@ -258,7 +283,7 @@ def test_a_ready_report_read_by_the_boot_deadline_does_not_count(tmp_path, retur
     assert calls_for(cloud, "status")[0][3] == 1
 
 
-def test_a_ready_report_read_in_time_runs_from_when_the_read_returns(tmp_path):
+def test_a_play_report_read_in_time_runs_from_when_the_read_returns(tmp_path):
     cloud = timed_cloud(tmp_path)
     cloud.transport.durations = {"status": 5}
     controller = launched_and_ticked(cloud, 1)
@@ -388,7 +413,7 @@ def test_a_cleanup_read_keeps_its_full_retry_policy_past_the_boot_deadline(tmp_p
 
 
 def test_the_worker_starts_with_the_bundle_descriptor_and_the_run_deadline(cloud):
-    cloud.launched()
+    launched_and_ticked(cloud, 1)
     starts = calls_for(cloud, "start")
     assert len(starts) == 1
     command = shlex.split(starts[0][1][-1])
@@ -401,7 +426,7 @@ def test_the_worker_starts_with_the_bundle_descriptor_and_the_run_deadline(cloud
 
 
 def test_every_ssh_call_uses_the_pinned_host_key_and_the_access_key(cloud):
-    cloud.launched()
+    launched_and_ticked(cloud, 2)
     address = getattr(cloud.ledger.get("r1"), "address", None)
     pin = cloud.root / "known_hosts" / "r1"
     assert cloud.transport.calls and address
@@ -415,7 +440,7 @@ def test_every_ssh_call_uses_the_pinned_host_key_and_the_access_key(cloud):
 
 
 def test_the_address_is_kept_for_ssh_but_never_shown_in_status(cloud):
-    cloud.launched()
+    launched_and_ticked(cloud, 1)
     address = getattr(cloud.ledger.get("r1"), "address", None)
     assert address and address.startswith("192.0.2.")
     report = status_report(Ledger(cloud.root), cloud.settings, cloud.clock())
@@ -453,13 +478,6 @@ def test_a_host_key_that_cannot_be_made_refuses_before_anything_is_recorded(clou
     assert cloud.ledger.get("r1") is None and cloud.creates() == []
 
 
-def test_through_the_ssh_channel_a_ready_game_ends_the_run(cloud):
-    controller = cloud.launched(controller=cloud.controller(channel=None))
-    controller.tick()
-    cloud.assert_torn_down("r1", "succeeded")
-    assert cloud.transport.steps() == [*INSTALL, "status", "status"]
-
-
 def test_through_the_ssh_channel_an_unreadable_worker_is_no_news(cloud):
     controller = cloud.launched(controller=cloud.controller(channel=None))
     cloud.transport.refusals = ["unreachable"] * 5
@@ -473,15 +491,17 @@ def test_through_the_ssh_channel_an_unreadable_worker_is_no_news(cloud):
 
 
 @pytest.mark.parametrize("returns_at", [7201, 7200])
-def test_through_the_ssh_channel_a_ready_report_read_by_the_run_deadline_does_not_succeed(
+def test_through_the_ssh_channel_a_finished_report_read_by_the_run_deadline_does_not_succeed(
         cloud, returns_at):
     # The run deadline falls at t=7,200, and the read starts a second before it.
+    cloud.transport.statuses = [worker_status(), worker_status("finished", "play", actions=9)]
     controller = cloud.launched(controller=cloud.controller(channel=None))
     cloud.transport.durations = {"status": returns_at - 7199}
     cloud.clock.advance(7199)
     controller.tick()
     assert cloud.transport.steps() == [*INSTALL, "status", "status"]
-    cloud.assert_torn_down("r1", "deadline")
+    record = cloud.assert_torn_down("r1", "deadline")
+    assert getattr(record, "results_copy", None) is None
 
 
 def test_through_the_ssh_channel_the_heartbeat_grace_is_judged_when_the_read_returns(cloud):

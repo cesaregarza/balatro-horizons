@@ -1,14 +1,18 @@
-"""The worker: install the game on this Droplet, start it, and report once it is ready.
+"""The worker: install the game on this Droplet, start it, play one scripted game, and report.
 
-The controller copies this file and its pins here, then starts it as root with
-systemd-run. It uses only the standard library and imports nothing from the controller's
-package. Before each stage it writes the stage to its status file, which the controller
-reads over SSH. A failure writes `failed` with the stage and a short reason, then the
-worker exits. The game's token and instance ID are made here and never leave the Droplet.
+The controller copies this file, the driver and the pins here, then starts it as root
+with systemd-run. It uses only the standard library and imports nothing from the
+controller's package. It writes its status file, which the controller reads over SSH,
+as each stage starts, after each committed move and at the end. A failure writes
+`failed` with the stage and a short reason, then the worker exits. The game's token and
+instance ID are made here and never leave the Droplet.
 """
 
 import argparse
+import errno
 import hashlib
+import http.client
+import importlib.util
 import json
 import os
 import re
@@ -39,6 +43,7 @@ DISPLAY = ":99"
 XVFB = ("Xvfb", DISPLAY, "-screen", "0", "1280x720x24", "-nolisten", "tcp")
 LOOPBACK = "127.0.0.1"
 API_PORT = 12346
+API_URL = f"http://{LOOPBACK}:{API_PORT}/"
 MOD_SETTINGS = {
     "BALATROBOT_ANIMATION_FPS": "60",
     "BALATROBOT_DEBUG": "0",
@@ -64,17 +69,12 @@ RUNTIME_SETTINGS = {
 # The pilot's limits. Its smaller memory limits ran out of memory.
 GAME_LIMITS = ("CPUQuota=200%", "MemoryMax=6656M")
 STARTUP_SECONDS = 180
-INSPECT_SECONDS = 10
 GLXINFO_SECONDS = 20
 CLOUD_INIT_SECONDS = 30
 
 
 class StageFailed(Exception):
     """Ends the current stage; the message is the reason the status file reports."""
-
-
-class RpcProblem(Exception):
-    pass
 
 
 class Layout:
@@ -89,6 +89,7 @@ class Layout:
         self.home = home
         self.display_socket = display_socket
         self.status = worker / "status.json"
+        self.results = worker / "results.json"
         self.log = worker / "worker.log"
         self.env_file = worker / "game.env"
         self.downloads = worker / "downloads"
@@ -145,6 +146,8 @@ class Machine:
         return True
 
     def post(self, url, body, timeout):
+        """The decoded reply; OSError, the driver's sign of a lost answer, when no reply came
+        back that could be read."""
         request = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
                                          headers={"Content-Type": "application/json"})
         # The game's API is on loopback, so no proxy may stand in between.
@@ -152,8 +155,8 @@ class Machine:
         try:
             with opener.open(request, timeout=timeout) as response:
                 return json.loads(response.read(1 << 20))
-        except (OSError, ValueError) as error:
-            raise RpcProblem(type(error).__name__) from None
+        except (OSError, ValueError, http.client.HTTPException) as error:
+            raise OSError(type(error).__name__) from None
 
     def sleep(self, seconds):
         time.sleep(seconds)
@@ -166,8 +169,8 @@ class Worker:
         self.clock = clock
         self.token = secrets.token_hex(32)
         self.instance_id = uuid.uuid4().hex
-        self.job = self.pins = None
-        self.status = {"stage": "packages", "state": "running", "reason": None,
+        self.job = self.pins = self.driver = self.rpc = self.game = None
+        self.status = {"stage": "packages", "state": "running", "reason": None, "actions": 0,
                        "started_at": {}, "observed": {}}
 
     def stages(self):
@@ -175,12 +178,18 @@ class Worker:
             ("packages", self.install_packages), ("dependencies", self.install_dependencies),
             ("bundle", self.unpack_bundle), ("user", self.create_user),
             ("display", self.start_display), ("game", self.start_game),
-            ("ready", self.wait_until_ready),
+            ("ready", self.wait_until_ready), ("play", self.play),
         )
 
     def run(self, job, pins):
-        """Every stage in order, then the final report; the exit status is 0 only when ready."""
+        """Every stage in order, then the final report; the exit status is 0 only once play
+        has finished. The driver is loaded first, so a missing one costs no install."""
         self.job, self.pins = job, pins
+        try:
+            self.driver = load_driver()
+        except StageFailed as failure:
+            return self.abort("packages", str(failure))
+        self.rpc = self.driver.Rpc(self.machine.post, API_URL, self.token)
         for stage, action in self.stages():
             self.begin(stage)
             try:
@@ -189,7 +198,7 @@ class Worker:
                 return self.finish("failed", str(failure))
             except Exception as error:
                 return self.finish("failed", f"unexpected {type(error).__name__}")
-        return self.finish("ready")
+        return self.finish("finished")
 
     def abort(self, stage, reason):
         self.begin(stage)
@@ -202,14 +211,25 @@ class Worker:
         self.write_status()
 
     def finish(self, state, reason=None):
+        """The final report. A failure adds the log tails. A finished game first writes its
+        results, so the controller finds them once the status says finished, and results that
+        cannot be built or written fail the play stage instead."""
         self.status.update(state=state, reason=reason and reason[:200],
                            finished_at=self.clock().isoformat())
         self.status["observed"].update(self.observe())
+        if state == "finished":
+            try:
+                write_private(self.layout.results, json.dumps(self.results(), sort_keys=True))
+            except Exception as error:
+                # An OSError is named by its errno, such as ENOSPC; anything else, by its type.
+                code = isinstance(error, OSError) and errno.errorcode.get(error.errno)
+                state, reason = "failed", "results not written: " + (code or type(error).__name__)
+                self.status.update(state=state, reason=reason)
         if state == "failed":
             log("failed: " + reason)
             self.status["evidence"] = self.evidence()
         self.write_status()
-        return 0 if state == "ready" else 1
+        return 0 if state == "finished" else 1
 
     def write_status(self):
         write_private(self.layout.status, json.dumps(self.status, sort_keys=True))
@@ -256,16 +276,13 @@ class Worker:
                           "--no-same-owner", *options], timeout=APT_SECONDS)
 
     def staged_game(self):
-        """The bundle holds either the game directory's contents or the directory itself.
-
-        Either way the game directory has the executable and the mod directory.
-        """
-        for candidate in (self.layout.staged_bundle, self.layout.staged_bundle / "game"):
-            if (candidate / GAME_EXECUTABLE).is_file():
-                if not (candidate / MOD_DIRECTORY).is_dir():
-                    raise StageFailed("bundle has no mod directory")
-                return candidate
-        raise StageFailed("bundle has no game executable")
+        """The bundle's top level is the game directory: the executable and the mod directory."""
+        game = self.layout.staged_bundle
+        if not (game / GAME_EXECUTABLE).is_file():
+            raise StageFailed("bundle has no game executable")
+        if not (game / MOD_DIRECTORY).is_dir():
+            raise StageFailed("bundle has no mod directory")
+        return game
 
     def create_user(self):
         if self.machine.run(["id", "-u", RUN_USER], check=False).returncode != 0:
@@ -350,8 +367,8 @@ class Worker:
             if not self.machine.unit_active("bh-game"):
                 raise StageFailed("game exited")
             try:
-                result = self.inspect()
-            except RpcProblem as error:
+                result = self.rpc.inspect()
+            except self.driver.RpcFailed as error:
                 problem = str(error)
             else:
                 if result.get("state") == "MENU":
@@ -361,12 +378,29 @@ class Worker:
             self.machine.sleep(1)
         raise StageFailed(f"not ready: {problem}")
 
-    def inspect(self):
-        request_id = uuid.uuid4().hex
-        request = {"jsonrpc": "2.0", "id": request_id, "method": "bh_inspect",
-                   "params": {"_bh_token": self.token}}
-        reply = self.machine.post(f"http://{LOOPBACK}:{API_PORT}/", request, INSPECT_SECONDS)
-        return rpc_result(request_id, reply)
+    def play(self):
+        """One scripted game, its seed observed first; each committed move is reported."""
+        seed = self.status["observed"]["seed"] = self.driver.new_seed()
+        self.game = self.driver.Game(
+            self.rpc, running=lambda: self.machine.unit_active("bh-game"),
+            committed=self.committed, clock=self.clock, sleep=self.machine.sleep)
+        try:
+            self.status["outcome"] = self.game.play(seed)
+        except self.driver.PlayFailed as failure:
+            raise StageFailed(str(failure)) from None
+
+    def committed(self, count):
+        self.status["actions"] = count
+        self.write_status()
+
+    def results(self):
+        """What the controller copies back. It never holds the token, the instance ID or a
+        request ID."""
+        return {"outcome": self.status["outcome"], "actions": len(self.game.moves),
+                "ante": self.game.ante, "round": self.game.round,
+                "seed": self.status["observed"]["seed"], "deck": self.driver.DECK,
+                "stake": self.driver.STAKE, "moves": self.game.moves,
+                "started_at": self.status["started_at"], "observed": self.status["observed"]}
 
     def observe(self):
         """What this run actually got: steamrt4 and the apt packages are not pinned."""
@@ -419,17 +453,6 @@ def verify(path, size, sha256):
         raise StageFailed(f"{path.name} sha256 mismatch")
 
 
-def rpc_result(request_id, reply):
-    """The reply must answer this request, and an error reply is a failure."""
-    if not isinstance(reply, dict) or reply.get("id") != request_id:
-        raise RpcProblem("reply id mismatch")
-    if reply.get("error") is not None:
-        raise RpcProblem("error reply")
-    if not isinstance(reply.get("result"), dict):
-        raise RpcProblem("no result")
-    return reply["result"]
-
-
 def game_version(result):
     found = result.get("bh")
     return str(found.get("game_version")) if isinstance(found, dict) else "unknown"
@@ -468,6 +491,19 @@ def tail(path):
 
 def log(message):
     print(f"{datetime.now(UTC).isoformat()} {message}", flush=True)
+
+
+def load_driver():
+    """The driver beside this file. One that cannot load is a named failure."""
+    # `python3 -I` keeps this directory off the import path, so the driver loads by its path.
+    path = Path(__file__).with_name("driver.py")
+    try:
+        spec = importlib.util.spec_from_file_location("driver", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception:
+        raise StageFailed("driver unreadable") from None
+    return module
 
 
 class Arguments(argparse.ArgumentParser):

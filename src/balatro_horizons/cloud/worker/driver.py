@@ -1,0 +1,374 @@
+"""The scripted driver: one game through the game's local API, with no model.
+
+The worker loads this file by its path and calls it once the game is ready, in the
+worker's own process, with the run's token and the worker's transport. It uses only the
+standard library and imports nothing from the controller's package. Every request is a
+JSON-RPC 2.0 call that carries the token and a fresh ID.
+
+A move whose answer is lost is never sent again: the driver asks once, by the move's
+own ID, whether it committed, and play goes on only if it did. Play ends at a game over,
+a win or the action cap. Anything else ends it as a failure with a named reason.
+
+The policy follows the pilot's scripted policy: the same choices from the same public
+observation fields. It exercises the game; it does not try to play it well.
+"""
+
+import secrets
+import uuid
+from collections import Counter
+from datetime import timedelta
+from itertools import combinations
+
+# Committed moves per game. A live check needs 50 or a normal game over; the cap bounds
+# a game that never ends.
+ACTION_CAP = 200
+DECK = "RED"
+STAKE = "WHITE"
+# The alphabet the run API draws its seeds from: no 0, 1, I or O.
+SEED_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+SEED_LENGTH = 8
+# How long each call may take, in seconds.
+INSPECT_SECONDS = 10
+STATUS_SECONDS = 12
+MOVE_SECONDS = 85
+# Between moves the game must settle: ready, and not busy.
+SETTLE_POLL_SECONDS = 0.25
+SETTLE_SECONDS = 15
+# Each poker hand's chips and mult before any level, for a hand the observation omits.
+BASE_SCORES = {
+    "High Card": (5, 1), "Pair": (10, 2), "Two Pair": (20, 2), "Three of a Kind": (30, 3),
+    "Straight": (30, 4), "Flush": (35, 4), "Full House": (40, 4), "Four of a Kind": (60, 7),
+    "Straight Flush": (100, 8),
+}
+# A card's rank as the game names it, long or short. An Ace ranks high.
+RANKS = {str(number): number for number in range(2, 11)} | {
+    "Jack": 11, "Queen": 12, "King": 13, "Ace": 14, "T": 10, "J": 11, "Q": 12, "K": 13, "A": 14,
+}
+ACE = 14
+WHEEL = [2, 3, 4, 5, ACE]
+# A price the policy never meets, for an offer that shows none.
+UNPRICED = 10**9
+
+
+class PlayFailed(Exception):
+    """Ends play; the message is the reason the worker reports."""
+
+
+class RpcFailed(Exception):
+    """A call that brought back no result."""
+
+
+class NoAnswer(RpcFailed):
+    """No reply came back that answers the call, so what the call did is unknown."""
+
+
+class Refused(RpcFailed):
+    """The game answered the call with an error."""
+
+
+def new_seed():
+    return "".join(secrets.choice(SEED_ALPHABET) for _ in range(SEED_LENGTH))
+
+
+def new_request_id():
+    """A fresh random ID, which owes nothing to the token or the game's instance."""
+    return uuid.uuid4().hex
+
+
+class Rpc:
+    """JSON-RPC 2.0 calls to the game's local API, each with the run's token.
+
+    `post(url, body, timeout)` returns the decoded reply, and raises OSError when no reply
+    came back that could be read.
+    """
+
+    def __init__(self, post, url, token):
+        self.post = post
+        self.url = url
+        self.token = token
+
+    def call(self, method, params, timeout, request_id=None):
+        """The call's result. NoAnswer when no reply answers it; Refused for an error reply."""
+        request_id = request_id or new_request_id()
+        body = {"jsonrpc": "2.0", "id": request_id, "method": method,
+                "params": params | {"_bh_token": self.token}}
+        try:
+            reply = self.post(self.url, body, timeout)
+        except OSError as error:
+            raise NoAnswer(str(error) or type(error).__name__) from None
+        if not isinstance(reply, dict) or reply.get("id") != request_id:
+            raise NoAnswer("reply id mismatch")
+        if reply.get("error") is not None:
+            raise Refused("error reply")
+        if not isinstance(reply.get("result"), dict):
+            raise NoAnswer("no result")
+        return reply["result"]
+
+    def inspect(self):
+        return self.call("bh_inspect", {}, INSPECT_SECONDS)
+
+
+class Game:
+    """One scripted game, from its start to its end.
+
+    `running()` says whether the game's process is still up, and `committed(count)` hears
+    of each committed move. `clock` and `sleep` are the worker's, so tests never wait.
+    """
+
+    def __init__(self, rpc, *, running, committed, clock, sleep, cap=ACTION_CAP):
+        self.rpc = rpc
+        self.running = running
+        self.committed = committed
+        self.clock = clock
+        self.sleep = sleep
+        self.cap = cap
+        # Each committed move: its method, its action if it has one, and the state it left.
+        self.moves = []
+        # Where the latest observation found the game.
+        self.ante = self.round = None
+
+    def play(self, seed):
+        """Start a game from `seed`, then move until it ends; how it ended."""
+        policy = Policy()
+        self.move("start", {"deck": DECK, "seed": seed, "stake": STAKE})
+        while True:
+            observation = self.settled()
+            self.ante = whole(observation.get("ante_num"))
+            self.round = whole(observation.get("round_num"))
+            if observation.get("won"):
+                return "won"
+            if observation.get("state") == "GAME_OVER":
+                return "game_over"
+            if len(self.moves) >= self.cap:
+                return "action_cap"
+            self.move(*policy.choose(observation))
+
+    def move(self, method, params):
+        """Send one move and record it once it has committed."""
+        request_id = new_request_id()
+        try:
+            result = self.rpc.call(method, params, MOVE_SECONDS, request_id)
+        except Refused:
+            raise PlayFailed(f"move refused: {method}") from None
+        except NoAnswer:
+            result = self.resolve(method, request_id)
+        self.moves.append({"method": method, "action": params.get("action"),
+                           "state": state_name(result)})
+        self.committed(len(self.moves))
+
+    def resolve(self, method, request_id):
+        """Ask once, by the move's own ID, whether it committed. It is never sent again."""
+        try:
+            status = self.rpc.call("bh_request_status", {"request_id": request_id},
+                                   STATUS_SECONDS)
+        except RpcFailed:
+            raise PlayFailed(f"uncertain move: {method}") from None
+        if status.get("status") != "committed":
+            raise PlayFailed(f"uncertain move: {method}")
+        return status.get("response")
+
+    def settled(self):
+        """The observation once the game is ready for a move, inspected every quarter second
+        for at most 15 seconds. An inspect that fails counts as not ready."""
+        give_up = self.clock() + timedelta(seconds=SETTLE_SECONDS)
+        while self.clock() < give_up:
+            if not self.running():
+                raise PlayFailed("game exited")
+            try:
+                observation = self.rpc.inspect()
+            except RpcFailed:
+                observation = {}
+            if ready_for_a_move(observation):
+                return observation
+            self.sleep(SETTLE_POLL_SECONDS)
+        raise PlayFailed("not ready between moves")
+
+
+def ready_for_a_move(observation):
+    bh = part(observation, "bh")
+    return bool(bh.get("ready")) and not bh.get("busy")
+
+
+def state_name(result):
+    """The state a move left the game in, as its result names it, if it does."""
+    state = result.get("state") if isinstance(result, dict) else None
+    return state[:40] if isinstance(state, str) else None
+
+
+def whole(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def part(value, key):
+    """The object under `key`, or an empty one when `value` has none there."""
+    found = value.get(key) if isinstance(value, dict) else None
+    return found if isinstance(found, dict) else {}
+
+
+class Policy:
+    """The pilot's scripted choices. A short game still exercises a discard, a pack, a planet
+    and a reroll: each is made once when the game allows it, and the discard again while
+    the hand is weak."""
+
+    def __init__(self):
+        self.discarded = self.opened_pack = self.used_planet = self.rerolled = False
+
+    def choose(self, observation):
+        """The next move as (method, params), from the public observation only."""
+        # Never the private random state, the seed or the undealt deck.
+        state = {key: value for key, value in observation.items()
+                 if key not in ("bh", "seed", "cards")}
+        phase = state.get("state")
+        if phase == "BLIND_SELECT":
+            return "select", {}
+        if phase == "ROUND_EVAL":
+            return "cash_out", {}
+        if phase == "SELECTING_HAND":
+            return self.hand_move(state)
+        if phase == "SHOP":
+            return self.shop_move(state)
+        if part(state, "pack").get("count", 0) and phase not in ("MENU", "GAME_OVER"):
+            return pack_move(state)
+        raise PlayFailed(f"unhandled state: {phase}")
+
+    def hand_move(self, state):
+        """Play the best hand. Discard the other cards instead the first time, and again
+        while the best is a High Card or a Pair with two or more discards left."""
+        selected, name = best_hand(state)
+        others = [index for index, card in enumerate(hand_cards(state))
+                  if index not in selected and not card.get("forced_selection")]
+        discards = part(state, "round").get("discards_left", 0)
+        weak = name in ("High Card", "Pair") and discards > 1
+        if others and discards > 0 and (not self.discarded or weak):
+            self.discarded = True
+            return "bh_action", {"action": "discard", "cards": others[:5]}
+        return "bh_action", {"action": "play_hand", "cards": selected}
+
+    def shop_move(self, state):
+        """Buy the first offer that fits: a joker there is room for or, once a game, a usable
+        planet, used at once. Failing that, open the first affordable pack once a game,
+        reroll once if money allows, and leave."""
+        money = state.get("money", 0)
+        for index, card in enumerate(part(state, "shop").get("cards", [])):
+            affordable = part(card, "cost").get("buy", UNPRICED) <= money
+            if card.get("set") in ("JOKER", "Joker"):
+                if (affordable and card.get("acquire_allowed", True)
+                        and has_room(part(state, "jokers"))
+                        and not part(card, "modifier").get("rental")):
+                    return "bh_action", {"action": "buy", "area": "shop", "index": index}
+            elif (str(card.get("set", "")).upper() == "PLANET" and affordable
+                    and card.get("usable") and not self.used_planet):
+                self.used_planet = True
+                return "bh_action", {"action": "buy", "area": "shop", "index": index,
+                                     "mode": "buy_and_use"}
+        if not self.opened_pack:
+            for index, card in enumerate(part(state, "packs").get("cards", [])):
+                if part(card, "cost").get("buy", UNPRICED) <= money:
+                    self.opened_pack = True
+                    return "bh_action", {"action": "buy", "area": "packs", "index": index}
+        if not self.rerolled and money >= part(state, "round").get("reroll_cost", 5) + 5:
+            self.rerolled = True
+            return "reroll", {}
+        return "next_round", {}
+
+
+def pack_move(state):
+    """Take the first card in the open pack that can be used now, with its fewest targets,
+    or skip the pack."""
+    hand = hand_cards(state)
+    for index, card in enumerate(part(state, "pack").get("cards", [])):
+        targets = card.get("min_targets", 0)
+        kind = str(card.get("set", "")).upper()
+        if targets > len(hand):
+            continue
+        if kind == "JOKER" and not has_room(part(state, "jokers")):
+            continue
+        if kind in ("TAROT", "PLANET", "SPECTRAL") and not card.get("usable"):
+            continue
+        return "bh_action", {"action": "choose_pack", "area": "pack", "index": index,
+                             "targets": list(range(targets))}
+    return "bh_action", {"action": "skip_pack"}
+
+
+def has_room(jokers):
+    return jokers.get("count", 0) < jokers.get("limit", 5)
+
+
+def hand_cards(state):
+    return part(state, "hand").get("cards", [])
+
+
+def best_hand(state):
+    """The cards to play, as hand positions, and the poker hand they make.
+
+    Every selection of one to five cards that keeps the forced cards is scored. The best
+    score wins, then the fewer cards, then the later positions.
+    """
+    cards = hand_cards(state)
+    forced = {index for index, card in enumerate(cards) if card.get("forced_selection")}
+    limit = min(5, part(state, "hand").get("highlighted_limit", 5), len(cards))
+    choices = []
+    for size in range(1, limit + 1):
+        for chosen in combinations(range(len(cards)), size):
+            if forced <= set(chosen):
+                points, name = score([cards[index] for index in chosen], part(state, "hands"))
+                choices.append((points, -size, chosen, name))
+    if not choices:
+        raise PlayFailed("no legal hand")
+    _, _, chosen, name = max(choices)
+    return list(chosen), name
+
+
+def score(cards, hands):
+    """The score the policy expects for playing these cards, and the poker hand they make.
+
+    The hand's chips and mult are its level in `hands`, or else its base values. Each
+    scoring card that is not debuffed adds its chips: an Ace 11, a face card 10.
+    """
+    ranks = [rank(card) for card in cards]
+    name, scoring = poker_hand(cards, ranks)
+    base_chips, base_mult = BASE_SCORES[name]
+    level = part(hands, name)
+    chips = float(level.get("chips", base_chips))
+    mult = float(level.get("mult", base_mult))
+    for card, value in zip(cards, ranks, strict=True):
+        if value in scoring and not part(card, "state").get("debuff"):
+            chips += 11 if value == ACE else min(value, 10)
+    return chips * mult, name
+
+
+def poker_hand(cards, ranks):
+    """The poker hand the cards make, and the ranks that score in it."""
+    counts = Counter(value for value in ranks if value)
+    # The ranks by how many cards share each, then by rank, highest first.
+    groups = sorted(counts, key=lambda value: (counts[value], value), reverse=True)
+    sizes = sorted(counts.values(), reverse=True)
+    suits = [part(card, "value").get("suit") for card in cards]
+    flush = len(cards) == 5 and all(ranks) and all(suits) and len(set(suits)) == 1
+    distinct = sorted(set(ranks))
+    straight = (len(distinct) == 5 and 0 not in distinct
+                and (distinct[-1] - distinct[0] == 4 or distinct == WHEEL))
+    if straight and flush:
+        return "Straight Flush", ranks
+    if sizes[:1] == [4]:
+        return "Four of a Kind", groups[:1]
+    if sizes == [3, 2]:
+        return "Full House", ranks
+    if flush:
+        return "Flush", ranks
+    if straight:
+        return "Straight", ranks
+    if sizes[:1] == [3]:
+        return "Three of a Kind", groups[:1]
+    if sizes[:2] == [2, 2]:
+        return "Two Pair", groups[:2]
+    if sizes[:1] == [2]:
+        return "Pair", groups[:1]
+    return "High Card", [max(ranks, default=0)]
+
+
+def rank(card):
+    """The card's rank, or 0 for a face-down card or a rank the policy cannot read."""
+    if part(card, "state").get("hidden"):
+        return 0
+    return RANKS.get(str(part(card, "value").get("rank")), 0)
