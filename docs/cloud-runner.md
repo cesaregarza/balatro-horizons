@@ -376,12 +376,26 @@ only when both of these hold, in order:
 2. Afterwards, a by-ID read returns 404 and the run-tag listing omits the ID.
 
 Each DELETE attempt is recorded durably on the resource before the request is
-sent. On every teardown pass, acknowledged or not, the controller also reads the
-action log for each ID's destroy action, and records the best one it found and when
-it looked, so every live run shows whether the action-log path would have held.
-A completed destroy, once recorded, is never replaced, because a later read may no
-longer list it. Settling never waits for that read, and a read that fails records
-nothing.
+sent. When every recorded ID's DELETE is acknowledged, a pass goes straight from
+the deletes to the two absence checks and settles without reading the action log,
+so the verified time and the settled cost never include a read of it. An ID with
+no acknowledgment can clear only on the action log, so for it the pass reads the
+log on the way, within the time left before the pass gives up: the cleanup window,
+or a fresh `cleanup_verify_seconds` window for the single pass that retries a
+`cleanup_unverified` run. A read cut off at that time, or one that returns after
+it, finds nothing. A 404 alone, a read that failed and a read that ran out of time
+never clear the ID, and when the window ends the run is marked `cleanup_unverified`.
+
+Once a run has settled, however it settled, the controller looks its IDs up in the
+action log once, so each run's record shows whether the action-log path would also
+have cleared it. One 60-second deadline covers the whole lookup: every page,
+attempt and wait. Each ID records when the lookup ended, how it ended (`found`,
+`not_found`, `failed` or `timed_out`) and the best destroy action it found. A
+completed destroy, once recorded, is never replaced, because a later read may no
+longer list it. The lookup never changes the settled run: its state, verified
+time, settled cost and reservation stay as settling left them. It is not retried,
+so a crash between settling and the lookup leaves a settled run with no lookup
+recorded.
 
 Before either kind of evidence, a 404 or an empty listing proves nothing. The run
 keeps its state, reservation and slot, and later passes read again; if the ID

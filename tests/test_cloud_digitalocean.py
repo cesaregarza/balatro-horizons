@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
-from cloud_support import FINGERPRINT, FIREWALL_ID, Cloud, DigitalOceanStub
+from cloud_support import FINGERPRINT, FIREWALL_ID, Cloud, DigitalOceanStub, FakeClock
 
 from balatro_horizons.cli import main
 from balatro_horizons.cloud.digitalocean import DigitalOceanClient, client_from_environment
@@ -392,6 +392,57 @@ def test_a_cleanup_read_waits_for_the_whole_answer_on_the_calling_thread():
     except ProviderError as error:
         outcome = str(error)
     assert (outcome, [thread for thread, _ in seen]) == (7, [threading.get_ident()])
+
+
+def destroy_listing(pages, budget, refused=()):
+    """List the destroy actions from a log of `pages` pages, each answered 20 seconds on a
+    fake clock, within `budget` seconds, or with no budget when it is None. The first
+    request for a page in `refused` is answered 429 with a 30 second retry-after. Returns
+    the outcome, each request's page with the limit it carried on one phase, and the waits."""
+    clock, seen, waits = FakeClock(), [], []
+    started = clock()
+
+    def handler(request):
+        page = int(request.url.params["page"])
+        seen.append((page, request.extensions["timeout"]["read"]))
+        if page in refused and [p for p, _ in seen].count(page) == 1:
+            return httpx.Response(429, headers={"retry-after": "30"})
+        clock.advance(20)
+        following = {"next": f"https://api.digitalocean.com/v2/actions?page={page + 1}"}
+        return httpx.Response(200, json={"actions": [], "meta": {"total": 0},
+                                         "links": {"pages": following} if page < pages else {}})
+
+    def wait(seconds):
+        waits.append(seconds)
+        clock.advance(seconds)
+
+    def time_left():
+        return budget - (clock() - started).total_seconds()
+
+    read = DigitalOceanClient(TOKEN, transport=httpx.MockTransport(handler),
+                              sleep=wait).list_destroy_actions
+    try:
+        outcome = len(read() if budget is None else read(time_left=time_left))
+    except ProviderError as error:
+        outcome = str(error)
+    return outcome, seen, waits
+
+
+@pytest.mark.parametrize("pages,budget,refused,seen,waits", [
+    # Each attempt's limit is cut to the time left, and no page starts once none is.
+    (4, 50, (), [(1, 30), (2, 30), (3, 10)], []),
+    # A wait before a retry is cut to the time left too.
+    (3, 45, (2,), [(1, 30), (2, 25)], [25]),
+    (1, 0, (), [], []),
+], ids=["attempts", "waits", "none_left"])
+def test_a_budgeted_destroy_listing_fits_every_page_in_the_time_left(pages, budget, refused,
+                                                                      seen, waits):
+    assert destroy_listing(pages, budget, refused) == ("NO_TIME_LEFT", seen, waits)
+
+
+def test_an_unbudgeted_destroy_listing_keeps_its_full_retry_policy():
+    assert destroy_listing(3, None, refused=(2,)) == (
+        0, [(1, 30), (2, 30), (2, 30), (3, 30)], [30])
 
 
 def test_missing_token_is_refused_before_any_request(monkeypatch):
