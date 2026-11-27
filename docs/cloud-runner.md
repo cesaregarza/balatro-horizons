@@ -124,7 +124,9 @@ and the game's stderr. The worker then exits.
 8. `play`: the driver plays one game, described below. The status file is written
    again after each committed move. Play ends at a game over, a win or the action
    cap, and the worker then writes its results and the `finished` status. Any
-   other end fails the stage with a named reason.
+   other end fails the stage with a named reason. Results that cannot be built
+   or written fail it too, with the reason `results not written: <code>`, where
+   the code is the errno name, such as `ENOSPC`, or else the error's type.
 
 The game's token and instance ID are made on the Droplet and never leave it. They
 are taken out of the log tails, and they reach the game through an owner-only

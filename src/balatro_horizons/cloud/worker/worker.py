@@ -9,6 +9,7 @@ instance ID are made here and never leave the Droplet.
 """
 
 import argparse
+import errno
 import hashlib
 import http.client
 import importlib.util
@@ -210,16 +211,23 @@ class Worker:
         self.write_status()
 
     def finish(self, state, reason=None):
-        """The final report. A failure adds the log tails; a finished game first writes its
-        results, so the controller finds them once the status says finished."""
+        """The final report. A failure adds the log tails. A finished game first writes its
+        results, so the controller finds them once the status says finished, and results that
+        cannot be built or written fail the play stage instead."""
         self.status.update(state=state, reason=reason and reason[:200],
                            finished_at=self.clock().isoformat())
         self.status["observed"].update(self.observe())
+        if state == "finished":
+            try:
+                write_private(self.layout.results, json.dumps(self.results(), sort_keys=True))
+            except Exception as error:
+                # An OSError is named by its errno, such as ENOSPC; anything else, by its type.
+                code = isinstance(error, OSError) and errno.errorcode.get(error.errno)
+                state, reason = "failed", "results not written: " + (code or type(error).__name__)
+                self.status.update(state=state, reason=reason)
         if state == "failed":
             log("failed: " + reason)
             self.status["evidence"] = self.evidence()
-        else:
-            write_private(self.layout.results, json.dumps(self.results(), sort_keys=True))
         self.write_status()
         return 0 if state == "finished" else 1
 
