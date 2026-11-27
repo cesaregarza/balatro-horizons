@@ -7,7 +7,7 @@ from datetime import timedelta
 
 import httpx
 import pytest
-from cloud_support import Cloud, DigitalOceanStub
+from cloud_support import Cloud, DigitalOceanStub, page_of
 
 from balatro_horizons.cloud.digitalocean import DigitalOceanClient
 from balatro_horizons.cloud.ledger import Ledger
@@ -115,7 +115,7 @@ def test_completed_evidence_outlasts_a_later_lookup_that_shows_less(cloud, later
     cloud.assert_torn_down("r1", "cancelled")
 
 
-@pytest.mark.parametrize("later", ["failed", "timed_out"])
+@pytest.mark.parametrize("later", ["failed", "timed_out", "late"])
 def test_completed_evidence_outlasts_a_later_lookup_that_fails_or_runs_out(cloud, later):
     controller = cloud.launched()
     deleted_outside(cloud)
@@ -125,18 +125,23 @@ def test_completed_evidence_outlasts_a_later_lookup_that_fails_or_runs_out(cloud
     def first_in_time(**kwargs):
         reads.append(cloud.clock())
         actions = read(**kwargs)
+        if later == "late" and len(reads) > 1:
+            # It returns, but only after its deadline, as one decoded slowly would.
+            cloud.clock.advance(kwargs["time_left"]() + 1)
         # Every read after this one fails, or takes 50 pages at 30 seconds each.
         if later == "failed":
             cloud.provider.action_failures = 10**9
-        else:
+        elif later == "timed_out":
             cloud.provider.destroy_pages, cloud.provider.destroy_page_seconds = 50, 30
         return actions
 
     cloud.provider.list_destroy_actions = first_in_time
     controller.cancel("r1", now=True)
     resource = cloud.assert_torn_down("r1", "cancelled").resources[0]
+    # A read that returns after its deadline has run out, as one cut off has.
+    check = "timed_out" if later == "late" else later
     assert (len(reads), resource.destroy_evidence.status,
-            getattr(resource, "destroy_check", None)) == (2, "completed", later)
+            getattr(resource, "destroy_check", None)) == (2, "completed", check)
 
 
 def test_an_id_the_controller_may_not_delete_never_clears_on_a_destroy(cloud):
@@ -199,6 +204,56 @@ def test_a_delete_answered_with_a_server_error_clears_on_the_logged_destroy(tmp_
     assert (record.state, record.teardown_reason) == ("torn_down", "cancelled")
     assert stub.droplets == {}
     assert record.resources[0].acknowledged_at is None
+
+
+class DecodedSlowly(httpx.Response):
+    """A page answered at once whose decoding takes `seconds` on the fake clock."""
+
+    def __init__(self, page, clock, seconds):
+        super().__init__(page.status_code, json=page.json())
+        self.clock, self.seconds = clock, seconds
+
+    def json(self, **kwargs):
+        self.clock.advance(self.seconds)
+        return super().json(**kwargs)
+
+
+@pytest.mark.parametrize(("past_the_window", "expected"), [
+    (1, ("cleanup_unverified", "timed_out", None)),
+    (-1, ("torn_down", "found", "completed")),
+], ids=["late", "on_time"])
+def test_a_held_run_clears_only_on_a_log_page_decoded_in_time(tmp_path, past_the_window,
+                                                              expected):
+    stub = DigitalOceanStub()
+    cloud = Cloud(tmp_path / "cloud")
+    stub.clock = cloud.clock
+    log = {"shown": True, "decoding": 0}
+
+    def answer(request):
+        page = stub(request)
+        if request.url.path != "/v2/actions":
+            return page
+        shown = page if log["shown"] else page_of("actions", [])
+        return DecodedSlowly(shown, cloud.clock, log["decoding"])
+
+    cloud.provider = DigitalOceanClient("test-token", transport=httpx.MockTransport(answer),
+                                        sleep=cloud.clock.advance)
+    controller = cloud.launched()
+    # The provider carried out the DELETE, but the answer was lost to a 500, and the log
+    # showed nothing within the pass, so the run is held.
+    stub.delete_status, log["shown"] = 500, False
+    controller.cancel("r1", now=True)
+    assert_held(cloud)
+    # The next pass gets the log's last page at once, and decoding it ends just past the
+    # pass's window, or just within it.
+    log.update(shown=True, decoding=cloud.settings.cleanup_verify_seconds + past_the_window)
+    controller.tick()
+    record = Ledger(cloud.root).get("r1")
+    resource = record.resources[0]
+    status = resource.destroy_evidence and resource.destroy_evidence.status
+    assert (record.state, resource.destroy_check, status, resource.destroy_checked_at) == (
+        *expected, cloud.clock())
+    assert resource.acknowledged_at is None
 
 
 def test_an_acknowledged_teardown_settles_before_a_slow_action_log_is_read(cloud):
