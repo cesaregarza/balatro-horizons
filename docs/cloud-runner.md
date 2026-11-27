@@ -259,9 +259,9 @@ so the verified time and the settled cost never include a read of it. An ID with
 no acknowledgment can clear only on the action log, so for it the pass reads the
 log on the way, within the time left before the pass gives up: the cleanup window,
 or a fresh `cleanup_verify_seconds` window for the single pass that retries a
-`cleanup_unverified` run. A read cut off at that time finds nothing. A 404 alone,
-a read that failed and a read that ran out of time never clear the ID, and when the
-window ends the run is marked `cleanup_unverified`.
+`cleanup_unverified` run. A read cut off at that time, or one that returns after
+it, finds nothing. A 404 alone, a read that failed and a read that ran out of time
+never clear the ID, and when the window ends the run is marked `cleanup_unverified`.
 
 Once a run has settled, however it settled, the controller looks its IDs up in the
 action log once, so each run's record shows whether the action-log path would also

@@ -128,10 +128,11 @@ class Teardown:
         """Read the action log, within `time_left`, and record what it showed for each ID.
 
         Each ID records when the read ended, and how: found, not_found, failed, or
-        timed_out when it ran out of time. A read cut off shows nothing, so only a destroy
-        read in time can count. A completed destroy, once recorded, is kept. A later read
-        may fail, run out, no longer list it, or list only a failed or unfinished action
-        for the ID, and none of these undoes it.
+        timed_out when it ran out of time. A read cut off, or one that returns after its
+        time, shows nothing, so only a destroy read in time can count. A completed
+        destroy, once recorded, is kept. A later read may fail, run out, no longer list
+        it, or list only a failed or unfinished action for the ID, and none of these
+        undoes it.
         """
         if not record.resources:
             return
@@ -141,6 +142,10 @@ class Teardown:
         except Exception as error:
             # NO_TIME_LEFT is the provider's code for a read that ran out of time.
             actions, outcome = [], "timed_out" if str(error) == "NO_TIME_LEFT" else "failed"
+        if outcome is None and time_left() <= 0:
+            # Decoding a received page is not budgeted, so a read can return after its
+            # time. What it returned is dropped, as for a read cut off.
+            actions, outcome = [], "timed_out"
         checked_at = self.clock()
         for resource in record.resources:
             found = [action for action in actions if action.resource_id == resource.id]

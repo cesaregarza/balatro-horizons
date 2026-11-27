@@ -117,7 +117,8 @@ class DigitalOceanClient:
 
     def read_all(self, path, key, filters, time_left=None):
         """Every item across pages; anything short of a complete, well-formed read raises.
-        With `time_left`, every page is a budgeted request, so the budget bounds the whole."""
+        With `time_left`, each page's attempts and waits are budgeted, but decoding a
+        received page is not, so the caller rechecks the budget before trusting the result."""
         items = []
         for page in range(1, MAX_PAGES + 1):
             params = filters | {"page": page, "per_page": PAGE_SIZE}

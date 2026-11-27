@@ -84,9 +84,10 @@ class Provider(Protocol):
                              time_left: Callable[[], float] | None = None) -> list["DestroyAction"]:
         """Every Droplet destroy action in the account action log, read completely.
 
-        `time_left`, when given, bounds the whole read as it bounds `get_droplet`: every
-        page's attempts and waits fit in what is left, and a read that runs out raises
-        NO_TIME_LEFT. Without it, every page keeps the full retry policy.
+        `time_left`, when given, budgets each page's attempts and waits: they fit in what
+        is left, and a read that runs out raises NO_TIME_LEFT. Decoding a received page is
+        not budgeted, so the caller rechecks the budget before trusting the result. Without
+        `time_left`, every page keeps the full retry policy.
         """
 
     def delete_droplet(self, droplet_id: int) -> bool:
