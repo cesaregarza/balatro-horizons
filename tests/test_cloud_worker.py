@@ -7,6 +7,7 @@ as the fake local API plays one short game.
 """
 
 import ast
+import errno
 import hashlib
 import http.client
 import io
@@ -246,6 +247,8 @@ def test_the_results_are_written_owner_only_before_the_finished_status(machine, 
     code, status, runner = run(machine, layout)
     assert (code, status["state"]) == (0, "finished")
     results_path = layout.worker / "results.json"
+    # The status says finished only once, after the results.
+    assert written.count(("status", "finished")) == 1
     assert written[-2:] == [("results.json", None), ("status", "finished")]
     assert stat.S_IMODE(results_path.stat().st_mode) == 0o600
     text = results_path.read_text()
@@ -264,6 +267,29 @@ def test_the_results_are_written_owner_only_before_the_finished_status(machine, 
     request_ids = [body["id"] for _, body, _ in machine.posts]
     for secret in (runner.token, runner.instance_id, *request_ids):
         assert secret not in text
+
+
+def test_results_that_cannot_be_written_fail_the_play_stage(machine, layout, monkeypatch):
+    write = worker.write_private
+
+    def no_space_for_the_results(path, text):
+        if path == layout.results:
+            raise OSError(errno.ENOSPC, "No space left on device")
+        write(path, text)
+
+    monkeypatch.setattr(worker, "write_private", no_space_for_the_results)
+    runner = worker.Worker(machine, layout, machine.clock)
+    try:
+        code = runner.run(job(), PINS)
+    except Exception as error:
+        # An error that escapes is the outcome, so the assertion below names it.
+        code = type(error).__name__
+    status = json.loads(layout.status.read_text())
+    assert (code, status["state"], status["stage"], status["reason"]) == (
+        1, "failed", "play", "results not written: ENOSPC")
+    assert set(status["evidence"]) == {"display_stderr", "game_stderr"}
+    assert not layout.results.exists()
+    WorkerStatus.model_validate(status)
 
 
 def test_a_refused_move_fails_the_play_stage_without_results(machine, layout):
