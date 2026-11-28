@@ -29,6 +29,7 @@ from worker_support import (
     START,
     Clock,
     FakeMachine,
+    fault_at,
     job,
     layout_in,
     run,
@@ -161,18 +162,6 @@ def test_results_that_cannot_be_written_fail_the_play_stage(machine, layout, mon
     assert set(status["evidence"]) == {"display_stderr", "game_stderr"}
     assert not layout.results.exists()
     WorkerStatus.model_validate(status)
-
-
-def fault_at(machine, fault, call=("bh_action", 1)):
-    """Script a fault on the game's local API for one call, once the game has started."""
-    start = machine.start
-
-    def starting(argv):
-        start(argv)
-        if machine.local_api is not None:
-            machine.local_api.faults = {call: fault}
-
-    machine.start = starting
 
 
 def test_a_refused_move_fails_play_and_its_results_are_written_first(machine, layout,

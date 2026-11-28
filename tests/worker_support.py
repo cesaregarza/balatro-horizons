@@ -164,6 +164,18 @@ class FakeMachine:
         return next(c for c in self.commands if c[0] == "systemd-run" and f"--unit={unit}" in c)
 
 
+def fault_at(machine, fault, call=("bh_action", 1)):
+    """Script a fault on the game's local API for one call, once the game has started."""
+    start = machine.start
+
+    def starting(argv):
+        start(argv)
+        if machine.local_api is not None:
+            machine.local_api.faults = {call: fault}
+
+    machine.start = starting
+
+
 def layout_in(directory):
     layout = worker.Layout(worker=directory / "worker", home=directory / "player",
                            display_socket=directory / "X99")
