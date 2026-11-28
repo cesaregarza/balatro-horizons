@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from .durable import durable_json, ensure_directory
 
@@ -56,6 +56,13 @@ class Resource(BaseModel):
     destroy_evidence: DestroyEvidence | None = None
     destroy_checked_at: AwareDatetime | None = None
     destroy_check: Literal["found", "unknown", "failed", "timed_out"] | None = None
+
+    # A record written by an earlier version holds `not_found` for a lookup that finished
+    # with no match. A miss proves nothing, so it reads as `unknown`.
+    @field_validator("destroy_check", mode="before")
+    @classmethod
+    def earlier_miss_as_unknown(cls, value):
+        return "unknown" if value == "not_found" else value
 
 
 class Transition(BaseModel):

@@ -390,7 +390,8 @@ Once a run has settled, however it settled, the controller looks its IDs up in t
 action log once, so each run's record shows whether the action-log path would also
 have cleared it. One 60-second deadline covers the whole lookup: every page,
 attempt and wait. Each ID records when the lookup ended, how it ended (`found`,
-`unknown`, `failed` or `timed_out`) and the best destroy action it found. Only
+`unknown`, `failed` or `timed_out`; a record written by an earlier version may hold
+`not_found`, which reads as `unknown`) and the best destroy action it found. Only
 `found` is evidence. `unknown`, which a read that finished without a match records,
 `failed` and `timed_out` are not, and none of them proves that a destroy did not
 happen. A completed destroy, once recorded, is never replaced, because a later read
