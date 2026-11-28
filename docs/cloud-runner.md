@@ -382,16 +382,19 @@ no acknowledgment can clear only on the action log, so for it the pass reads the
 log on the way, within the time left before the pass gives up: the cleanup window,
 or a fresh `cleanup_verify_seconds` window for the single pass that retries a
 `cleanup_unverified` run. A read cut off at that time, or one that returns after
-it, finds nothing. A 404 alone, a read that failed and a read that ran out of time
-never clear the ID, and when the window ends the run is marked `cleanup_unverified`.
+it, finds nothing. A 404 alone, a read that found no destroy, a read that failed and
+a read that ran out of time never clear the ID, and when the window ends the run is
+marked `cleanup_unverified`.
 
 Once a run has settled, however it settled, the controller looks its IDs up in the
 action log once, so each run's record shows whether the action-log path would also
 have cleared it. One 60-second deadline covers the whole lookup: every page,
 attempt and wait. Each ID records when the lookup ended, how it ended (`found`,
-`not_found`, `failed` or `timed_out`) and the best destroy action it found. A
-completed destroy, once recorded, is never replaced, because a later read may no
-longer list it. The lookup never changes the settled run: its state, verified
+`unknown`, `failed` or `timed_out`) and the best destroy action it found. Only
+`found` is evidence. `unknown`, which a read that finished without a match records,
+`failed` and `timed_out` are not, and none of them proves that a destroy did not
+happen. A completed destroy, once recorded, is never replaced, because a later read
+may no longer list it. The lookup never changes the settled run: its state, verified
 time, settled cost and reservation stay as settling left them. It is not retried,
 so a crash between settling and the lookup leaves a settled run with no lookup
 recorded.
@@ -449,6 +452,12 @@ order again, and its latest reading replaces the earlier one. An entry whose ID 
 not a whole number, or whose status is not `in-progress`, `completed` or
 `errored`, fails the read, and so does reaching the page bound before that time,
 with `TOO_MANY_PAGES`.
+
+The order check covers only the pages read, so it cannot rule out a newer match on
+a page the read never reached. A read that finishes without a match therefore
+proves nothing: teardown records it as `unknown`, never as proof that no destroy
+happened, and for an unresolved create it names nothing, which leaves the run
+`create_unresolved` with its reservation unless a listing finds the Droplet.
 
 The read fails closed. A read that fails clears nothing: teardown records it as
 `failed`, or `timed_out` when it ran out of time, and for an unresolved create it

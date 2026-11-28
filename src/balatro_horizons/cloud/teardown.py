@@ -145,12 +145,14 @@ class Teardown:
         """Read the action log back to the earliest start a destroy of ours can have,
         within `time_left`, and record what it showed for each ID.
 
-        Each ID records when the read ended, and how: found, not_found, failed, or
-        timed_out when it ran out of time. A read cut off, or one that returns after its
-        time, shows nothing, so only a destroy read in time can count. A completed
-        destroy, once recorded, is kept. A later read may fail, run out, no longer list
-        it, or list only a failed or unfinished action for the ID, and none of these
-        undoes it.
+        Each ID records when the read ended, and how: found; unknown, when it finished
+        without a match; failed; or timed_out, when it ran out of time. Only found is
+        evidence. The other three are not, and none of them proves that no destroy
+        happened, since the read cannot vouch for pages past where it stopped. A read cut
+        off, or one that returns after its time, shows nothing, so only a destroy read in
+        time can count. A completed destroy, once recorded, is kept. A later read may fail,
+        run out, no longer list it, or list only a failed or unfinished action for the ID,
+        and none of these undoes it.
         """
         if not record.resources:
             return
@@ -176,7 +178,7 @@ class Teardown:
                     action_id=best.id, resource_id=best.resource_id, status=best.status,
                     started_at=best.started_at)
             resource.destroy_checked_at = checked_at
-            resource.destroy_check = outcome or ("found" if found else "not_found")
+            resource.destroy_check = outcome or ("found" if found else "unknown")
         self.ledger.save(record)
 
     def verified_absent(self, record):

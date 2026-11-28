@@ -55,7 +55,7 @@ class Resource(BaseModel):
     # and how that read ended.
     destroy_evidence: DestroyEvidence | None = None
     destroy_checked_at: AwareDatetime | None = None
-    destroy_check: Literal["found", "not_found", "failed", "timed_out"] | None = None
+    destroy_check: Literal["found", "unknown", "failed", "timed_out"] | None = None
 
 
 class Transition(BaseModel):
