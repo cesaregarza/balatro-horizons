@@ -314,7 +314,9 @@ class DigitalOceanStub:
         if path == "/droplets" and request.method == "POST":
             return self.create(json.loads(request.content))
         if path == "/actions":
-            return page_of("actions", self.actions)
+            # Newest first, as the live log is.
+            return page_of("actions", sorted(self.actions, key=lambda action: action["started_at"],
+                                             reverse=True))
         if path == "/sizes":
             return page_of("sizes", self.sizes)
         if path.startswith(("/account/keys/", "/firewalls/")):

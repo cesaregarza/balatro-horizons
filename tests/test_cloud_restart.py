@@ -202,4 +202,4 @@ def test_a_crash_before_the_lookup_leaves_the_run_settled_and_the_lookup_never_r
     assert cloud.ledger.get("r1") == settled
     resource = settled.resources[0]
     assert (resource.destroy_checked_at, getattr(resource, "destroy_check", None)) == (None, None)
-    assert ("destroys",) not in cloud.provider.calls
+    assert "destroys" not in [call[0] for call in cloud.provider.calls]

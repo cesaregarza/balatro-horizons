@@ -175,7 +175,7 @@ def test_a_failed_action_log_read_never_delays_settling(cloud):
     cloud.channel.finish("r1")
     controller.tick()
     resource = cloud.assert_torn_down("r1", "succeeded").resources[0]
-    assert ("destroys",) in cloud.provider.calls
+    assert "destroys" in [call[0] for call in cloud.provider.calls]
     assert resource.destroy_evidence is None
 
 
@@ -204,6 +204,55 @@ def test_a_delete_answered_with_a_server_error_clears_on_the_logged_destroy(tmp_
     assert (record.state, record.teardown_reason) == ("torn_down", "cancelled")
     assert stub.droplets == {}
     assert record.resources[0].acknowledged_at is None
+
+
+def unmatched_ids(cloud):
+    return [watch.droplet_id for watch in Ledger(cloud.root).unmatched()]
+
+
+def lost_answer(cloud, logged):
+    """Cancel a run whose DELETE the provider accepts, though the answer is lost. The
+    Droplet then reads back untagged twice while it is destroyed, then 404. The log shows
+    its destroy only when `logged`."""
+    controller = cloud.launched()
+    droplet_id = cloud.owned_ids("r1")[0]
+    cloud.provider.partial_delete, cloud.provider.destroy_reads = True, 2
+    cloud.provider.log_destroys = logged
+    controller.cancel("r1", now=True)
+    record = Ledger(cloud.root).get("r1")
+    # Nothing is given up, and the one DELETE went out while the Droplet read with both tags.
+    assert (record.released, unmatched_ids(cloud), cloud.provider.deleted()) == (
+        [], [], [droplet_id])
+    return droplet_id
+
+
+def test_a_lost_answer_to_an_accepted_delete_clears_on_the_completed_destroy(cloud):
+    lost_answer(cloud, logged=True)
+    resource = cloud.assert_torn_down("r1", "cancelled").resources[0]
+    assert (resource.acknowledged_at, resource.destroy_evidence.status) == (None, "completed")
+
+
+def test_a_lost_answer_holds_the_id_while_the_log_shows_no_destroy(cloud):
+    droplet_id = lost_answer(cloud, logged=False)
+    record = assert_held(cloud)
+    assert [(r.id, r.acknowledged_at, r.delete_requested_at is not None)
+            for r in record.resources] == [(droplet_id, None, True)]
+
+
+@pytest.mark.parametrize(("path", "state"), [("held", "cleanup_unverified"),
+                                             ("lookup", "torn_down")])
+def test_every_log_read_reaches_back_to_the_run_start_less_the_allowance(cloud, path, state):
+    controller = cloud.launched()
+    if path == "held":
+        # The DELETE's answer is lost and the log never shows the destroy, so every pass
+        # reads the log, and the run never settles to look its ID up.
+        cloud.provider.partial_delete, cloud.provider.log_destroys = True, False
+    controller.cancel("r1", now=True)
+    record = Ledger(cloud.root).get("r1")
+    reads = [call[1] for call in cloud.provider.calls if call[0] == "destroys"]
+    assert (record.state, reads) == (state, [record.created_at - SKEW] * len(reads))
+    # An acknowledged run reads the log once, after settling.
+    assert len(reads) > 1 if path == "held" else len(reads) == 1
 
 
 class DecodedSlowly(httpx.Response):
