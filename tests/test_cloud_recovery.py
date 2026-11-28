@@ -249,7 +249,7 @@ def test_a_lost_acknowledgment_never_clears_on_a_404_a_failed_read_or_a_read_tha
     record = cloud.ledger.get("r1")
     assert (record.state, record.settled_usd) == ("cleanup_unverified", None)
     assert getattr(record.resources[0], "destroy_check", None) == {
-        "no destroy": "not_found", "failed": "failed", "too slow": "timed_out"}[log]
+        "no destroy": "unknown", "failed": "failed", "too slow": "timed_out"}[log]
     assert "CLEANUP_UNVERIFIED" in cloud.controller().launch("r2")["reasons"]
 
 

@@ -7,7 +7,7 @@ from datetime import timedelta
 
 import httpx
 import pytest
-from cloud_support import Cloud, DigitalOceanStub, page_of
+from cloud_support import Cloud, DigitalOceanStub, page_across_the_cutoff, page_of
 
 from balatro_horizons.cloud.digitalocean import DigitalOceanClient
 from balatro_horizons.cloud.ledger import Ledger
@@ -206,6 +206,38 @@ def test_a_delete_answered_with_a_server_error_clears_on_the_logged_destroy(tmp_
     assert record.resources[0].acknowledged_at is None
 
 
+def test_a_lost_answer_whose_destroy_sits_past_a_page_crossing_the_cutoff_stays_held(tmp_path):
+    stub = DigitalOceanStub()
+    cloud = Cloud(tmp_path / "cloud")
+    stub.clock = cloud.clock
+    cloud.provider = DigitalOceanClient("test-token", transport=httpx.MockTransport(stub),
+                                        sleep=cloud.clock.advance)
+    controller = cloud.launched()
+    launched = cloud.ledger.get("r1")
+    # Page 1 is neatly sorted and crosses the cutoff. The rest of the log, our destroy
+    # included, follows on page 2, newer than page 1's last entry.
+    stub.action_pages = lambda log: [page_across_the_cutoff(), log]
+    # The provider carried out the DELETE, but the answer was lost to a 500. The Droplet
+    # then reads 404 and is in no listing.
+    stub.delete_status = 500
+    controller.cancel("r1", now=True)
+    cloud.clock.advance(3600)
+    controller.tick()
+    cloud.reconcile()
+    record = Ledger(cloud.root).get("r1")
+    resource = record.resources[0]
+    assert (record.state, [r.id for r in record.resources], record.released,
+            record.reserved_usd) == ("cleanup_unverified", [launched.resources[0].id], [],
+                                     launched.reserved_usd)
+    assert (resource.delete_requested_at is not None, resource.acknowledged_at) == (True, None)
+    # Every read stopped after page 1, and a miss proves nothing.
+    assert (resource.destroy_check, resource.destroy_evidence) == ("unknown", None)
+    reads = [r for r in stub.requests if r.url.path == "/v2/actions"]
+    assert {r.url.params["page"] for r in reads} == {"1"}
+    # Every DELETE went out before the log was first read, so none followed a miss.
+    assert "DELETE" not in [r.method for r in stub.requests[stub.requests.index(reads[0]):]]
+
+
 def unmatched_ids(cloud):
     return [watch.droplet_id for watch in Ledger(cloud.root).unmatched()]
 
@@ -333,10 +365,10 @@ def test_an_acknowledged_teardown_settles_before_a_slow_action_log_is_read(cloud
             cloud.clock()) == ("timed_out", deadline, deadline)
 
 
-@pytest.mark.parametrize("outcome", ["found", "not_found", "failed", "timed_out"])
+@pytest.mark.parametrize("outcome", ["found", "unknown", "failed", "timed_out"])
 def test_the_lookup_after_settling_records_how_it_ended_and_when(cloud, outcome):
     controller = cloud.launched()
-    cloud.provider.log_destroys = outcome != "not_found"
+    cloud.provider.log_destroys = outcome != "unknown"
     cloud.provider.action_failures = int(outcome == "failed")
     if outcome == "timed_out":
         # Three pages at 30 seconds each need more than the lookup's minute.
