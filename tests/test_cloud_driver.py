@@ -143,11 +143,18 @@ def test_a_refused_move_ends_play_with_its_name_and_no_retry():
 
 def test_an_answer_lost_while_the_game_settles_the_move_is_asked_about_until_it_commits():
     # The answer is lost four seconds after the send. The move commits on the fourth ask.
-    local_api = api()
+    local_api, timeouts = api(), set()
     local_api.faults = {("bh_action", 1): "pending"}
     local_api.lost_after, local_api.pending_asks = 4, 3
-    outcome, game, counts = play(local_api)
+
+    def post(url, body, timeout):
+        timeouts.add((body["method"], timeout))
+        return local_api(url, body, timeout)
+
+    outcome, game, counts = play(local_api, post=post)
     assert outcome == "game_over"
+    assert timeouts == {("start", 85), ("select", 85), ("bh_action", 85),
+                        ("bh_request_status", 12), ("bh_inspect", 10)}
     move = local_api.bodies_for("bh_action")[0]["id"]
     assert [body["id"] for body in local_api.bodies].count(move) == 1
     assert asked_about(local_api) == [move] * 4
@@ -250,6 +257,23 @@ def test_a_game_that_exits_during_a_move_is_named_for_it():
     assert local_api.sent() == [("start", None), *ROUND[:2]] and counts == [1, 2]
 
 
+@pytest.mark.parametrize(("faults", "lost_after", "asks", "status"), [
+    ({("bh_action", 1): "pending", ("bh_request_status", 2): "lose"}, 3, 2,
+     "status lookup TimeoutError"),
+    ({("bh_action", 1): "reject"}, 0, 1, "status rejected"),
+    ({("bh_action", 1): "pending"}, 5, 2, "status pending"),
+], ids=["lookup-fails", "rejected", "window-ends"])
+def test_a_game_that_exits_while_its_move_is_asked_about_is_named_for_it(faults, lost_after,
+                                                                        asks, status):
+    # The game runs when the answer is lost, and has exited once `asks` status asks are made.
+    local_api = api()
+    local_api.faults, local_api.lost_after = faults, lost_after
+    outcome, _, _ = play(
+        local_api, running=lambda: len(local_api.bodies_for("bh_request_status")) < asks)
+    assert outcome == ("failed: game exited during bh_action discard; answer TimeoutError "
+                       f"after {lost_after} s; {status}")
+
+
 @pytest.mark.parametrize(("message", "code"), [
     ("UNAFFORDABLE", "UNAFFORDABLE"), ("A" * 40, "A" * 40), ("A" * 41, "other"),
     ("unaffordable", "other"), ("NOT ALLOWED", "other"), ("CODE_2", "other"), ("", "other"),
@@ -267,13 +291,16 @@ def test_a_refused_move_is_named_with_its_code(message, code):
 @pytest.mark.parametrize(("message", "data", "code"), [
     (PROSE, {"name": "INVALID_STATE"}, "INVALID_STATE"),
     ("Not enough money", {"name": "NOT_ALLOWED"}, "NOT_ALLOWED"),
+    ("Internal error", {"name": "INTERNAL_ERROR"}, "INTERNAL_ERROR"),
+    ("Invalid request", {"name": "BAD_REQUEST"}, "BAD_REQUEST"),
     ("UNAFFORDABLE", {"name": "NOT_ALLOWED"}, "UNAFFORDABLE"),
     (PROSE, {"name": "INFRASTRUCTURE"}, "other"),
     (PROSE, None, "other"),
     (PROSE, "INVALID_STATE", "other"),
     (PROSE, {"name": ["INVALID_STATE"]}, "other"),
-], ids=["prose-invalid-state", "prose-not-allowed", "message-wins", "name-outside-the-four",
-        "no-data", "data-not-an-object", "name-not-a-string"])
+], ids=["prose-invalid-state", "prose-not-allowed", "prose-internal-error", "prose-bad-request",
+        "message-wins", "name-outside-the-four", "no-data", "data-not-an-object",
+        "name-not-a-string"])
 def test_a_refusal_in_prose_is_named_by_its_category(message, data, code):
     local_api = api()
     local_api.faults = {("bh_action", 1): "refuse"}

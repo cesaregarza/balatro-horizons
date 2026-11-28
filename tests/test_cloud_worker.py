@@ -249,8 +249,8 @@ PROCESS_EXITED = "98e322203f7a4ed290d09fe03c09fe15"
 RAW = "raw text that never reaches a status"
 
 
-def game_cgroup(layout, files):
-    cgroup = layout.cgroup_root / "system.slice/bh-game.service"
+def game_cgroup(layout, files, unit="bh-game.service"):
+    cgroup = layout.cgroup_root / "system.slice" / unit
     cgroup.mkdir(parents=True)
     for name, text in files.items():
         (cgroup / name).write_text(text)
@@ -291,6 +291,9 @@ def test_a_game_that_exits_cleanly_during_a_move_reports_its_unit_succeeded(mach
 def test_a_game_still_running_at_a_failure_reports_its_memory(machine, layout):
     game_cgroup(layout, {"memory.peak": "5134123008\n", "memory.current": "4831838208\n",
                          "memory.events": f"low 0\nhigh 0\nmax 2\noom 1\noom_kill 1\n{RAW} 7\n"})
+    # Another unit's memory is never reported.
+    game_cgroup(layout, {"memory.peak": "7\n", "memory.events": "oom_kill 7\n"},
+                "bh-display.service")
     machine.journal = [{"__CURSOR": "s=1", "MESSAGE_ID": OOM_KILLED, "MESSAGE": RAW}]
     fault_at(machine, "refuse")
     _, status, _ = run(machine, layout)
@@ -307,6 +310,40 @@ def test_a_game_still_running_at_a_failure_reports_its_memory(machine, layout):
     journal = reads[0][0]
     assert "--output-fields=MESSAGE_ID,EXIT_CODE,EXIT_STATUS,UNIT_RESULT" in journal
     assert [option for option in journal if option.startswith("--lines=")] == ["--lines=200"]
+
+
+def test_the_journal_is_read_for_the_game_unit_alone(machine, layout):
+    # An SSH session's scope ends cleanly, after the kernel killed one of its processes.
+    machine.journals = {"session-3.scope": [{"__CURSOR": "s=1", "MESSAGE_ID": OOM_KILLED},
+                                            {"__CURSOR": "s=2", "MESSAGE_ID": UNIT_SUCCEEDED}]}
+    fault_at(machine, "exit")
+    _, status, _ = run(machine, layout)
+    assert status["observed"].get("game_unit") == (
+        "running=no main=unavailable result=unavailable journal_oom=no")
+
+
+def test_a_unit_read_that_exits_non_zero_is_unavailable(machine, layout):
+    machine.exits = {"journalctl": 1}
+    fault_at(machine, "exit")
+    _, status, _ = run(machine, layout)
+    assert status["observed"].get("game_unit") == (
+        "running=no main=unavailable result=unavailable journal_oom=unavailable")
+
+
+def test_a_running_check_that_fails_keeps_the_moves_own_reason(machine, layout):
+    # The game rejected the discard and its answer was lost; then systemctl stops answering.
+    fault_at(machine, "reject")
+    unit_active = machine.unit_active
+
+    def exit_check(unit):
+        if unit == "bh-game" and machine.local_api.bodies_for("bh_request_status"):
+            raise worker.StageFailed("systemctl timed out")
+        return unit_active(unit)
+
+    machine.unit_active = exit_check
+    code, status, _ = run(machine, layout)
+    assert (code, status["stage"], status["reason"]) == (1, "play", (
+        "uncertain move: bh_action discard; answer TimeoutError after 0 s; status rejected"))
 
 
 def game_never_starts(machine):

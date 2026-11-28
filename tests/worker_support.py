@@ -63,11 +63,16 @@ class FakeMachine:
         # The committed-move count the status file held as each request was sent.
         self.counts_at_post = []
         self.broken = None
-        # The journal's records for the game's unit, each a dict or a raw line; the unit's
-        # ControlGroup property; and the commands that time out.
+        # The journal's records, each a dict or a raw line: the game unit's, and other units'
+        # by name. A journalctl that names a unit reads only that unit's records.
         self.journal = []
+        self.journals = {}
+        # The ControlGroup property of the game's unit, and of other units by name.
         self.control_group = "/system.slice/bh-game.service"
+        self.control_groups = {"bh-display.service": "/system.slice/bh-display.service"}
+        # The commands that time out, and those that exit non-zero, by name, with no output.
         self.unreadable = set()
+        self.exits = {}
         self.timeouts = []
 
     def run(self, argv, *, timeout=worker.COMMAND_SECONDS, check=True, env=None):
@@ -78,7 +83,7 @@ class FakeMachine:
             raise RuntimeError("the machine broke")
         if argv[0] in self.unreadable:
             raise worker.StageFailed(f"{argv[0]} timed out")
-        code = 0
+        code = self.exits.get(argv[0], 0)
         if argv[0] == "id":
             code = 0 if self.user_exists else 1
         elif argv[0] == "tar":
@@ -87,7 +92,7 @@ class FakeMachine:
             self.start(argv)
         if check and code:
             raise worker.StageFailed(f"{argv[0]} exit {code}")
-        return subprocess.CompletedProcess(argv, code, self.output(argv), b"")
+        return subprocess.CompletedProcess(argv, code, b"" if code else self.output(argv), b"")
 
     def output(self, argv):
         if argv[:3] == ["cloud-init", "status", "--long"]:
@@ -97,10 +102,14 @@ class FakeMachine:
         if argv[0] == "dpkg-query":
             return b"xvfb=2:21.1.12\npython3=3.12.3\n"
         if argv[0] == "journalctl":
-            lines = [r if isinstance(r, str) else json.dumps(r) for r in self.journal]
+            journals = {"bh-game.service": self.journal} | self.journals
+            named = [a.removeprefix("--unit=") for a in argv if a.startswith("--unit=")]
+            records = [r for unit in (named or journals) for r in journals.get(unit, [])]
+            lines = [r if isinstance(r, str) else json.dumps(r) for r in records]
             return "".join(line + "\n" for line in lines).encode()
         if argv[:2] == ["systemctl", "show"]:
-            return f"{self.control_group}\n".encode()
+            groups = {"bh-game.service": self.control_group} | self.control_groups
+            return f"{groups.get(argv[-1], '')}\n".encode()
         return b""
 
     def extract(self, argv):
