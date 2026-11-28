@@ -17,6 +17,7 @@ import stat
 import subprocess
 import sys
 import tomllib
+import urllib.error
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -76,12 +77,21 @@ class FakeMachine:
         # The committed-move count the status file held as each request was sent.
         self.counts_at_post = []
         self.broken = None
+        # The journal's records for the game's unit, each a dict or a raw line; the unit's
+        # ControlGroup property; and the commands that time out.
+        self.journal = []
+        self.control_group = "/system.slice/bh-game.service"
+        self.unreadable = set()
+        self.timeouts = []
 
     def run(self, argv, *, timeout=worker.COMMAND_SECONDS, check=True, env=None):
         self.commands.append(list(argv))
+        self.timeouts.append(timeout)
         self.stages.append((argv[0], json.loads(self.layout.status.read_text())["stage"]))
         if argv[0] == self.broken:
             raise RuntimeError("the machine broke")
+        if argv[0] in self.unreadable:
+            raise worker.StageFailed(f"{argv[0]} timed out")
         code = 0
         if argv[0] == "id":
             code = 0 if self.user_exists else 1
@@ -100,6 +110,11 @@ class FakeMachine:
             return b"OpenGL renderer string: llvmpipe (LLVM 17.0.6, 256 bits)\n"
         if argv[0] == "dpkg-query":
             return b"xvfb=2:21.1.12\npython3=3.12.3\n"
+        if argv[0] == "journalctl":
+            lines = [r if isinstance(r, str) else json.dumps(r) for r in self.journal]
+            return "".join(line + "\n" for line in lines).encode()
+        if argv[:2] == ["systemctl", "show"]:
+            return f"{self.control_group}\n".encode()
         return b""
 
     def extract(self, argv):
@@ -131,6 +146,10 @@ class FakeMachine:
         path.write_bytes(self.files[url])
 
     def unit_active(self, unit):
+        if "systemctl" in self.unreadable:
+            raise worker.StageFailed("systemctl timed out")
+        if unit == "bh-game" and self.local_api is not None and not self.local_api.running():
+            return False
         return self.units.get(unit, False)
 
     def display_answers(self, path):
@@ -150,13 +169,19 @@ class FakeMachine:
         return next(c for c in self.commands if c[0] == "systemd-run" and f"--unit={unit}" in c)
 
 
-@pytest.fixture
-def layout(tmp_path):
-    layout = worker.Layout(worker=tmp_path / "worker", home=tmp_path / "player",
-                           display_socket=tmp_path / "X99")
-    layout.worker.mkdir()
+def layout_in(directory):
+    layout = worker.Layout(worker=directory / "worker", home=directory / "player",
+                           display_socket=directory / "X99")
+    # The cgroup tree the game's unit is read from.
+    layout.cgroup_root = directory / "cgroup"
+    layout.worker.mkdir(parents=True)
     (layout.worker / "bundle.tar").write_bytes(BUNDLE)
     return layout
+
+
+@pytest.fixture
+def layout(tmp_path):
+    return layout_in(tmp_path)
 
 
 @pytest.fixture
@@ -292,20 +317,67 @@ def test_results_that_cannot_be_written_fail_the_play_stage(machine, layout, mon
     WorkerStatus.model_validate(status)
 
 
-def test_a_refused_move_fails_the_play_stage_without_results(machine, layout):
-    original = machine.start
+def fault_at(machine, fault, call=("bh_action", 1)):
+    """Script a fault on the game's local API for one call, once the game has started."""
+    start = machine.start
 
-    def refusing(argv):
-        original(argv)
+    def starting(argv):
+        start(argv)
         if machine.local_api is not None:
-            machine.local_api.faults = {("select", 1): "refuse"}
+            machine.local_api.faults = {call: fault}
 
-    machine.start = refusing
-    code, status, _ = run(machine, layout)
+    machine.start = starting
+
+
+def test_a_refused_move_fails_play_and_its_results_are_written_first(machine, layout,
+                                                                    monkeypatch):
+    written = []
+    write = worker.write_private
+
+    def recording(path, text):
+        written.append(("status", json.loads(text)["state"]) if path == layout.status
+                       else (path.name, None))
+        write(path, text)
+
+    monkeypatch.setattr(worker, "write_private", recording)
+    fault_at(machine, "refuse")
+    code, status, runner = run(machine, layout)
     assert (code, status["state"], status["stage"], status["reason"]) == (
-        1, "failed", "play", "move refused: select")
-    assert status.get("actions") == 1 and "game_stderr" in status["evidence"]
-    assert not (layout.worker / "results.json").exists()
+        1, "failed", "play", "move refused: bh_action discard: BUSY")
+    assert status.get("actions") == 2 and "game_stderr" in status["evidence"]
+    # The moves so far come home with no outcome, written before the final status.
+    assert written[-2:] == [("results.json", None), ("status", "failed")]
+    text = layout.results.read_text()
+    results = json.loads(text)
+    assert (results["outcome"], results["actions"]) == (None, 2)
+    assert [move["method"] for move in results["moves"]] == ["start", "select"]
+    assert (results["started_at"], results["observed"]) == (
+        status["started_at"], status["observed"])
+    assert stat.S_IMODE(layout.results.stat().st_mode) == 0o600
+    request_ids = [body["id"] for _, body, _ in machine.posts]
+    for secret in (runner.token, runner.instance_id, *request_ids):
+        assert secret not in text
+
+
+def test_a_failed_play_keeps_its_own_reason_when_its_results_cannot_be_written(machine, layout,
+                                                                               monkeypatch):
+    attempts = []
+    write = worker.write_private
+
+    def no_space_for_the_results(path, text):
+        if path == layout.results:
+            attempts.append(path.name)
+            raise OSError(errno.ENOSPC, "No space left on device")
+        write(path, text)
+
+    monkeypatch.setattr(worker, "write_private", no_space_for_the_results)
+    fault_at(machine, "refuse")
+    code, status, _ = run(machine, layout)
+    assert attempts == ["results.json"]
+    assert (code, status["state"], status["stage"], status["reason"]) == (
+        1, "failed", "play", "move refused: bh_action discard: BUSY")
+    assert not layout.results.exists()
+    WorkerStatus.model_validate(status)
 
 
 def test_the_game_exiting_during_play_fails_the_play_stage(machine, layout):
@@ -320,6 +392,156 @@ def test_the_game_exiting_during_play_fails_the_play_stage(machine, layout):
     machine.post = exits_after_two_moves
     code, status, _ = run(machine, layout)
     assert (code, status["stage"], status["reason"]) == (1, "play", "game exited")
+
+
+# The message IDs systemd gives its records about a unit.
+OOM_KILLED = "fe6faa94e7774663a0da52717891d8ef"
+UNIT_FAILED = "d9b373ed55a64feb8242e02dbe79a49c"
+UNIT_SUCCEEDED = "7ad2d189f7e94e70a38c781354912448"
+PROCESS_EXITED = "98e322203f7a4ed290d09fe03c09fe15"
+# Free text, standing in for what a journal record or a cgroup file could hold.
+RAW = "raw text that never reaches a status"
+
+
+def game_cgroup(layout, files):
+    cgroup = layout.cgroup_root / "system.slice/bh-game.service"
+    cgroup.mkdir(parents=True)
+    for name, text in files.items():
+        (cgroup / name).write_text(text)
+
+
+def test_a_game_killed_for_memory_during_a_move_reports_how_its_unit_ended(machine, layout):
+    # The stopped unit's records, with only the fields the worker asks the journal for, and
+    # the free text a record could carry.
+    machine.journal = [
+        {"__CURSOR": "s=1", "MESSAGE_ID": OOM_KILLED, "MESSAGE": RAW},
+        {"__CURSOR": "s=2", "MESSAGE_ID": PROCESS_EXITED, "EXIT_CODE": "killed",
+         "EXIT_STATUS": "9", "MESSAGE": RAW},
+        {"__CURSOR": "s=3", "MESSAGE_ID": UNIT_FAILED, "UNIT_RESULT": "oom-kill", "MESSAGE": RAW},
+    ]
+    fault_at(machine, "exit")
+    code, status, _ = run(machine, layout)
+    assert (code, status["stage"], status["reason"]) == (1, "play", (
+        "game exited during bh_action discard; answer RemoteDisconnected after 0 s; "
+        "status lookup URLError"))
+    assert status["observed"].get("game_unit") == (
+        "running=no main=killed/9 result=oom-kill journal_oom=yes")
+    assert RAW not in json.dumps(status) and RAW not in layout.results.read_text()
+    WorkerStatus.model_validate(status)
+
+
+def test_a_game_that_exits_cleanly_during_a_move_reports_its_unit_succeeded(machine, layout):
+    machine.journal = [
+        {"__CURSOR": "s=1", "MESSAGE_ID": PROCESS_EXITED, "EXIT_CODE": "exited",
+         "EXIT_STATUS": "0"},
+        {"__CURSOR": "s=2", "MESSAGE_ID": UNIT_SUCCEEDED},
+    ]
+    fault_at(machine, "exit")
+    _, status, _ = run(machine, layout)
+    assert status["observed"].get("game_unit") == (
+        "running=no main=exited/0 result=success journal_oom=no")
+
+
+def test_a_game_still_running_at_a_failure_reports_its_memory(machine, layout):
+    game_cgroup(layout, {"memory.peak": "5134123008\n", "memory.current": "4831838208\n",
+                         "memory.events": f"low 0\nhigh 0\nmax 2\noom 1\noom_kill 1\n{RAW} 7\n"})
+    machine.journal = [{"__CURSOR": "s=1", "MESSAGE_ID": OOM_KILLED, "MESSAGE": RAW}]
+    fault_at(machine, "refuse")
+    _, status, _ = run(machine, layout)
+    assert status["observed"].get("game_unit") == (
+        "running=yes memory.peak=5134123008 memory.current=4831838208 oom=1 oom_kill=1 max=2 "
+        "journal_oom=yes")
+    assert RAW not in json.dumps(status)
+    # Every read is bounded, and the journal is asked for the parsed fields alone.
+    reads = [(command, timeout) for command, timeout in zip(machine.commands, machine.timeouts,
+                                                            strict=True)
+             if command[0] in ("journalctl", "systemctl")]
+    assert [command[0] for command, _ in reads] == ["journalctl", "systemctl"]
+    assert all(timeout <= 30 for _, timeout in reads)
+    journal = reads[0][0]
+    assert "--output-fields=MESSAGE_ID,EXIT_CODE,EXIT_STATUS,UNIT_RESULT" in journal
+    assert [option for option in journal if option.startswith("--lines=")] == ["--lines=200"]
+
+
+def game_never_starts(machine):
+    start = machine.start
+
+    def fails_for_the_game(argv):
+        if "--unit=bh-game" in argv:
+            raise worker.StageFailed("systemd-run exit 1")
+        start(argv)
+
+    machine.start = fails_for_the_game
+
+
+def unreadable_everywhere(machine, layout):
+    """The game's unit never starts, and neither systemctl nor journalctl answers."""
+    game_never_starts(machine)
+    machine.unreadable = {"systemctl", "journalctl"}
+
+
+def garbled_while_running(machine, layout):
+    machine.journal = ["not json {"]
+    machine.control_group = "not a control group"
+    fault_at(machine, "refuse")
+
+
+def odd_records_once_stopped(machine, layout):
+    machine.journal = [{"EXIT_CODE": "exploded", "EXIT_STATUS": "9"},
+                       {"EXIT_CODE": "killed", "EXIT_STATUS": "nine"},
+                       {"UNIT_RESULT": "Out Of Memory!", "MESSAGE_ID": "0" * 32}]
+    fault_at(machine, "exit")
+
+
+def odd_counts_while_running(machine, layout):
+    game_cgroup(layout, {"memory.peak": "a lot\n", "memory.events": "oom 0\nmax many\n"})
+    fault_at(machine, "refuse")
+
+
+@pytest.mark.parametrize(("breakage", "game_unit"), [
+    (unreadable_everywhere,
+     "running=unavailable main=unavailable result=unavailable journal_oom=unavailable"),
+    (garbled_while_running,
+     "running=yes memory.peak=unavailable memory.current=unavailable oom=unavailable "
+     "oom_kill=unavailable max=unavailable journal_oom=unavailable"),
+    (odd_records_once_stopped, "running=no main=unavailable result=unavailable journal_oom=no"),
+    (odd_counts_while_running,
+     "running=yes memory.peak=unavailable memory.current=unavailable oom=0 "
+     "oom_kill=unavailable max=unavailable journal_oom=no"),
+], ids=["unreadable", "garbled", "odd-records", "odd-counts"])
+def test_a_value_the_worker_cannot_read_or_parse_is_unavailable(machine, layout, breakage,
+                                                                game_unit):
+    breakage(machine, layout)
+    code, status, _ = run(machine, layout)
+    assert (code, status["state"], status["observed"].get("game_unit")) == (1, "failed",
+                                                                            game_unit)
+    WorkerStatus.model_validate(status)
+
+
+def fails_in(stage, machine):
+    """Break the run at `stage`; play fails at its first move, before any has committed."""
+    if stage == "display":
+        machine.display_up = False
+    elif stage == "game":
+        game_never_starts(machine)
+    elif stage == "ready":
+        machine.reply = lambda body: {"jsonrpc": "2.0", "id": body["id"],
+                                      "result": {"state": "SPLASH"}}
+    else:
+        fault_at(machine, "refuse", ("start", 1))
+
+
+def test_only_a_failure_in_the_game_stages_reports_its_unit_and_only_moves_bring_results(
+        tmp_path):
+    reported = {}
+    for stage in ("display", "game", "ready", "play"):
+        layout = layout_in(tmp_path / stage)
+        machine = FakeMachine(layout, Clock())
+        fails_in(stage, machine)
+        _, status, _ = run(machine, layout)
+        reported[status["stage"]] = ("game_unit" in status["observed"], layout.results.exists())
+    assert reported == {"display": (False, False), "game": (True, False), "ready": (True, False),
+                        "play": (True, False)}
 
 
 def test_ready_reports_what_the_run_observed(machine, layout):
@@ -663,6 +885,20 @@ def test_the_machine_reports_a_reply_it_cannot_read_as_a_lost_answer(monkeypatch
     with pytest.raises(Exception) as caught:
         worker.Machine().post("http://127.0.0.1:12346/", {"id": "x"}, 10)
     assert (caught.type, str(caught.value)) == (OSError, named)
+
+
+def test_the_machine_keeps_an_http_error_status_and_no_other_text(monkeypatch):
+    def lost_with(error):
+        monkeypatch.setattr(worker.urllib.request, "build_opener",
+                            lambda *handlers: Opener(error))
+        with pytest.raises(OSError) as caught:
+            worker.Machine().post("http://127.0.0.1:12346/", {"id": "x"}, 10)
+        return str(caught.value)
+
+    server_error = urllib.error.HTTPError("http://127.0.0.1:12346/", 500,
+                                          "Internal Server Error", {}, None)
+    assert lost_with(server_error) == "HTTPError 500"
+    assert lost_with(TimeoutError("timed out")) == "TimeoutError"
 
 
 def test_the_machine_names_a_command_that_times_out_or_cannot_start(tmp_path):

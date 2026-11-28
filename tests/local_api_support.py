@@ -2,7 +2,8 @@
 
 It answers JSON-RPC bodies the way the mod does. A move that commits leaves a record that
 `bh_request_status` returns by the move's own ID. Tests script faults by method and by
-the call's turn for that method.
+the call's turn for that method. Given a clock, it keeps when each request came, and a
+move's lost answer takes `lost_after` seconds on that clock.
 """
 
 from collections import Counter
@@ -13,13 +14,28 @@ HAND = [{"value": {"rank": rank, "suit": suit}} for rank, suit in (
 # The phase each move leaves the game in. Any other move leaves it where it was.
 NEXT_PHASE = {"start": "BLIND_SELECT", "select": "SELECTING_HAND", "play_hand": "ROUND_EVAL",
               "cash_out": "SHOP", "next_round": "BLIND_SELECT"}
+# The calls that only read. Every other call is a move.
+READS = ("bh_inspect", "bh_request_status")
 # The faults a call can meet, by name:
-#   lose    no answer comes back, and nothing commits;
-#   drop    the move commits, then its answer is lost;
-#   stray   the move commits, and its answer carries another ID;
-#   refuse  the game answers with an error, and nothing commits;
-#   reject  the game rejects the move, then the answer is lost.
-FAULTS = ("lose", "drop", "stray", "refuse", "reject")
+#   lose     no answer comes back, and nothing commits;
+#   drop     the move commits, then its answer is lost;
+#   stray    the move commits, and its answer carries another ID;
+#   refuse   the game answers with an error, and nothing commits;
+#   reject   the game rejects the move, then the answer is lost;
+#   pending  the game admits the move and its answer is lost while the game settles it:
+#            the status reads pending for `pending_asks` asks and the move then commits,
+#            or with no count it stays pending;
+#   expire   the game admits the move, its answer is lost, and the game gives up on it:
+#            the status reads unknown, with the move's intent;
+#   exit     the game stops during the move: its answer is lost, every later call meets
+#            a refused connection, and the game no longer runs.
+FAULTS = ("lose", "drop", "stray", "refuse", "reject", "pending", "expire", "exit")
+# How the worker's transport names each way an answer is lost.
+TIMED_OUT = "TimeoutError"
+CLOSED = "RemoteDisconnected"
+CONNECTION_REFUSED = "URLError"
+# A driver that never stops calling fails its test instead of hanging it.
+REQUEST_LIMIT = 100_000
 
 
 class FakeLocalApi:
@@ -35,9 +51,19 @@ class FakeLocalApi:
         self.faults = {}
         # How many inspects find the game busy after each committed move.
         self.busy_after_move = 0
+        # The error message a refused move gets.
+        self.refusal = "BUSY"
+        # How many asks find a pending move still pending; None keeps it pending.
+        self.pending_asks = None
+        self.lost_after = 0
+        # Something with __call__() for the time and advance(seconds), or None.
+        self.clock = None
         self.bodies = []
+        self.times = []
         self.records = {}
+        self.pending = {}
         self.turns = Counter()
+        self.exited = False
         self.phase = "MENU"
         self.round = 0
         self.discards = 0
@@ -46,28 +72,58 @@ class FakeLocalApi:
 
     def __call__(self, url, body, timeout):
         """One request, as the worker's transport sends it: the decoded reply, or OSError."""
+        assert len(self.bodies) < REQUEST_LIMIT, "the driver never stopped calling"
         self.bodies.append(body)
+        self.times.append(self.clock() if self.clock else None)
         method, params = body["method"], body["params"]
         self.turns[method] += 1
         fault = self.faults.get((method, self.turns[method]))
+        if self.exited:
+            raise OSError(CONNECTION_REFUSED)
         if fault == "lose":
-            raise OSError("timed out")
+            raise self.lost(method)
         if params.get("_bh_token") != self.token:
-            return refusal(body, "unauthorized")
+            return refusal(body, "UNAUTHORIZED")
         if method == "bh_inspect":
             return answer(body, self.inspect())
         if method == "bh_request_status":
-            return answer(body, self.records.get(params.get("request_id"), {"status": "unknown"}))
+            return answer(body, self.status(params.get("request_id")))
         if fault == "refuse":
-            return refusal(body, "refused")
-        if fault == "reject":
-            self.records[body["id"]] = {"status": "rejected", "intent": method}
-            raise OSError("timed out")
-        result = self.apply(method, params)
-        self.records[body["id"]] = {"status": "committed", "response": result, "intent": method}
+            return refusal(body, self.refusal)
+        if fault == "exit":
+            self.exited = True
+            raise self.lost(method, CLOSED)
+        if fault in ("reject", "pending", "expire"):
+            status = {"reject": "rejected", "pending": "pending", "expire": "unknown"}[fault]
+            self.records[body["id"]] = {"status": status, "intent": method}
+            self.pending[body["id"]] = (method, params)
+            raise self.lost(method)
+        result = self.commit(body["id"], method, params)["response"]
         if fault == "drop":
-            raise OSError("timed out")
+            raise self.lost(method)
         return answer({"id": "another"} if fault == "stray" else body, result)
+
+    def lost(self, method, kind=TIMED_OUT):
+        """A lost answer as the transport raises it; a move's comes `lost_after` seconds after
+        it was sent."""
+        if self.clock is not None and method not in READS:
+            self.clock.advance(self.lost_after)
+        return OSError(kind)
+
+    def status(self, request_id):
+        """The game's record of a move, or unknown with no intent for a move it never saw."""
+        record = self.records.get(request_id, {"status": "unknown"})
+        if record["status"] != "pending" or self.pending_asks is None:
+            return record
+        if self.pending_asks > 0:
+            self.pending_asks -= 1
+            return record
+        return self.commit(request_id, *self.pending[request_id])
+
+    def commit(self, request_id, method, params):
+        result = self.apply(method, params)
+        self.records[request_id] = {"status": "committed", "response": result, "intent": method}
+        return self.records[request_id]
 
     def apply(self, method, params):
         move = params.get("action") if method == "bh_action" else method
@@ -105,13 +161,22 @@ class FakeLocalApi:
             view |= {"shop": {"cards": []}, "packs": {"cards": []}, "round": {"reroll_cost": 5}}
         return view
 
+    def running(self):
+        """Whether the game is still up: it stops at an `exit` fault."""
+        return not self.exited
+
     def sent(self):
         """The moves sent, in order, as (method, action) pairs."""
         return [(body["method"], body["params"].get("action")) for body in self.bodies
-                if body["method"] not in ("bh_inspect", "bh_request_status")]
+                if body["method"] not in READS]
 
     def bodies_for(self, method):
         return [body for body in self.bodies if body["method"] == method]
+
+    def times_for(self, method):
+        """When each request of `method` came, by the clock."""
+        return [at for body, at in zip(self.bodies, self.times, strict=True)
+                if body["method"] == method]
 
 
 def answer(body, result):

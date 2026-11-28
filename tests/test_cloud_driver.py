@@ -36,12 +36,18 @@ def api(**options):
     return FakeLocalApi(TOKEN, INSTANCE, **{"end_after": 5} | options)
 
 
-def play(local_api, *, cap=driver.ACTION_CAP, running=lambda: True):
-    """Play one game: how it ended, or why it failed, the game, and each count reported."""
+def play(local_api, *, cap=driver.ACTION_CAP, running=None, post=None):
+    """Play one game: how it ended, or why it failed, the game, and each count reported.
+
+    The local API keeps the game's clock. The game runs until the API's exit fault unless
+    `running` says otherwise, and `post` may stand in front of the API.
+    """
     clock = Clock()
+    local_api.clock = clock
     counts = []
-    game = driver.Game(driver.Rpc(local_api, URL, TOKEN), running=running,
-                       committed=counts.append, clock=clock, sleep=clock.advance, cap=cap)
+    game = driver.Game(driver.Rpc(post or local_api, URL, TOKEN),
+                       running=running or local_api.running, committed=counts.append,
+                       clock=clock, sleep=clock.advance, cap=cap)
     try:
         outcome = game.play(SEED)
     except driver.PlayFailed as failure:
@@ -52,6 +58,12 @@ def play(local_api, *, cap=driver.ACTION_CAP, running=lambda: True):
 def asked_about(local_api):
     """The request IDs the driver asked the status of, in order."""
     return [body["params"]["request_id"] for body in local_api.bodies_for("bh_request_status")]
+
+
+def asked_after_the_send(local_api):
+    """Seconds from the first bh_action move's send to each status ask, in order."""
+    sent = local_api.times_for("bh_action")[0]
+    return [(at - sent).total_seconds() for at in local_api.times_for("bh_request_status")]
 
 
 def test_a_game_starts_from_its_seed_and_plays_to_a_game_over():
@@ -94,12 +106,13 @@ def test_a_lost_answer_is_resolved_by_the_move_id_and_the_move_is_never_resent(f
                              "state": "SELECTING_HAND"}
 
 
-@pytest.mark.parametrize("fault", ["lose", "reject"])
-def test_a_move_that_did_not_commit_ends_play_without_a_resend(fault):
+@pytest.mark.parametrize(("fault", "status"), [("lose", "unseen"), ("reject", "rejected")])
+def test_a_move_that_did_not_commit_ends_play_without_a_resend(fault, status):
     local_api = api()
     local_api.faults = {("select", 1): fault}
     outcome, game, counts = play(local_api)
-    assert outcome == "failed: uncertain move: select"
+    assert outcome == (
+        f"failed: uncertain move: select; answer TimeoutError after 0 s; status {status}")
     assert local_api.sent() == [("start", None), ("select", None)]
     assert asked_about(local_api) == [local_api.bodies_for("select")[0]["id"]]
     assert counts == [1]
@@ -109,7 +122,8 @@ def test_a_status_request_that_fails_ends_play_as_uncertain():
     local_api = api()
     local_api.faults = {("select", 1): "drop", ("bh_request_status", 1): "lose"}
     outcome, _, counts = play(local_api)
-    assert outcome == "failed: uncertain move: select"
+    assert outcome == ("failed: uncertain move: select; answer TimeoutError after 0 s; "
+                       "status lookup TimeoutError")
     assert local_api.sent() == [("start", None), ("select", None)]
     assert asked_about(local_api) == [local_api.bodies_for("select")[0]["id"]]
     assert counts == [1]
@@ -119,9 +133,155 @@ def test_a_refused_move_ends_play_with_its_name_and_no_retry():
     local_api = api()
     local_api.faults = {("select", 1): "refuse"}
     outcome, _, counts = play(local_api)
-    assert outcome == "failed: move refused: select"
+    assert outcome == "failed: move refused: select: BUSY"
     assert local_api.sent() == [("start", None), ("select", None)]
     assert local_api.bodies_for("bh_request_status") == [] and counts == [1]
+
+
+def test_an_answer_lost_while_the_game_settles_the_move_is_asked_about_until_it_commits():
+    # The answer is lost four seconds after the send. The move commits on the fourth ask.
+    local_api = api()
+    local_api.faults = {("bh_action", 1): "pending"}
+    local_api.lost_after, local_api.pending_asks = 4, 3
+    outcome, game, counts = play(local_api)
+    assert outcome == "game_over"
+    move = local_api.bodies_for("bh_action")[0]["id"]
+    assert [body["id"] for body in local_api.bodies].count(move) == 1
+    assert asked_about(local_api) == [move] * 4
+    assert asked_after_the_send(local_api) == [4, 6, 8, 10]
+    assert local_api.sent() == [("start", None), *ROUND[:4]] and counts == [1, 2, 3, 4, 5]
+    assert game.moves[2] == {"method": "bh_action", "action": "discard",
+                             "state": "SELECTING_HAND"}
+
+
+def test_a_move_still_pending_when_its_window_ends_names_its_cause():
+    # The answer is lost five seconds after the send, and the move never settles. An ask
+    # starts every two seconds while less than 85 seconds have passed since the send.
+    local_api = api()
+    local_api.faults = {("bh_action", 1): "pending"}
+    local_api.lost_after = 5
+    outcome, _, counts = play(local_api)
+    assert outcome == ("failed: uncertain move: bh_action discard; answer TimeoutError after "
+                       "5 s; status pending")
+    assert asked_after_the_send(local_api) == list(range(5, 85, 2))
+    assert local_api.sent() == [("start", None), *ROUND[:2]] and counts == [1, 2]
+
+
+@pytest.mark.parametrize("lost_after", [85, 120])
+def test_an_answer_lost_after_the_whole_window_is_asked_about_once(lost_after):
+    local_api = api()
+    local_api.faults = {("bh_action", 1): "pending"}
+    local_api.lost_after = lost_after
+    outcome, _, _ = play(local_api)
+    assert outcome == ("failed: uncertain move: bh_action discard; answer TimeoutError after "
+                       f"{lost_after} s; status pending")
+    assert asked_after_the_send(local_api) == [lost_after]
+
+
+@pytest.mark.parametrize("failed_ask", [1, 2])
+def test_a_status_call_that_fails_ends_the_asking_at_once(failed_ask):
+    local_api = api()
+    local_api.faults = {("bh_action", 1): "pending", ("bh_request_status", failed_ask): "lose"}
+    local_api.lost_after = 3
+    outcome, _, _ = play(local_api)
+    assert outcome == ("failed: uncertain move: bh_action discard; answer TimeoutError after "
+                       "3 s; status lookup TimeoutError")
+    assert asked_after_the_send(local_api) == [3, 5][:failed_ask]
+
+
+@pytest.mark.parametrize(("fault", "status"), [("expire", "unknown"), ("lose", "unseen")])
+def test_an_unknown_status_tells_a_move_the_game_gave_up_on_from_one_it_never_saw(fault,
+                                                                                   status):
+    # The game keeps an intent for every move it admitted; a move it never saw has none.
+    local_api = api()
+    local_api.faults = {("bh_action", 1): fault}
+    outcome, _, counts = play(local_api)
+    assert outcome == ("failed: uncertain move: bh_action discard; answer TimeoutError after "
+                       f"0 s; status {status}")
+    assert counts == [1, 2]
+
+
+@pytest.mark.parametrize("status", [{"status": "settling"}, {"status": 3}, {}])
+def test_a_status_the_driver_cannot_read_is_invalid(status):
+    local_api = api()
+    local_api.faults = {("select", 1): "drop"}
+    asks = []
+
+    def post(url, body, timeout):
+        if body["method"] != "bh_request_status":
+            return local_api(url, body, timeout)
+        asks.append(body)
+        return {"jsonrpc": "2.0", "id": body["id"], "result": status}
+
+    outcome, _, _ = play(local_api, post=post)
+    assert outcome == ("failed: uncertain move: select; answer TimeoutError after 0 s; "
+                       "status invalid")
+    assert len(asks) == 1
+
+
+def test_a_game_that_exits_during_a_move_is_named_for_it():
+    # The game stops seven seconds into the discard, so the status call meets a refused
+    # connection.
+    local_api = api()
+    local_api.faults = {("bh_action", 1): "exit"}
+    local_api.lost_after = 7
+    outcome, _, counts = play(local_api)
+    assert outcome == ("failed: game exited during bh_action discard; answer RemoteDisconnected "
+                       "after 7 s; status lookup URLError")
+    assert asked_after_the_send(local_api) == [7]
+    assert local_api.sent() == [("start", None), *ROUND[:2]] and counts == [1, 2]
+
+
+@pytest.mark.parametrize(("message", "code"), [
+    ("UNAFFORDABLE", "UNAFFORDABLE"), ("A" * 40, "A" * 40), ("A" * 41, "other"),
+    ("unaffordable", "other"), ("NOT ALLOWED", "other"), ("CODE_2", "other"), ("", "other"),
+    (None, "other"),
+], ids=["code", "longest", "too-long", "lowercase", "space", "digit", "empty", "none"])
+def test_a_refused_move_is_named_with_its_code(message, code):
+    local_api = api()
+    local_api.faults = {("bh_action", 1): "refuse"}
+    local_api.refusal = message
+    outcome, _, counts = play(local_api)
+    assert outcome == f"failed: move refused: bh_action discard: {code}"
+    assert local_api.bodies_for("bh_request_status") == [] and counts == [1, 2]
+
+
+def lost_move(action, kind):
+    """Why a bh_action move fails when its answer, a million seconds after the send, and then
+    its status call are both lost with `kind`, and the game has stopped."""
+    clock = Clock()
+
+    def post(url, body, timeout):
+        if body["method"] == "bh_action":
+            clock.advance(10**6)
+        raise OSError(kind)
+
+    game = driver.Game(driver.Rpc(post, URL, TOKEN), running=lambda: False,
+                       committed=lambda count: None, clock=clock, sleep=clock.advance)
+    with pytest.raises(driver.PlayFailed) as failed:
+        game.move("bh_action", {"action": action})
+    return str(failed.value)
+
+
+def test_the_longest_reason_fits_in_200_characters():
+    # The longest move is an action of 20 letters, and the longest kind has 40 characters.
+    action, kind = "a" * 20, "K" * 40
+    reason = lost_move(action, kind)
+    assert reason == (f"game exited during bh_action {action}; answer {kind} after 1000000 s; "
+                      f"status lookup {kind}")
+    assert len(reason) <= 200
+
+
+@pytest.mark.parametrize(("action", "kind", "named"), [
+    ("a" * 21, "K" * 41, ("other", "other")),
+    ("Play_Hand", "timed out!", ("other", "other")),
+    (None, "", ("other", "OSError")),
+    ("play_hand", "HTTPError 500", ("play_hand", "HTTPError 500")),
+], ids=["too-long", "outside-pattern", "missing", "named"])
+def test_an_action_or_a_kind_the_reason_cannot_name_reads_other(action, kind, named):
+    move, answer = named
+    assert lost_move(action, kind) == (f"game exited during bh_action {move}; answer {answer} "
+                                       f"after 1000000 s; status lookup {answer}")
 
 
 def test_the_action_cap_stops_play_at_exactly_the_cap():

@@ -17,6 +17,9 @@ from balatro_horizons.cloud.ledger import Ledger
 from balatro_horizons.cloud.status import status_report
 
 RESULTS_BYTES = 1 << 20
+# The results a worker writes when play fails after two committed moves.
+FAILED_RESULTS = RESULTS | {"outcome": None, "actions": 2}
+REFUSED = "move refused: bh_action discard: BUSY"
 
 
 @pytest.fixture
@@ -45,6 +48,20 @@ def after_create(cloud, at):
 
 def copied(cloud):
     return cloud.root / "results" / "r1.json"
+
+
+def watch_the_delete(cloud):
+    """What the run shows of its copy each time its Droplet is deleted."""
+    seen = []
+    delete = cloud.provider.delete_droplet
+
+    def delete_droplet(droplet_id):
+        kept = json.loads((cloud.root / "runs" / "r1.json").read_text())
+        seen.append((copied(cloud).exists(), kept.get("results_copy")))
+        return delete(droplet_id)
+
+    cloud.provider.delete_droplet = delete_droplet
+    return seen
 
 
 def test_progress_keeps_a_run_alive_past_the_grace(cloud):
@@ -102,7 +119,59 @@ def test_a_failed_status_during_play_tears_down_in_that_tick_and_keeps_its_evide
     record = cloud.assert_torn_down("r1", "worker_failed:play")
     assert (record.worker_status.reason, record.worker_status.evidence) == (
         "move refused: select", {"game_stderr": "a capped tail"})
-    assert cloud.transport.steps() == ["status"] and not copied(cloud).exists()
+
+
+def failed_play(cloud):
+    """The worker fails play after two committed moves, having written their results."""
+    cloud.transport.statuses = [worker_status("failed", "play", REFUSED, actions=2)]
+    cloud.transport.results = json.dumps(FAILED_RESULTS).encode()
+
+
+def test_a_failed_play_is_copied_then_torn_down_in_the_same_tick(cloud):
+    controller = running(cloud)
+    failed_play(cloud)
+    seen_at_delete = watch_the_delete(cloud)
+    cloud.clock.advance(10)
+    controller.tick()
+    record = cloud.assert_torn_down("r1", "worker_failed:play")
+    assert getattr(record, "results_copy", None) == "copied"
+    assert json.loads(copied(cloud).read_text()) == FAILED_RESULTS
+    assert stat.S_IMODE(copied(cloud).stat().st_mode) == 0o600
+    assert seen_at_delete[:1] == [(True, "copied")]
+    assert cloud.transport.steps() == ["status", "results"]
+    assert (record.worker_status.reason, record.worker_status.actions) == (REFUSED, 2)
+
+
+@pytest.mark.parametrize(("failure", "results", "named"), [
+    ("failed", None, "ssh_failed"),
+    (None, b"", "results_missing"),
+    (None, b"not json", "results_malformed"),
+], ids=["failed", "missing", "malformed"])
+def test_each_failed_copy_of_a_failed_play_is_named_and_the_teardown_follows(cloud, failure,
+                                                                             results, named):
+    controller = running(cloud)
+    failed_play(cloud)
+    if failure:
+        cloud.transport.failures = {"results": failure}
+    if results is not None:
+        cloud.transport.results = results
+    cloud.clock.advance(10)
+    controller.tick()
+    record = cloud.assert_torn_down("r1", "worker_failed:play")
+    assert getattr(record, "results_copy", None) == named
+    assert not copied(cloud).exists()
+
+
+def test_a_failed_status_keeps_how_the_game_unit_ended(cloud):
+    controller = running(cloud)
+    unit = "running=no main=killed/9 result=oom-kill journal_oom=yes"
+    failed = worker_status("failed", "play", REFUSED, actions=2)
+    failed["observed"]["game_unit"] = unit
+    cloud.transport.statuses = [failed]
+    cloud.clock.advance(10)
+    controller.tick()
+    record = cloud.assert_torn_down("r1", "worker_failed:play")
+    assert record.worker_status.observed["game_unit"] == unit
 
 
 @pytest.mark.parametrize("status", [b'{"stage": "play", "state": "lost"}', b"[1, 2]",
@@ -118,15 +187,7 @@ def test_a_malformed_status_during_play_tears_down_in_that_tick(cloud, status):
 def test_a_finished_game_is_copied_then_torn_down_in_the_same_tick(cloud):
     controller = running(cloud)
     cloud.transport.statuses = [worker_status("finished", "play", actions=5)]
-    seen_at_delete = []
-    delete = cloud.provider.delete_droplet
-
-    def delete_droplet(droplet_id):
-        kept = json.loads((cloud.root / "runs" / "r1.json").read_text())
-        seen_at_delete.append((copied(cloud).exists(), kept.get("results_copy")))
-        return delete(droplet_id)
-
-    cloud.provider.delete_droplet = delete_droplet
+    seen_at_delete = watch_the_delete(cloud)
     cloud.clock.advance(10)
     controller.tick()
     record = cloud.assert_torn_down("r1", "succeeded")
