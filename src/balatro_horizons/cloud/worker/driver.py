@@ -30,7 +30,7 @@ STAKE = "WHITE"
 # The alphabet the run API draws its seeds from: no 0, 1, I or O.
 SEED_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 SEED_LENGTH = 8
-# How long each call may take, in seconds.
+# Each call's timeout, in seconds, bounds a single wait for the reply, not the whole call.
 INSPECT_SECONDS = 10
 STATUS_SECONDS = 12
 MOVE_SECONDS = 85
