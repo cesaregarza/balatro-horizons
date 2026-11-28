@@ -1,5 +1,6 @@
 """Ambiguous creates, startup inventory, ownership before delete, and Pi restarts."""
 
+import json
 from dataclasses import replace
 from datetime import timedelta
 
@@ -272,6 +273,93 @@ def test_each_retry_of_a_held_run_reads_the_log_within_a_fresh_window(cloud):
     # Then the lookup runs. Only it stamps a time after `verified_at`: one page, 30 s on.
     assert (resource.destroy_check, resource.destroy_checked_at) == (
         "found", record.verified_at + timedelta(seconds=30))
+
+
+# Run r1 as an earlier version wrote it, byte for byte, with `not_found` for a lookup that
+# finished with no match. That version reaches it when a first pass whose DELETE answer was
+# lost reads the log and records the miss, and a later pass's DELETE is acknowledged before
+# the window runs out. The Droplet still reads back when the window ends, so the run is held.
+EARLIER_HELD_RUN = (
+    '{"actions_seen":0,"address":"192.0.2.245","cancel_requested":true,'
+    '"create_attempted_at":"2026-11-24T12:00:00Z","create_rejected":false,'
+    '"created_at":"2026-11-24T12:00:00Z","deadline":"2026-11-24T14:00:00Z",'
+    '"grace_from":"2026-11-24T12:00:00Z","history":[{"at":"2026-11-24T12:00:00Z","reason":null,'
+    '"state":"provisioning"},{"at":"2026-11-24T12:00:00Z","reason":null,"state":"running"},'
+    '{"at":"2026-11-24T12:00:00Z","reason":"cancelled","state":"tearing_down"},'
+    '{"at":"2026-11-24T12:01:03Z","reason":"cancelled","state":"cleanup_unverified"}],'
+    '"last_ssh_failure":null,"released":[],"reserved_usd":0.2,'
+    '"resources":[{"acknowledged_at":"2026-11-24T12:01:03Z",'
+    '"delete_requested_at":"2026-11-24T12:01:03Z","destroy_check":"not_found",'
+    '"destroy_checked_at":"2026-11-24T12:00:00Z","destroy_evidence":null,"id":1006,'
+    '"kind":"droplet"}],"results_copy":null,"run_id":"r1","settled_usd":null,'
+    '"state":"cleanup_unverified","teardown_reason":"cancelled",'
+    '"teardown_started_at":"2026-11-24T12:00:00Z","verified_at":null,'
+    '"worker_started_at":"2026-11-24T12:00:00Z","worker_status":{"actions":0,"evidence":{},'
+    '"finished_at":null,"observed":{"kernel":"6.8.0-test"},"outcome":null,"reason":null,'
+    '"stage":"play","started_at":{"play":"2026-11-24T12:04:00Z"},"state":"running"}}\n'
+)
+
+
+def earlier_held_run(cloud):
+    """Store EARLIER_HELD_RUN as the ledger's only record, then move the clock an hour on.
+    Returns the record parsed as plain JSON, not through the model."""
+    cloud.ledger.runs_dir.mkdir(parents=True)
+    (cloud.ledger.runs_dir / "r1.json").write_text(EARLIER_HELD_RUN)
+    cloud.clock.advance(HOUR)
+    return json.loads(EARLIER_HELD_RUN)
+
+
+def test_an_earlier_held_run_loads_as_stored_with_its_miss_read_as_unknown(cloud):
+    expected = earlier_held_run(cloud)
+    assert expected["resources"][0]["destroy_check"] == "not_found"
+    expected["resources"][0]["destroy_check"] = "unknown"
+    loaded = [cloud.ledger.get("r1"), *cloud.ledger.runs()]
+    assert [record.model_dump(mode="json") for record in loaded] == [expected, expected]
+
+
+def test_status_shows_an_earlier_held_run_with_its_reservation(cloud):
+    """Status takes no provider: it reads the ledger alone."""
+    stored = earlier_held_run(cloud)
+    report = status_report(cloud.ledger, cloud.settings, cloud.clock())
+    (run,) = report["runs"]
+    assert (run["run_id"], run["state"], run["reserved_usd"], run["cost_usd"]) == (
+        "r1", "cleanup_unverified", stored["reserved_usd"], stored["reserved_usd"])
+    assert [(a["code"], a["run_id"]) for a in report["alerts"]] == [("CLEANUP_UNVERIFIED", "r1")]
+    # As for any held run, it keeps its slot as well as its reservation.
+    assert report["refusals"] == ["CLEANUP_UNVERIFIED", "CONCURRENCY_LIMIT"]
+
+
+class RefusingProvider:
+    """Refuses every call, as an unreachable provider would, and records each attempt."""
+
+    def __init__(self):
+        self.attempts = []
+
+    def __getattr__(self, name):
+        def refuse(*args, **kwargs):
+            self.attempts.append(name)
+            raise ConnectionRefusedError(name)
+
+        return refuse
+
+
+def test_reconcile_changes_nothing_in_an_earlier_held_run_while_every_call_is_refused(cloud):
+    """Reconcile always reads the inventory, so it can't run with no provider call at all.
+    The refusing provider is the closest proof that loading the record needs no provider."""
+    stored = earlier_held_run(cloud)
+    cloud.provider = RefusingProvider()
+    assert cloud.reconcile() == {
+        "runs": [{"run_id": "r1", "state": "cleanup_unverified", "reason": "cancelled"}],
+        "orphans": [], "unmatched": [], "orphan_scan": "LIST_FAILED"}
+    # The record is not rewritten. The run stays held, with its ID, its acknowledgment and
+    # its reservation.
+    assert (cloud.ledger.runs_dir / "r1.json").read_text() == EARLIER_HELD_RUN
+    record = cloud.ledger.get("r1")
+    assert (record.state, [(r.id, r.acknowledged_at is not None) for r in record.resources],
+            record.reserved_usd) == (
+        "cleanup_unverified", [(stored["resources"][0]["id"], True)], stored["reserved_usd"])
+    assert "delete_droplet" not in cloud.provider.attempts
+    assert set(cloud.provider.attempts) == {"list_droplets"}
 
 
 def test_running_worker_kept_only_within_its_original_deadline_after_restart(cloud):
