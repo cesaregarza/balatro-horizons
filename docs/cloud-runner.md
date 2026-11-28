@@ -180,8 +180,9 @@ a refusal.
   - `<value>` is `pending` or `rejected`; `unknown` when the game admitted the move
     and gave up on it, so its record keeps the move's intent; `unseen` when the game
     has no record of it; or `invalid` for a status the driver cannot read.
-  - When the asking ends and the game's unit is no longer running, the reason
-    begins `game exited during <move>` instead, with the same detail after it.
+  - When the asking ends and systemctl reports the game's unit not active or
+    unknown, the reason begins `game exited during <move>` instead, with the same
+    detail after it. A check that fails leaves the move's own reason.
 
   Every reason fits in 200 characters.
 - **A refusal.** An error reply to a move ends play with
@@ -212,7 +213,7 @@ a refusal.
 | `outcome` | Once finished: `game_over`, `won` or `action_cap`. |
 | `started_at`, `finished_at` | When each stage started, and when the worker ended. |
 | `observed` | What the run observed, listed above, including the seed. |
-| `observed.game_unit` | After a failure in the `game`, `ready` or `play` stage only: how the game's unit stood, in one line of closed values and numbers of at most 200 characters. It starts `running=yes`, `no` or `unavailable`. A running unit adds `memory.peak` and `memory.current`, then the `oom`, `oom_kill` and `max` counts from `memory.events`, read from the unit's cgroup through its `ControlGroup` property. Otherwise it adds `main=<how>/<status>`, where `<how>` is `exited`, `killed` or `dumped`, and the unit's `result`, such as `exit-code`, `signal`, `oom-kill` or `success`, both from the unit's journal records, since a transient unit is unloaded once it stops. At systemd's default log level the journal records how a main process ended only when it did not end cleanly, so after a clean end `main` reads `unavailable` though the journal was read. Last, `journal_oom=yes` or `no` says whether the journal records an out-of-memory kill for the unit, and either value shows the journal was read. A value that cannot be read or parsed is `unavailable`, and no journal or cgroup text is kept. |
+| `observed.game_unit` | After a failure in the `game`, `ready` or `play` stage only: how the game's unit stood, in one line of closed values and numbers of at most 200 characters. It starts `running=yes`, `no` or `unavailable`. `no` means systemctl reported the unit not active or unknown, and a check that fails any other way reads `unavailable`. A running unit adds `memory.peak` and `memory.current`, then the `oom`, `oom_kill` and `max` counts from `memory.events`, read from the unit's cgroup through its `ControlGroup` property. Otherwise it adds `main=<how>/<status>`, where `<how>` is `exited`, `killed` or `dumped`, and the unit's `result`, such as `exit-code`, `signal`, `oom-kill` or `success`, both from the unit's journal records, since a transient unit is unloaded once it stops. At systemd's default log level the journal records how a main process ended only when it did not end cleanly, so after a clean end `main` reads `unavailable` though the journal was read. Last, `journal_oom=yes` or `no` says whether the journal records an out-of-memory kill for the unit, and either value shows the journal was read. A value that cannot be read or parsed is `unavailable`, and no journal or cgroup text is kept. |
 | `evidence` | On failure only: the capped log tails. |
 
 ### Progress and the heartbeat

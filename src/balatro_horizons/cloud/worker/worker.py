@@ -73,6 +73,9 @@ STARTUP_SECONDS = 180
 GLXINFO_SECONDS = 20
 CLOUD_INIT_SECONDS = 30
 GAME_STAGES = ("game", "ready", "play")
+# The exits of `systemctl is-active` that report a unit stopped: 3 for one that is not
+# active, and 4 for one it does not know, as a stopped transient unit is unloaded.
+STOPPED_EXITS = (3, 4)
 UNIT_READ_SECONDS = 20
 # Only the fields the worker parses: a record's text never leaves the journal.
 JOURNAL = ("journalctl", "--unit=bh-game.service", "--output=json", "--lines=200", "--quiet",
@@ -151,7 +154,11 @@ class Machine:
             raise StageFailed(f"{path.name} download failed") from None
 
     def unit_active(self, unit):
-        return self.run(["systemctl", "is-active", "--quiet", unit], check=False).returncode == 0
+        """Whether the unit runs. A check that fails raises, so it never reads as stopped."""
+        code = self.run(["systemctl", "is-active", "--quiet", unit], check=False).returncode
+        if code not in (0, *STOPPED_EXITS):
+            raise StageFailed(f"systemctl exit {code}")
+        return code == 0
 
     def display_answers(self, path):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
