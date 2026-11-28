@@ -126,9 +126,11 @@ and the game's stderr. The worker then exits.
 8. `play`: the driver plays one game, described below. The status file is written
    again after each committed move. Play ends at a game over, a win or the action
    cap, and the worker then writes its results and the `finished` status. Any
-   other end fails the stage with a named reason. Results that cannot be built
-   or written fail it too, with the reason `results not written: <code>`, where
-   the code is the errno name, such as `ENOSPC`, or else the error's type.
+   other end fails the stage with a named reason. When play ends normally, results
+   that cannot be built or written fail it too, with the reason
+   `results not written: <code>`, where the code is the errno name, such as
+   `ENOSPC`, or else the error's type. A failed play keeps its own reason, as
+   [the results copy](#the-results-copy) says.
 
 The game's token and instance ID are made on the Droplet and never leave it. They
 are taken out of the log tails, and they reach the game through an owner-only
@@ -156,7 +158,7 @@ a refusal.
   `game_over`. Once 200 moves have committed, play ends as `action_cap`. Every call
   but an inspect or a request-status counts as a move, `start` included.
 - **A lost answer.** When a move's answer is lost or does not answer the call, the
-  driver asks `bh_request_status` once by the move's own ID, however late the answer
+  driver asks `bh_request_status` by the move's own ID, however late the answer
   was lost. That lookup has its own 12-second timeout. The game settles every move
   it admits within its own bound of at most 60 seconds, so a `pending` status is
   asked about again every 2 seconds while the move's window lasts. The window is 85
@@ -210,7 +212,7 @@ a refusal.
 | `outcome` | Once finished: `game_over`, `won` or `action_cap`. |
 | `started_at`, `finished_at` | When each stage started, and when the worker ended. |
 | `observed` | What the run observed, listed above, including the seed. |
-| `observed.game_unit` | After a failure in the `game`, `ready` or `play` stage only: how the game's unit stood, in one line of closed values and numbers of at most 200 characters. It starts `running=yes`, `no` or `unavailable`. A running unit adds `memory.peak` and `memory.current`, then the `oom`, `oom_kill` and `max` counts from `memory.events`, read from the unit's cgroup through its `ControlGroup` property. Otherwise it adds `main=<how>/<status>`, where `<how>` is `exited`, `killed` or `dumped`, and the unit's `result`, such as `exit-code`, `signal`, `oom-kill` or `success`, both from the unit's journal records, since a transient unit is unloaded once it stops. Last, `journal_oom=yes` or `no` says whether the journal records an out-of-memory kill for the unit. A value that cannot be read or parsed is `unavailable`, and no journal or cgroup text is kept. |
+| `observed.game_unit` | After a failure in the `game`, `ready` or `play` stage only: how the game's unit stood, in one line of closed values and numbers of at most 200 characters. It starts `running=yes`, `no` or `unavailable`. A running unit adds `memory.peak` and `memory.current`, then the `oom`, `oom_kill` and `max` counts from `memory.events`, read from the unit's cgroup through its `ControlGroup` property. Otherwise it adds `main=<how>/<status>`, where `<how>` is `exited`, `killed` or `dumped`, and the unit's `result`, such as `exit-code`, `signal`, `oom-kill` or `success`, both from the unit's journal records, since a transient unit is unloaded once it stops. At systemd's default log level the journal records how a main process ended only when it did not end cleanly, so after a clean end `main` reads `unavailable` though the journal was read. Last, `journal_oom=yes` or `no` says whether the journal records an out-of-memory kill for the unit, and either value shows the journal was read. A value that cannot be read or parsed is `unavailable`, and no journal or cgroup text is kept. |
 | `evidence` | On failure only: the capped log tails. |
 
 ### Progress and the heartbeat

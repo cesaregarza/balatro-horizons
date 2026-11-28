@@ -412,13 +412,20 @@ class Worker:
     def play(self):
         """One scripted game, its seed observed first; each committed move is reported."""
         seed = self.status["observed"]["seed"] = self.driver.new_seed()
-        self.game = self.driver.Game(
-            self.rpc, running=lambda: self.machine.unit_active("bh-game"),
-            committed=self.committed, clock=self.clock, sleep=self.machine.sleep)
+        self.game = self.driver.Game(self.rpc, running=self.game_running, committed=self.committed,
+                                     clock=self.clock, sleep=self.machine.sleep)
         try:
             self.status["outcome"] = self.game.play(seed)
         except self.driver.PlayFailed as failure:
             raise StageFailed(str(failure)) from None
+
+    def game_running(self):
+        """Whether the game's unit runs, as the driver asks it during play."""
+        try:
+            return self.machine.unit_active("bh-game")
+        except StageFailed:
+            # A check that fails cannot show the game exited, so the move's own reason stands.
+            return True
 
     def committed(self, count):
         self.status["actions"] = count
