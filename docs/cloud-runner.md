@@ -156,10 +156,12 @@ a refusal.
   `game_over`. Once 200 moves have committed, play ends as `action_cap`. Every call
   but an inspect or a request-status counts as a move, `start` included.
 - **A lost answer.** When a move's answer is lost or does not answer the call, the
-  driver asks `bh_request_status` by the move's own ID. The game settles every move
+  driver asks `bh_request_status` once by the move's own ID, however late the answer
+  was lost. That lookup has its own 12-second timeout. The game settles every move
   it admits within its own bound of at most 60 seconds, so a `pending` status is
-  asked about again every 2 seconds, and no ask starts once 85 seconds have passed
-  since the send. Only `committed` lets play go on, with the stored response as the
+  asked about again every 2 seconds while the move's window lasts. The window is 85
+  seconds from the send. It limits only these repeats, and no repeat starts once it
+  has passed. Only `committed` lets play go on, with the stored response as the
   move's result. A move is never sent twice. Any other status, a status call that
   fails, or a move still pending when its window ends, ends play with
   `uncertain move: <move>; answer <kind> after <n> s; status <value>`, or with
@@ -184,7 +186,7 @@ a refusal.
   1 to 40 capital letters and underscores, and `other` otherwise. Nothing is
   retried.
 - **Timeouts.** 10 seconds for an inspect, 12 for a request-status and 85 for any
-  other call.
+  other call. Each timeout bounds a single wait for the reply, not the whole call.
 - **The policy.** The pilot's scripted choices, from the public observation only,
   never the seed or the undealt cards. It selects each blind and cashes out each
   round. It plays the best-scoring hand, discarding the rest first once a game and

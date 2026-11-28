@@ -176,7 +176,8 @@ class Game:
 
     def resolve(self, move, request_id, sent_at, answer):
         """Ask by the move's own ID whether it committed; its response if it did. The move is
-        never sent again, and no ask starts once its window has passed since the send."""
+        never sent again. The first ask is always made, however late the answer was lost; the
+        window, counted from the send, limits only the repeats of a `pending` status."""
         window_ends = sent_at + timedelta(seconds=MOVE_SECONDS)
         while True:
             try:
