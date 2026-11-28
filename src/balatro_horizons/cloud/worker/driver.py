@@ -5,14 +5,17 @@ worker's own process, with the run's token and the worker's transport. It uses o
 standard library and imports nothing from the controller's package. Every request is a
 JSON-RPC 2.0 call that carries the token and a fresh ID.
 
-A move whose answer is lost is never sent again: the driver asks once, by the move's
-own ID, whether it committed, and play goes on only if it did. Play ends at a game over,
-a win or the action cap. Anything else ends it as a failure with a named reason.
+A move whose answer is lost is never sent again: the driver asks by the move's own ID
+whether it committed, again while the game is still settling it, and play goes on only if
+it did. Play ends at a game over, a win or the action cap. Anything else ends it as a
+failure with a named reason, and a failed move's reason holds only closed values and
+numbers.
 
 The policy follows the pilot's scripted policy: the same choices from the same public
 observation fields. It exercises the game; it does not try to play it well.
 """
 
+import re
 import secrets
 import uuid
 from collections import Counter
@@ -31,6 +34,8 @@ SEED_LENGTH = 8
 INSPECT_SECONDS = 10
 STATUS_SECONDS = 12
 MOVE_SECONDS = 85
+# A move still pending is asked about again this often, within its own window.
+STATUS_POLL_SECONDS = 2
 # Between moves the game must settle: ready, and not busy.
 SETTLE_POLL_SECONDS = 0.25
 SETTLE_SECONDS = 15
@@ -48,6 +53,11 @@ ACE = 14
 WHEEL = [2, 3, 4, 5, ACE]
 # A price the policy never meets, for an offer that shows none.
 UNPRICED = 10**9
+# What a failure's reason may carry from a move, an error reply and a lost answer. Anything
+# else reads `other`, so every reason fits in 200 characters.
+ACTION = re.compile(r"[a-z_]{1,20}")
+CODE = re.compile(r"[A-Z_]{1,40}")
+KIND = re.compile(r"[A-Za-z][A-Za-z0-9 ]{0,39}")
 
 
 class PlayFailed(Exception):
@@ -59,11 +69,16 @@ class RpcFailed(Exception):
 
 
 class NoAnswer(RpcFailed):
-    """No reply came back that answers the call, so what the call did is unknown."""
+    """No reply came back that answers the call, so what the call did is unknown. The message
+    names how the answer was lost."""
 
 
 class Refused(RpcFailed):
-    """The game answered the call with an error."""
+    """The game answered the call with an error, which `code` names."""
+
+    def __init__(self, code):
+        super().__init__("error reply")
+        self.code = code
 
 
 def new_seed():
@@ -95,11 +110,11 @@ class Rpc:
         try:
             reply = self.post(self.url, body, timeout)
         except OSError as error:
-            raise NoAnswer(str(error) or type(error).__name__) from None
+            raise NoAnswer(kind_of(error)) from None
         if not isinstance(reply, dict) or reply.get("id") != request_id:
             raise NoAnswer("reply id mismatch")
         if reply.get("error") is not None:
-            raise Refused("error reply")
+            raise Refused(code_of(reply["error"]))
         if not isinstance(reply.get("result"), dict):
             raise NoAnswer("no result")
         return reply["result"]
@@ -146,26 +161,44 @@ class Game:
     def move(self, method, params):
         """Send one move and record it once it has committed."""
         request_id = new_request_id()
+        move = move_name(method, params)
+        sent_at = self.clock()
         try:
             result = self.rpc.call(method, params, MOVE_SECONDS, request_id)
-        except Refused:
-            raise PlayFailed(f"move refused: {method}") from None
-        except NoAnswer:
-            result = self.resolve(method, request_id)
+        except Refused as refusal:
+            raise PlayFailed(f"move refused: {move}: {refusal.code}") from None
+        except NoAnswer as lost:
+            answer = f"answer {lost} after {whole_seconds(self.clock() - sent_at)} s"
+            result = self.resolve(move, request_id, sent_at, answer)
         self.moves.append({"method": method, "action": params.get("action"),
                            "state": state_name(result)})
         self.committed(len(self.moves))
 
-    def resolve(self, method, request_id):
-        """Ask once, by the move's own ID, whether it committed. It is never sent again."""
-        try:
-            status = self.rpc.call("bh_request_status", {"request_id": request_id},
-                                   STATUS_SECONDS)
-        except RpcFailed:
-            raise PlayFailed(f"uncertain move: {method}") from None
-        if status.get("status") != "committed":
-            raise PlayFailed(f"uncertain move: {method}")
-        return status.get("response")
+    def resolve(self, move, request_id, sent_at, answer):
+        """Ask by the move's own ID whether it committed; its response if it did. The move is
+        never sent again, and no ask starts once its window has passed since the send."""
+        window_ends = sent_at + timedelta(seconds=MOVE_SECONDS)
+        while True:
+            try:
+                status = self.rpc.call("bh_request_status", {"request_id": request_id},
+                                       STATUS_SECONDS)
+            except RpcFailed as failure:
+                raise self.uncertain(move, answer, f"status lookup {failure}") from None
+            value = status_of(status)
+            if value == "committed":
+                return status.get("response")
+            # The game settles every move it admits within its own bound of at most 60 s,
+            # as committed, rejected or unknown, so pending is not yet an answer.
+            if value != "pending":
+                raise self.uncertain(move, answer, f"status {value}")
+            self.sleep(STATUS_POLL_SECONDS)
+            if self.clock() >= window_ends:
+                raise self.uncertain(move, answer, "status pending")
+
+    def uncertain(self, move, answer, status):
+        """A move whose outcome is unknown ends play, named for the game if it has exited."""
+        named = f"uncertain move: {move}" if self.running() else f"game exited during {move}"
+        return PlayFailed(f"{named}; {answer}; {status}")
 
     def settled(self):
         """The observation once the game is ready for a move, inspected every quarter second
@@ -182,6 +215,40 @@ class Game:
                 return observation
             self.sleep(SETTLE_POLL_SECONDS)
         raise PlayFailed("not ready between moves")
+
+
+def move_name(method, params):
+    """The method, and for bh_action its action, as a reason names the move."""
+    if method != "bh_action":
+        return method
+    action = params.get("action")
+    named = isinstance(action, str) and ACTION.fullmatch(action)
+    return f"bh_action {action if named else 'other'}"
+
+
+def kind_of(error):
+    """How the transport says an answer was lost: its name, kept only when it fits KIND."""
+    kind = str(error) or type(error).__name__
+    return kind if KIND.fullmatch(kind) else "other"
+
+
+def code_of(error):
+    """An error reply's message, kept only when it is a code that fits CODE."""
+    message = error.get("message") if isinstance(error, dict) else None
+    return message if isinstance(message, str) and CODE.fullmatch(message) else "other"
+
+
+def status_of(status):
+    """What the game's record says of a move. An unknown record with an intent is a move the
+    game admitted and gave up on; one without is a move it never saw."""
+    value = status.get("status")
+    if value == "unknown":
+        return "unknown" if status.get("intent") is not None else "unseen"
+    return value if value in ("committed", "pending", "rejected") else "invalid"
+
+
+def whole_seconds(elapsed):
+    return max(int(elapsed.total_seconds()), 0)
 
 
 def ready_for_a_move(observation):

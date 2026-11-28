@@ -159,6 +159,7 @@ class Controller:
         if reason:
             return reason
         if report.failure:
+            self.copy_failed_play(record, report.status)
             return report.failure
         if report.finished:
             record.results_copy = copy_results(self.link, record, self.ledger.root,
@@ -181,6 +182,7 @@ class Controller:
         if progress.status is not None:
             record.worker_status = progress.status
         if progress.failure:
+            self.copy_failed_play(record, progress.status)
             return self.resolver.tear_down(record, progress.failure)
         # The step took time, so a stop reason that holds once it has returned comes first:
         # play is then too late, and no news is not waited on.
@@ -194,6 +196,12 @@ class Controller:
             record.move("running", returned_at)
             self.ledger.save(record)
         return record
+
+    def copy_failed_play(self, record, status):
+        """A worker that failed in play brings its moves so far home, before the teardown."""
+        if status is not None and status.stage == "play":
+            record.results_copy = copy_results(self.link, record, self.ledger.root,
+                                               self.clock)
 
     def cancel(self, run_id, *, now=False):
         """Record the request; with now=True also tear down in this call."""

@@ -81,7 +81,7 @@ class WorkerStatus(BaseModel):
     started_at: dict[Stage, AwareDatetime] = {}
     finished_at: AwareDatetime | None = None
     observed: dict[Literal["kernel", "packages_sha256", "steamrt4", "game_version",
-                           "renderer", "cloud_init", "seed"], Bounded] = {}
+                           "renderer", "cloud_init", "seed", "game_unit"], Bounded] = {}
     # Capped log tails, written only on failure.
     evidence: dict[Literal["stage_log", "display_stderr", "game_stderr"], Bounded] = {}
 

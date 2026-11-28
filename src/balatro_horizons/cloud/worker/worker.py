@@ -22,6 +22,7 @@ import subprocess
 import sys
 import time
 import tomllib
+import urllib.error
 import urllib.request
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -71,6 +72,21 @@ GAME_LIMITS = ("CPUQuota=200%", "MemoryMax=6656M")
 STARTUP_SECONDS = 180
 GLXINFO_SECONDS = 20
 CLOUD_INIT_SECONDS = 30
+GAME_STAGES = ("game", "ready", "play")
+UNIT_READ_SECONDS = 20
+# Only the fields the worker parses: a record's text never leaves the journal.
+JOURNAL = ("journalctl", "--unit=bh-game.service", "--output=json", "--lines=200", "--quiet",
+           "--output-fields=MESSAGE_ID,EXIT_CODE,EXIT_STATUS,UNIT_RESULT", "--no-pager")
+CONTROL_GROUP = ("systemctl", "show", "--property=ControlGroup", "--value", "bh-game.service")
+# The message IDs systemd gives a unit's records when the unit succeeds, and when the
+# kernel's out-of-memory killer kills one of its processes.
+UNIT_SUCCEEDED = "7ad2d189f7e94e70a38c781354912448"
+OOM_KILLED = "fe6faa94e7774663a0da52717891d8ef"
+UNIT_RESULT = re.compile(r"[a-z-]{1,20}")
+NUMBER = re.compile(r"[0-9]{1,20}")
+# An absolute cgroup path, with no part that is . or ..
+CGROUP_PATH = re.compile(r"(/(?!\.\.?(?:/|$))[A-Za-z0-9_.@-]+)+")
+UNAVAILABLE = "unavailable"
 
 
 class StageFailed(Exception):
@@ -84,10 +100,11 @@ class Layout:
     """
 
     def __init__(self, worker=Path("/var/lib/bh-worker"), home=Path("/srv/player"),
-                 display_socket=Path("/tmp/.X11-unix/X99")):
+                 display_socket=Path("/tmp/.X11-unix/X99"), cgroup_root=Path("/sys/fs/cgroup")):
         self.worker = worker
         self.home = home
         self.display_socket = display_socket
+        self.cgroup_root = cgroup_root
         self.status = worker / "status.json"
         self.results = worker / "results.json"
         self.log = worker / "worker.log"
@@ -156,7 +173,7 @@ class Machine:
             with opener.open(request, timeout=timeout) as response:
                 return json.loads(response.read(1 << 20))
         except (OSError, ValueError, http.client.HTTPException) as error:
-            raise OSError(type(error).__name__) from None
+            raise OSError(lost_answer(error)) from None
 
     def sleep(self, seconds):
         time.sleep(seconds)
@@ -211,25 +228,39 @@ class Worker:
         self.write_status()
 
     def finish(self, state, reason=None):
-        """The final report. A failure adds the log tails. A finished game first writes its
-        results, so the controller finds them once the status says finished, and results that
-        cannot be built or written fail the play stage instead."""
+        """The final report. A failure adds its evidence. Once a move has committed, the
+        results come first, so the controller finds them once the status is final. Results a
+        finished game cannot write fail play instead; a failed play keeps its own reason."""
         self.status.update(state=state, reason=reason and reason[:200],
                            finished_at=self.clock().isoformat())
         self.status["observed"].update(self.observe())
-        if state == "finished":
-            try:
-                write_private(self.layout.results, json.dumps(self.results(), sort_keys=True))
-            except Exception as error:
-                # An OSError is named by its errno, such as ENOSPC; anything else, by its type.
-                code = isinstance(error, OSError) and errno.errorcode.get(error.errno)
-                state, reason = "failed", "results not written: " + (code or type(error).__name__)
-                self.status.update(state=state, reason=reason)
         if state == "failed":
-            log("failed: " + reason)
-            self.status["evidence"] = self.evidence()
+            self.describe_failure()
+        if self.game is not None and self.game.moves:
+            problem = self.write_results()
+            if problem and state == "finished":
+                state = "failed"
+                self.status.update(state=state, reason=f"results not written: {problem}")
+                self.describe_failure()
         self.write_status()
         return 0 if state == "finished" else 1
+
+    def describe_failure(self):
+        """The log tails, and for a failure in the game's stages, how its unit stands."""
+        log("failed: " + self.status["reason"])
+        if self.status["stage"] in GAME_STAGES:
+            self.status["observed"]["game_unit"] = self.game_unit()
+        self.status["evidence"] = self.evidence()
+
+    def write_results(self):
+        """None once the results are written, else what stopped them."""
+        try:
+            write_private(self.layout.results, json.dumps(self.results(), sort_keys=True))
+        except Exception as error:
+            # An OSError is named by its errno, such as ENOSPC; anything else, by its type.
+            code = isinstance(error, OSError) and errno.errorcode.get(error.errno)
+            return code or type(error).__name__
+        return None
 
     def write_status(self):
         write_private(self.layout.status, json.dumps(self.status, sort_keys=True))
@@ -394,9 +425,9 @@ class Worker:
         self.write_status()
 
     def results(self):
-        """What the controller copies back. It never holds the token, the instance ID or a
-        request ID."""
-        return {"outcome": self.status["outcome"], "actions": len(self.game.moves),
+        """What the controller copies back, with no outcome after a failed play. It never
+        holds the token, the instance ID or a request ID."""
+        return {"outcome": self.status.get("outcome"), "actions": len(self.game.moves),
                 "ante": self.game.ante, "round": self.game.round,
                 "seed": self.status["observed"]["seed"], "deck": self.driver.DECK,
                 "stake": self.driver.STAKE, "moves": self.game.moves,
@@ -428,6 +459,42 @@ class Worker:
             found.append(f"{path.parent.name}: {' '.join(builds) or 'no build id'}")
         return "; ".join(found)[:TAIL_CHARS] or "not found"
 
+    def game_unit(self):
+        """One line of closed values and numbers: whether the game's unit still runs, then its
+        memory while it runs, or how it ended once it has stopped, and whether the journal
+        records an out-of-memory kill for it. A value that cannot be read is unavailable."""
+        try:
+            running = "yes" if self.machine.unit_active("bh-game") else "no"
+        except StageFailed:
+            running = UNAVAILABLE
+        records = journal_records(self.unit_read(JOURNAL))
+        fields = {"running": running}
+        # A transient unit is unloaded once it stops, so only the journal knows how it ended.
+        fields |= self.unit_memory() if running == "yes" else unit_end(records)
+        fields["journal_oom"] = UNAVAILABLE if records is None else (
+            "yes" if any(record.get("MESSAGE_ID") == OOM_KILLED for record in records) else "no")
+        return " ".join(f"{name}={value}" for name, value in fields.items())[:200]
+
+    def unit_read(self, command):
+        """A read-only command's output, or None when it fails or cannot be decoded."""
+        try:
+            completed = self.machine.run(list(command), timeout=UNIT_READ_SECONDS, check=False)
+            return completed.stdout.decode() if completed.returncode == 0 else None
+        except (StageFailed, ValueError):
+            return None
+
+    def unit_memory(self):
+        """The running unit's memory use and events, from the cgroup its ControlGroup names."""
+        path = (self.unit_read(CONTROL_GROUP) or "").strip()
+        cgroup = self.layout.cgroup_root / path.lstrip("/") if CGROUP_PATH.fullmatch(path) else None
+        files = {name: cgroup and read_small(cgroup / name)
+                 for name in ("memory.peak", "memory.current", "memory.events")}
+        events = dict(line.split(" ", 1) for line in (files["memory.events"] or "").split("\n")
+                      if " " in line)
+        return {"memory.peak": number(files["memory.peak"]),
+                "memory.current": number(files["memory.current"]),
+                **{name: number(events.get(name)) for name in ("oom", "oom_kill", "max")}}
+
     def evidence(self):
         """Capped log tails, with the token and the instance ID taken out."""
         files = {"stage_log": self.layout.log,
@@ -451,6 +518,50 @@ def verify(path, size, sha256):
             digest.update(chunk)
     if digest.hexdigest() != sha256:
         raise StageFailed(f"{path.name} sha256 mismatch")
+
+
+def lost_answer(error):
+    """How a request's answer was lost: an HTTP error's status, else the error's class only."""
+    http_error = isinstance(error, urllib.error.HTTPError) and isinstance(error.code, int)
+    return f"HTTPError {error.code}" if http_error else type(error).__name__
+
+
+def unit_end(records):
+    """How the unit's main process ended and its result, from the latest records giving them."""
+    end = {"main": UNAVAILABLE, "result": UNAVAILABLE}
+    for record in records or ():
+        code, status = record.get("EXIT_CODE"), number(record.get("EXIT_STATUS"))
+        if code in ("exited", "killed", "dumped") and status != UNAVAILABLE:
+            end["main"] = f"{code}/{status}"
+        result = record.get("UNIT_RESULT")
+        if isinstance(result, str) and UNIT_RESULT.fullmatch(result):
+            end["result"] = result
+        elif record.get("MESSAGE_ID") == UNIT_SUCCEEDED:
+            end["result"] = "success"
+    return end
+
+
+def journal_records(output):
+    """The records in journalctl's JSON output; None without output, or if a line is not one."""
+    try:
+        records = [json.loads(line) for line in (output or "").split("\n") if line]
+    except ValueError:
+        return None
+    return records if output is not None and all(isinstance(r, dict) for r in records) else None
+
+
+def read_small(path):
+    """The start of a small file such as a cgroup's, or None if it cannot be read."""
+    try:
+        with path.open("rb") as stream:
+            return stream.read(4096).decode()
+    except (OSError, ValueError):
+        return None
+
+
+def number(text):
+    value = text.strip() if isinstance(text, str) else ""
+    return value if NUMBER.fullmatch(value) else UNAVAILABLE
 
 
 def game_version(result):
