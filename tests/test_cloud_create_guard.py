@@ -8,7 +8,7 @@ the same directory, before any controller recovery.
 
 import httpx
 import pytest
-from cloud_support import Cloud, DigitalOceanStub
+from cloud_support import Cloud, DigitalOceanStub, page_across_the_cutoff
 
 from balatro_horizons.cloud.digitalocean import DigitalOceanClient
 from balatro_horizons.cloud.fake import SimulatedCrash
@@ -130,13 +130,14 @@ def test_controller_error_holds_an_unseen_create(cloud, monkeypatch):
     assert_recovers_only_on_sight(cloud, "controller_error")
 
 
-def http_controller(tmp_path, actions, droplets=(), unlisted=()):
+def http_controller(tmp_path, actions, droplets=(), unlisted=(), pages=None):
     """A controller over the real client and a fake HTTP API whose create answers 500."""
     stub = DigitalOceanStub()
     stub.create_status = 500
     stub.actions = list(actions)
     stub.droplets = {d["id"]: d for d in droplets}
     stub.unlisted = set(unlisted)
+    stub.action_pages = pages
     cloud = Cloud(tmp_path / "cloud")
     client = DigitalOceanClient("test-token", transport=httpx.MockTransport(stub),
                                 sleep=cloud.clock.advance)
@@ -178,6 +179,21 @@ def test_in_progress_create_whose_id_returns_404_keeps_the_run_unresolved(tmp_pa
 def test_all_empty_reads_long_past_the_create_never_clear_it(tmp_path):
     held = http_controller(tmp_path, [])
     assert_still_held_long_after(*held)
+
+
+def test_a_create_past_a_page_crossing_the_cutoff_keeps_the_run_unresolved(tmp_path):
+    ours = {"id": 7777, "name": "bh-r1", "status": "active", "created_at": "2026-11-24T12:00:00Z",
+            "tags": ["bh-owner:test-ctl", "bh-run:r1"]}
+    # Page 1 is neatly sorted and crosses the cutoff. The completed create naming our
+    # Droplet follows on page 2, newer than page 1's last entry, and every listing lags.
+    held = http_controller(tmp_path, [create_action(7777, "completed")], [ours],
+                           unlisted={7777}, pages=lambda log: [page_across_the_cutoff(), log])
+    cloud, _, stub, _ = held
+    reserved = cloud.ledger.get("r1").reserved_usd
+    assert_still_held_long_after(*held)
+    assert (cloud.ledger.get("r1").reserved_usd, sorted(stub.droplets)) == (reserved, [7777])
+    # Every read stopped after page 1, and a miss proves nothing.
+    assert {r.url.params["page"] for r in stub.requests if r.url.path == "/v2/actions"} == {"1"}
 
 
 def test_completed_create_naming_our_droplet_is_deleted_and_verified(tmp_path):

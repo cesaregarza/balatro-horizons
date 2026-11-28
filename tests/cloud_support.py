@@ -293,6 +293,9 @@ class DigitalOceanStub:
         # with these headers.
         self.read_status = None
         self.read_headers = {}
+        # A function of the log, newest first, that returns the pages `/actions` serves, in
+        # order, so a test can serve the log in any order. Unset, the log is one page.
+        self.action_pages = None
         # Stamps the destroy actions DELETEs leave in the action log, and the log.
         self.clock = FakeClock()
         # Each request and each wait of a client that sleeps through `wait`, in order, as
@@ -314,7 +317,11 @@ class DigitalOceanStub:
         if path == "/droplets" and request.method == "POST":
             return self.create(json.loads(request.content))
         if path == "/actions":
-            return page_of("actions", self.actions)
+            # Newest first, as the live log is.
+            log = sorted(self.actions, key=lambda action: action["started_at"], reverse=True)
+            if self.action_pages is None:
+                return page_of("actions", log)
+            return numbered_page(self.action_pages(log), int(request.url.params["page"]))
         if path == "/sizes":
             return page_of("sizes", self.sizes)
         if path.startswith(("/account/keys/", "/firewalls/")):
@@ -371,3 +378,23 @@ class DigitalOceanStub:
 
 def page_of(key, items):
     return httpx.Response(200, json={key: items, "links": {}, "meta": {"total": len(items)}})
+
+
+def numbered_page(pages, number):
+    """Page `number` of an action log served in `pages`, linking the next while one follows."""
+    following = {"pages": {"next": f"https://api.digitalocean.com/v2/actions?page={number + 1}"}}
+    return httpx.Response(200, json={"actions": pages[number - 1],
+                                     "links": following if number < len(pages) else {},
+                                     "meta": {"total": sum(len(page) for page in pages)}})
+
+
+def page_across_the_cutoff():
+    """Other Droplets' actions, neatly sorted newest first, from just before the fake clock
+    starts to an hour before it. The page crosses the cutoff of a run created as the clock
+    starts, so a read that trusts the order stops after it."""
+    start = FakeClock().now
+    return [{"id": 80000 + n, "type": "power_on", "resource_type": "droplet",
+             "resource_id": 6000 + n, "status": "completed",
+             "started_at": (start - before).strftime("%Y-%m-%dT%H:%M:%SZ")}
+            for n, before in enumerate((timedelta(minutes=1), timedelta(minutes=2),
+                                        timedelta(hours=1)))]

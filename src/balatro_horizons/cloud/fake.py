@@ -42,6 +42,15 @@ class FakeProvider:
     destroys: list[DestroyAction] = field(default_factory=list)
     # Our DELETEs show in the action log as completed destroys.
     log_destroys: bool = True
+    # After a DELETE it accepts, the Droplet reads back by ID this many times, with no tags
+    # and in no tag listing, before it reads 404, as one being destroyed would. Its destroy
+    # shows in progress until then.
+    destroy_reads: int = 0
+    # Accept a DELETE, starting its destroy, then fail the call, as a timeout after
+    # acceptance would.
+    partial_delete: bool = False
+    # The Droplets being destroyed, each with the reads by ID it has left.
+    destroying: dict[int, int] = field(default_factory=dict)
     # A destroy read takes this many pages, each this many seconds on the clock, which must
     # then be one that advances.
     destroy_pages: int = 1
@@ -111,9 +120,21 @@ class FakeProvider:
         # It answers at once, so a limit on the time the read may take never applies.
         self.calls.append(("get", droplet_id))
         droplet = self.inventory.get(droplet_id)
-        if droplet is not None and self.boot and droplet.status == "new":
+        if droplet is not None and droplet_id in self.destroying:
+            self.read_while_destroyed(droplet_id)
+        elif droplet is not None and self.boot and droplet.status == "new":
             droplet = self.inventory[droplet_id] = replace(droplet, status="active")
         return droplet
+
+    def read_while_destroyed(self, droplet_id):
+        """Count one read of a Droplet being destroyed. After its last, it is gone and its
+        destroy completed."""
+        self.destroying[droplet_id] -= 1
+        if self.destroying[droplet_id] == 0:
+            del self.destroying[droplet_id], self.inventory[droplet_id]
+            self.destroys = [replace(action, status="completed")
+                             if (action.resource_id, action.status) == (droplet_id, "in-progress")
+                             else action for action in self.destroys]
 
     def list_droplets(self, tag):
         self.calls.append(("list", tag))
@@ -137,8 +158,8 @@ class FakeProvider:
         self.read_actions()
         return [action for action in self.actions if action.started_at >= since]
 
-    def list_destroy_actions(self, *, time_left=None):
-        self.calls.append(("destroys",))
+    def list_destroy_actions(self, since, *, time_left=None):
+        self.calls.append(("destroys", since))
         self.read_actions()
         for _ in range(self.destroy_pages):
             # As in the client, with `time_left` no page starts once no time is left, and a
@@ -148,7 +169,7 @@ class FakeProvider:
                 self.spend(max(left, 0))
                 raise ProviderError("NO_TIME_LEFT")
             self.spend(self.destroy_page_seconds)
-        return list(self.destroys)
+        return [action for action in self.destroys if action.started_at >= since]
 
     def spend(self, seconds):
         if seconds:
@@ -171,13 +192,30 @@ class FakeProvider:
             self.delete_failures -= 1
             raise ProviderError("HTTP_500")
         self.crash("before_delete")
-        found = droplet_id in self.inventory
-        if not self.ghost_deletes:
-            self.inventory.pop(droplet_id, None)
-        if found and self.log_destroys and self.clock:
+        # A Droplet already being destroyed answers as one that is gone.
+        found = droplet_id in self.inventory and droplet_id not in self.destroying
+        if found and not self.ghost_deletes:
+            self.destroy(droplet_id)
+        elif found and self.log_destroys and self.clock:
             self.log_destroy(droplet_id)
         self.crash("after_delete")
+        if found and self.partial_delete:
+            raise ProviderError("TRANSPORT_ERROR")
         return found
+
+    def destroy(self, droplet_id):
+        """Remove the Droplet at once, or with `destroy_reads`, strip its tags and remove it
+        after that many reads. Its destroy is logged, in progress until it is gone."""
+        logged = self.log_destroys and self.clock is not None
+        if not self.destroy_reads:
+            del self.inventory[droplet_id]
+            if logged:
+                self.log_destroy(droplet_id)
+            return
+        self.inventory[droplet_id] = replace(self.inventory[droplet_id], tags=())
+        self.destroying[droplet_id] = self.destroy_reads
+        if logged:
+            self.log_destroy(droplet_id, status="in-progress")
 
     def require_recorded_delete(self, droplet_id):
         """The run's file on disk must already hold this attempt, stamped now."""

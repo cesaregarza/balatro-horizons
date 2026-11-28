@@ -4,14 +4,19 @@ import json
 import logging
 import threading
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 from cloud_support import FINGERPRINT, FIREWALL_ID, Cloud, DigitalOceanStub, FakeClock
 
 from balatro_horizons.cli import main
-from balatro_horizons.cloud.digitalocean import DigitalOceanClient, client_from_environment
+from balatro_horizons.cloud.digitalocean import (
+    MAX_PAGES,
+    PAGE_SIZE,
+    DigitalOceanClient,
+    client_from_environment,
+)
 from balatro_horizons.cloud.provider import DropletSpec, ProviderError
 
 TOKEN = "dop_v1_test-token-value-that-must-never-leak"
@@ -141,17 +146,18 @@ def test_name_filter_lists_exact_names_without_a_tag_filter():
     assert dict(seen[0].url.params) == {"name": "bh-r1", "page": "1", "per_page": "200"}
 
 
-def test_action_log_is_read_completely_and_keeps_droplet_creates_since():
+def test_action_log_keeps_droplet_creates_since():
     since = datetime(2026, 11, 24, 12, tzinfo=UTC)
+    # Newest first, as the live log is.
     actions = [
-        {"id": 1, "type": "create", "resource_type": "droplet", "resource_id": 70,
-         "status": "completed", "started_at": "2026-11-24T12:05:00Z"},
-        {"id": 2, "type": "destroy", "resource_type": "droplet", "resource_id": 71,
-         "status": "completed", "started_at": "2026-11-24T12:06:00Z"},
-        {"id": 3, "type": "create", "resource_type": "droplet", "resource_id": 72,
-         "status": "completed", "started_at": "2026-11-24T11:00:00Z"},
         {"id": 4, "type": "create", "resource_type": "droplet", "resource_id": None,
          "status": "in-progress", "started_at": "2026-11-24T12:07:00Z"},
+        {"id": 2, "type": "destroy", "resource_type": "droplet", "resource_id": 71,
+         "status": "completed", "started_at": "2026-11-24T12:06:00Z"},
+        {"id": 1, "type": "create", "resource_type": "droplet", "resource_id": 70,
+         "status": "completed", "started_at": "2026-11-24T12:05:00Z"},
+        {"id": 3, "type": "create", "resource_type": "droplet", "resource_id": 72,
+         "status": "completed", "started_at": "2026-11-24T11:00:00Z"},
     ]
     next_link = {"pages": {"next": "https://api.digitalocean.com/v2/actions?page=2"}}
     handler, seen = replies(
@@ -163,7 +169,7 @@ def test_action_log_is_read_completely_and_keeps_droplet_creates_since():
     assert method is not None
     # A create with no resource ID yet is kept: it may be the one still being made.
     assert [(a.resource_id, getattr(a, "status", None)) for a in method(since)] == [
-        (70, "completed"), (None, "in-progress")]
+        (None, "in-progress"), (70, "completed")]
     assert [r.url.path for r in seen] == ["/v2/actions", "/v2/actions"]
 
 
@@ -267,7 +273,7 @@ def test_a_malformed_size_is_a_failed_read(change):
         client_method(handler, "list_sizes")()
 
 
-def test_destroy_actions_are_read_completely_and_only_droplet_destroys_are_kept():
+def test_only_droplet_destroys_are_kept():
     def action(action_id, kind="destroy", resource="droplet", status="completed", hour=12):
         return {"id": action_id, "type": kind, "resource_type": resource, "resource_id": 70,
                 "status": status, "started_at": f"2026-11-24T{hour}:05:00Z"}
@@ -282,12 +288,135 @@ def test_destroy_actions_are_read_completely_and_only_droplet_destroys_are_kept(
         httpx.Response(200, json={"actions": [action("1")], "links": {}, "meta": {"total": 1}}),
     )
     destroys = client_method(handler, "list_destroy_actions")
-    assert [(a.id, a.resource_id, a.status, a.started_at) for a in destroys()] == [
+    since = datetime(2026, 11, 24, 11, tzinfo=UTC)
+    assert [(a.id, a.resource_id, a.status, a.started_at) for a in destroys(since)] == [
         (1, 70, "completed", datetime(2026, 11, 24, 12, 5, tzinfo=UTC)),
         (4, 70, "errored", datetime(2026, 11, 24, 11, 5, tzinfo=UTC))]
     assert [r.url.path for r in seen] == ["/v2/actions", "/v2/actions"]
     with pytest.raises(ProviderError):
-        destroys()
+        destroys(since)
+
+
+# A made-up action log, newest first: the entry at each position started ten seconds
+# before the one above it.
+NEWEST = datetime(2026, 11, 24, 12, tzinfo=UTC)
+
+
+def at(position):
+    return NEWEST - timedelta(seconds=10 * position)
+
+
+def logged(position, kind="power_on", status="completed", started=None, **change):
+    """The log's entry at `position`, counted from the newest."""
+    return {"id": 900000 - position, "type": kind, "resource_type": "droplet",
+            "resource_id": 7000 + position, "status": status,
+            "started_at": (started or at(position)).strftime("%Y-%m-%dT%H:%M:%SZ")} | change
+
+
+def log_of(count):
+    """A log of `count` entries, none of them a create or a destroy."""
+    return [logged(position) for position in range(count)]
+
+
+class ActionLog:
+    """Serves `entries` in pages of the size each request asks for, and notes each page."""
+
+    def __init__(self, entries):
+        self.entries, self.pages = entries, []
+
+    def __call__(self, request):
+        page, size = int(request.url.params["page"]), int(request.url.params["per_page"])
+        self.pages.append(page)
+        following = {"next": f"https://api.digitalocean.com/v2/actions?page={page + 1}"}
+        return httpx.Response(200, json={
+            "actions": self.entries[(page - 1) * size:page * size],
+            "links": {"pages": following} if page * size < len(self.entries) else {},
+            "meta": {"total": len(self.entries)}})
+
+
+def long_log():
+    """A log longer than a full read can cover, with a run's create and destroy on page 1."""
+    log = log_of(MAX_PAGES * PAGE_SIZE + 1)
+    log[3], log[90] = logged(3, kind="destroy"), logged(90, kind="create")
+    return log
+
+
+def test_a_log_too_long_to_read_in_full_shows_the_runs_destroy_from_page_one_alone():
+    log = ActionLog(long_log())
+    destroys = client_for(log).list_destroy_actions(at(120))
+    assert ([(a.id, a.resource_id, a.status) for a in destroys], log.pages) == (
+        [(900000 - 3, 7003, "completed")], [1])
+
+
+def test_the_create_path_reads_the_same_long_log_from_page_one_alone():
+    log = ActionLog(long_log())
+    creates = client_for(log).list_create_actions(at(120))
+    assert ([(a.resource_id, a.status) for a in creates], log.pages) == (
+        [(7090, "completed")], [1])
+
+
+def test_a_window_reaching_past_page_one_reads_exactly_two_pages():
+    log = ActionLog(log_of(3 * PAGE_SIZE))
+    log.entries[250] = logged(250, kind="destroy")
+    # Every entry on page 1 started after `since`.
+    destroys = client_for(log).list_destroy_actions(at(300))
+    assert ([a.resource_id for a in destroys], log.pages) == ([7250], [1, 2])
+
+
+def test_an_action_started_at_since_counts_and_one_a_second_earlier_does_not():
+    last = PAGE_SIZE - 1
+    since = at(last)
+    log = ActionLog(log_of(3 * PAGE_SIZE))
+    # Page 1 ends with a destroy started at `since`, and page 2 starts with one a second
+    # earlier, so page 2 is the last read.
+    log.entries[last] = logged(last, kind="destroy")
+    log.entries[last + 1] = logged(last + 1, kind="destroy", started=since - timedelta(seconds=1))
+    destroys = client_for(log).list_destroy_actions(since)
+    assert ([a.resource_id for a in destroys], log.pages) == ([7000 + last], [1, 2])
+
+
+@pytest.mark.parametrize("position", [50, PAGE_SIZE], ids=["within_a_page", "across_pages"])
+def test_an_entry_that_started_after_the_one_before_it_fails_the_read(position):
+    log = ActionLog(log_of(3 * PAGE_SIZE))
+    log.entries[position] = logged(position, started=at(position - 1) + timedelta(seconds=1))
+    with pytest.raises(ProviderError, match="ACTION_LOG_ORDER"):
+        client_for(log).list_destroy_actions(at(2 * PAGE_SIZE))
+
+
+def test_a_page_shifted_by_newer_actions_repeats_entries_and_misses_none():
+    log = ActionLog(log_of(3 * PAGE_SIZE))
+    # A run's destroy is still in progress near the end of page 1.
+    tail = PAGE_SIZE - 2
+    log.entries[5], log.entries[250] = logged(5, kind="destroy"), logged(250, kind="destroy")
+    log.entries[tail] = logged(tail, kind="destroy", status="in-progress")
+
+    def shifted(request):
+        page = log(request)
+        if log.pages == [1]:
+            # Three newer actions arrive and the destroy completes before page 2 is read,
+            # so page 2 starts with the last three entries of page 1.
+            log.entries = [logged(-3), logged(-2), logged(-1)] + log.entries
+            log.entries[3 + tail] = logged(tail, kind="destroy")
+        return page
+
+    destroys = client_for(shifted).list_destroy_actions(at(300))
+    assert ([(a.resource_id, a.status) for a in destroys], log.pages) == (
+        [(7005, "completed"), (7000 + tail, "completed"), (7250, "completed")], [1, 2])
+
+
+def test_a_window_not_reached_within_the_page_bound_fails_the_read():
+    log = ActionLog(long_log())
+    with pytest.raises(ProviderError, match="TOO_MANY_PAGES"):
+        client_for(log).list_destroy_actions(at(MAX_PAGES * PAGE_SIZE + 1))
+    assert log.pages == list(range(1, MAX_PAGES + 1))
+
+
+@pytest.mark.parametrize("value", ["900000", None, True, 1.5])
+def test_an_entry_whose_id_is_not_a_whole_number_fails_the_read(value):
+    log = ActionLog(log_of(3) + [logged(3, kind="create")])
+    log.entries[1] = logged(1, id=value)
+    with pytest.raises(ProviderError, match="MALFORMED_RESPONSE"):
+        client_for(log).list_create_actions(at(10))
 
 
 def test_get_reads_404_as_gone():
@@ -395,10 +524,11 @@ def test_a_cleanup_read_waits_for_the_whole_answer_on_the_calling_thread():
 
 
 def destroy_listing(pages, budget, refused=()):
-    """List the destroy actions from a log of `pages` pages, each answered 20 seconds on a
-    fake clock, within `budget` seconds, or with no budget when it is None. The first
-    request for a page in `refused` is answered 429 with a 30 second retry-after. Returns
-    the outcome, each request's page with the limit it carried on one phase, and the waits."""
+    """List the destroy actions from a log of `pages` empty pages, each answered 20 seconds
+    on a fake clock, within `budget` seconds, or with no budget when it is None. With no
+    entries to reach back past `since`, every page is read. The first request for a page in
+    `refused` is answered 429 with a 30 second retry-after. Returns the outcome, each
+    request's page with the limit it carried on one phase, and the waits."""
     clock, seen, waits = FakeClock(), [], []
     started = clock()
 
@@ -422,7 +552,7 @@ def destroy_listing(pages, budget, refused=()):
     read = DigitalOceanClient(TOKEN, transport=httpx.MockTransport(handler),
                               sleep=wait).list_destroy_actions
     try:
-        outcome = len(read() if budget is None else read(time_left=time_left))
+        outcome = len(read(started) if budget is None else read(started, time_left=time_left))
     except ProviderError as error:
         outcome = str(error)
     return outcome, seen, waits

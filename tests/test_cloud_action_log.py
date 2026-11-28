@@ -2,12 +2,13 @@
 run's creation less the clock-skew allowance, proves the deletion. A 404 and a listing
 that omits the ID must still follow, and nothing else in the log counts."""
 
+import json
 from dataclasses import replace
 from datetime import timedelta
 
 import httpx
 import pytest
-from cloud_support import Cloud, DigitalOceanStub, page_of
+from cloud_support import Cloud, DigitalOceanStub, page_across_the_cutoff, page_of
 
 from balatro_horizons.cloud.digitalocean import DigitalOceanClient
 from balatro_horizons.cloud.ledger import Ledger
@@ -78,6 +79,24 @@ def test_nothing_else_in_the_log_clears_a_droplet_that_reads_404(cloud, case):
     assert cloud.provider.deleted() == []
     # The log was read, and what it showed is on the record.
     assert getattr(record.resources[0], "destroy_checked_at", None) is not None
+
+
+def test_a_completed_destroy_one_second_before_the_window_never_counts(cloud):
+    controller = cloud.launched()
+    cloud.provider.inventory.pop(cloud.owned_ids("r1")[0])
+    controller.cancel("r1", now=True)
+    record = assert_held(cloud)
+    resource = record.resources[0]
+    window = record.created_at - SKEW
+
+    def destroyed(started_at):
+        evidence = {"action_id": 1, "resource_id": resource.id, "status": "completed",
+                    "started_at": started_at}
+        return resource.model_validate(resource.model_dump() | {"destroy_evidence": evidence})
+
+    deleted = cloud.controller().teardown.deleted
+    assert deleted(record, destroyed(window - timedelta(seconds=1))) is False
+    assert deleted(record, destroyed(window)) is True
 
 
 def test_evidence_that_names_another_id_never_counts(cloud):
@@ -175,7 +194,7 @@ def test_a_failed_action_log_read_never_delays_settling(cloud):
     cloud.channel.finish("r1")
     controller.tick()
     resource = cloud.assert_torn_down("r1", "succeeded").resources[0]
-    assert ("destroys",) in cloud.provider.calls
+    assert "destroys" in [call[0] for call in cloud.provider.calls]
     assert resource.destroy_evidence is None
 
 
@@ -204,6 +223,102 @@ def test_a_delete_answered_with_a_server_error_clears_on_the_logged_destroy(tmp_
     assert (record.state, record.teardown_reason) == ("torn_down", "cancelled")
     assert stub.droplets == {}
     assert record.resources[0].acknowledged_at is None
+
+
+def test_a_lost_answer_whose_destroy_sits_past_a_page_crossing_the_cutoff_stays_held(tmp_path):
+    stub = DigitalOceanStub()
+    cloud = Cloud(tmp_path / "cloud")
+    stub.clock = cloud.clock
+    cloud.provider = DigitalOceanClient("test-token", transport=httpx.MockTransport(stub),
+                                        sleep=cloud.clock.advance)
+    controller = cloud.launched()
+    launched = cloud.ledger.get("r1")
+    # Page 1 is neatly sorted and crosses the cutoff. The rest of the log, our destroy
+    # included, follows on page 2, newer than page 1's last entry.
+    stub.action_pages = lambda log: [page_across_the_cutoff(), log]
+    # The provider carried out the DELETE, but the answer was lost to a 500. The Droplet
+    # then reads 404 and is in no listing.
+    stub.delete_status = 500
+    controller.cancel("r1", now=True)
+    cloud.clock.advance(3600)
+    controller.tick()
+    cloud.reconcile()
+    record = Ledger(cloud.root).get("r1")
+    resource = record.resources[0]
+    assert (record.state, [r.id for r in record.resources], record.released,
+            record.reserved_usd) == ("cleanup_unverified", [launched.resources[0].id], [],
+                                     launched.reserved_usd)
+    assert (resource.delete_requested_at is not None, resource.acknowledged_at) == (True, None)
+    # Every read stopped after page 1, and a miss proves nothing.
+    assert (resource.destroy_check, resource.destroy_evidence) == ("unknown", None)
+    reads = [r for r in stub.requests if r.url.path == "/v2/actions"]
+    assert {r.url.params["page"] for r in reads} == {"1"}
+    # Every DELETE went out before the log was first read, so none followed a miss.
+    assert "DELETE" not in [r.method for r in stub.requests[stub.requests.index(reads[0]):]]
+
+
+def unmatched_ids(cloud):
+    return [watch.droplet_id for watch in Ledger(cloud.root).unmatched()]
+
+
+def lost_answer(cloud, logged):
+    """Cancel a run whose DELETE the provider accepts, though the answer is lost. The
+    Droplet then reads back untagged twice while it is destroyed, then 404. The log shows
+    its destroy only when `logged`."""
+    controller = cloud.launched()
+    droplet_id = cloud.owned_ids("r1")[0]
+    cloud.provider.partial_delete, cloud.provider.destroy_reads = True, 2
+    cloud.provider.log_destroys = logged
+    controller.cancel("r1", now=True)
+    record = Ledger(cloud.root).get("r1")
+    # Nothing is given up, and the one DELETE went out while the Droplet read with both tags.
+    assert (record.released, unmatched_ids(cloud), cloud.provider.deleted()) == (
+        [], [], [droplet_id])
+    return droplet_id
+
+
+def test_a_lost_answer_to_an_accepted_delete_clears_on_the_completed_destroy(cloud):
+    lost_answer(cloud, logged=True)
+    resource = cloud.assert_torn_down("r1", "cancelled").resources[0]
+    assert (resource.acknowledged_at, resource.destroy_evidence.status) == (None, "completed")
+
+
+def test_a_lost_answer_holds_the_id_while_the_log_shows_no_destroy(cloud):
+    droplet_id = lost_answer(cloud, logged=False)
+    record = assert_held(cloud)
+    assert [(r.id, r.acknowledged_at, r.delete_requested_at is not None)
+            for r in record.resources] == [(droplet_id, None, True)]
+
+
+@pytest.mark.parametrize(("path", "state"), [("held", "cleanup_unverified"),
+                                             ("lookup", "torn_down")])
+def test_every_log_read_reaches_back_to_the_run_start_less_the_allowance(cloud, path, state):
+    controller = cloud.launched()
+    if path == "held":
+        # The DELETE's answer is lost and the log never shows the destroy, so every pass
+        # reads the log, and the run never settles to look its ID up.
+        cloud.provider.partial_delete, cloud.provider.log_destroys = True, False
+    # Cancelled half an hour in, so the run's creation and the teardown's start differ.
+    cloud.clock.advance(1800)
+    controller.cancel("r1", now=True)
+    record = Ledger(cloud.root).get("r1")
+    reads = [call[1] for call in cloud.provider.calls if call[0] == "destroys"]
+    assert (record.state, reads) == (state, [record.created_at - SKEW] * len(reads))
+    # An acknowledged run reads the log once, after settling.
+    assert len(reads) > 1 if path == "held" else len(reads) == 1
+
+
+def test_a_destroy_before_the_teardown_began_clears_on_a_read_from_the_run_start(cloud):
+    controller = cloud.launched()
+    created = cloud.ledger.get("r1").created_at
+    # Deleted outside the controller half an hour into the run, then cancelled an hour in.
+    cloud.clock.advance(1800)
+    deleted_outside(cloud)
+    cloud.clock.advance(1800)
+    controller.cancel("r1", now=True)
+    resource = cloud.assert_torn_down("r1", "cancelled").resources[0]
+    reads = [call[1] for call in cloud.provider.calls if call[0] == "destroys"]
+    assert (resource.destroy_check, set(reads)) == ("found", {created - SKEW})
 
 
 class DecodedSlowly(httpx.Response):
@@ -284,10 +399,10 @@ def test_an_acknowledged_teardown_settles_before_a_slow_action_log_is_read(cloud
             cloud.clock()) == ("timed_out", deadline, deadline)
 
 
-@pytest.mark.parametrize("outcome", ["found", "not_found", "failed", "timed_out"])
+@pytest.mark.parametrize("outcome", ["found", "unknown", "failed", "timed_out"])
 def test_the_lookup_after_settling_records_how_it_ended_and_when(cloud, outcome):
     controller = cloud.launched()
-    cloud.provider.log_destroys = outcome != "not_found"
+    cloud.provider.log_destroys = outcome != "unknown"
     cloud.provider.action_failures = int(outcome == "failed")
     if outcome == "timed_out":
         # Three pages at 30 seconds each need more than the lookup's minute.
@@ -297,5 +412,7 @@ def test_the_lookup_after_settling_records_how_it_ended_and_when(cloud, outcome)
     resource = record.resources[0]
     ended = record.verified_at + timedelta(seconds=60 if outcome == "timed_out" else 0)
     status = resource.destroy_evidence and resource.destroy_evidence.status
-    assert (getattr(resource, "destroy_check", None), resource.destroy_checked_at, status) == (
+    # The outcome as stored: a read turns an earlier record's `not_found` into `unknown`.
+    stored = json.loads((cloud.ledger.runs_dir / "r1.json").read_text())["resources"][0]
+    assert (stored["destroy_check"], resource.destroy_checked_at, status) == (
         outcome, ended, "completed" if outcome == "found" else None)

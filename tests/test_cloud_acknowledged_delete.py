@@ -137,3 +137,53 @@ def test_delete_answered_404_is_not_an_acknowledgment(tmp_path):
     assert "CLEANUP_UNVERIFIED" in cloud.alert_codes()
     assert controller.launch("r2")["outcome"] == "refused"
     assert len(methods(stub, "POST")) == 1
+
+
+def unmatched_ids(cloud):
+    return [watch.droplet_id for watch in Ledger(cloud.root).unmatched()]
+
+
+def test_a_droplet_that_outlives_its_acknowledged_delete_is_never_given_up(cloud):
+    controller = cloud.launched()
+    droplet_id = cloud.owned_ids("r1")[0]
+    # Once the DELETE is acknowledged, the Droplet reads back untagged twice, then 404.
+    cloud.provider.destroy_reads = 2
+    controller.cancel("r1", now=True)
+    record = Ledger(cloud.root).get("r1")
+    assert (record.released, unmatched_ids(cloud)) == ([], [])
+    assert record.resources[0].acknowledged_at is not None
+    assert cloud.provider.deleted() == [droplet_id]
+    cloud.assert_torn_down("r1", "cancelled")
+
+
+@pytest.mark.parametrize("destroy", ["slow", "failed"])
+def test_an_acknowledged_delete_whose_droplet_outlasts_the_window_holds_until_a_404(cloud,
+                                                                                    destroy):
+    controller = cloud.launched()
+    droplet_id = cloud.owned_ids("r1")[0]
+    if destroy == "slow":
+        # The Droplet reads back untagged for far longer than the cleanup window.
+        cloud.provider.destroy_reads = 10**9
+    else:
+        # The destroy failed, so the Droplet still reads back with both tags.
+        cloud.provider.ghost_deletes = True
+    controller.cancel("r1", now=True)
+    record = assert_unsettled(cloud)
+    assert (record.released, unmatched_ids(cloud)) == ([], [])
+    assert record.resources[0].acknowledged_at is not None
+    # Once it reads 404, deleted by hand, say, a later pass clears it with no second DELETE.
+    cloud.provider.inventory.pop(droplet_id)
+    controller.tick()
+    cloud.assert_torn_down("r1", "cancelled")
+    assert cloud.provider.deleted() == [droplet_id]
+
+
+def test_an_untagged_read_before_any_delete_still_hands_the_id_to_the_unmatched_watch(cloud):
+    controller = cloud.launched()
+    droplet_id = cloud.owned_ids("r1")[0]
+    cloud.provider.inventory[droplet_id] = replace(cloud.provider.inventory[droplet_id], tags=())
+    controller.cancel("r1", now=True)
+    record = assert_unsettled(cloud)
+    assert (record.resource_ids(), record.released, unmatched_ids(cloud)) == (
+        set(), [droplet_id], [droplet_id])
+    assert cloud.provider.deleted() == []
