@@ -158,7 +158,7 @@ class FakeProvider:
         self.read_actions()
         return [action for action in self.actions if action.started_at >= since]
 
-    def list_destroy_actions(self, since=None, *, time_left=None):
+    def list_destroy_actions(self, since, *, time_left=None):
         self.calls.append(("destroys", since))
         self.read_actions()
         for _ in range(self.destroy_pages):
@@ -169,7 +169,7 @@ class FakeProvider:
                 self.spend(max(left, 0))
                 raise ProviderError("NO_TIME_LEFT")
             self.spend(self.destroy_page_seconds)
-        return [action for action in self.destroys if since is None or action.started_at >= since]
+        return [action for action in self.destroys if action.started_at >= since]
 
     def spend(self, seconds):
         if seconds:

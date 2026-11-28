@@ -77,14 +77,16 @@ class Provider(Protocol):
     def find_droplets_by_name(self, name: str) -> list[Droplet]: ...
 
     def list_create_actions(self, since: datetime) -> list["CreateAction"]:
-        """Every Droplet create action started at or after `since`, read completely.
+        """Every Droplet create action started at or after `since`, from a read of the
+        action log back to `since` and no further. A read that cannot show them all raises.
 
         Creates that have no resource ID yet are kept, and so is each action's status.
         """
 
-    def list_destroy_actions(self, *,
+    def list_destroy_actions(self, since: datetime, *,
                              time_left: Callable[[], float] | None = None) -> list["DestroyAction"]:
-        """Every Droplet destroy action in the account action log, read completely.
+        """Every Droplet destroy action started at or after `since`, from a read of the
+        action log back to `since` and no further. A read that cannot show them all raises.
 
         `time_left`, when given, budgets each page's attempts and waits: they fit in what
         is left, and a read that runs out raises NO_TIME_LEFT. Decoding a received page is

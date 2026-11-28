@@ -84,18 +84,40 @@ class DigitalOceanClient:
     def list_create_actions(self, since):
         return [CreateAction(resource_id=a["resource_id"], started_at=a["started_at"],
                              status=a["status"])
-                for a in self.droplet_actions("create") if a["started_at"] >= since]
+                for a in self.droplet_actions("create", since)]
 
-    def list_destroy_actions(self, *, time_left=None):
-        return [DestroyAction(id=whole_number(a["id"]), resource_id=a["resource_id"],
+    def list_destroy_actions(self, since, *, time_left=None):
+        return [DestroyAction(id=a["id"], resource_id=a["resource_id"],
                               started_at=a["started_at"], status=a["status"])
-                for a in self.droplet_actions("destroy", time_left)]
+                for a in self.droplet_actions("destroy", since, time_left)]
 
-    def droplet_actions(self, kind, time_left=None):
-        # The API documents no order for the action log, so every page is read.
-        actions = [parse_action(item)
-                   for item in self.read_all("/actions", "actions", {}, time_left)]
-        return [a for a in actions if a["type"] == kind and a["resource_type"] == "droplet"]
+    def droplet_actions(self, kind, since, time_left=None):
+        """The Droplet actions of `kind` that started at or after `since`. The log is read
+        from page 1, newest first, and stops after the first page whose last new entry
+        started before `since`, or when no page follows. With `time_left`, each page's
+        attempts and waits are budgeted, but decoding a received page is not, so the
+        caller rechecks the budget before trusting the result."""
+        # The API documents no order for the action log. Newest first is the order observed
+        # live, and the read checks it rather than trusting it: a log in any other order
+        # fails the read, which then clears nothing.
+        actions, last = {}, None
+        for page in range(1, MAX_PAGES + 1):
+            params = {"page": page, "per_page": PAGE_SIZE}
+            body = expect(self.request("GET", "/actions", params=params, time_left=time_left),
+                          200)
+            items, more, _ = page_parts(body, "actions")
+            for action in map(parse_action, items):
+                # Newer actions shift later pages, so a page can repeat entries already read.
+                # A repeat is not checked for order again, and its latest reading wins.
+                if action["id"] not in actions:
+                    if last is not None and action["started_at"] > last:
+                        raise ProviderError("ACTION_LOG_ORDER")
+                    last = action["started_at"]
+                actions[action["id"]] = action
+            if not more or (last is not None and last < since):
+                return [a for a in actions.values() if a["type"] == kind
+                        and a["resource_type"] == "droplet" and a["started_at"] >= since]
+        raise ProviderError("TOO_MANY_PAGES")
 
     def ssh_key_registered(self, fingerprint):
         response = self.request("GET", f"/account/keys/{quote(fingerprint, safe=':')}")
@@ -115,14 +137,12 @@ class DigitalOceanClient:
     def list_sizes(self):
         return [parse_size(item) for item in self.read_all("/sizes", "sizes", {})]
 
-    def read_all(self, path, key, filters, time_left=None):
-        """Every item across pages; anything short of a complete, well-formed read raises.
-        With `time_left`, each page's attempts and waits are budgeted, but decoding a
-        received page is not, so the caller rechecks the budget before trusting the result."""
+    def read_all(self, path, key, filters):
+        """Every item across pages; anything short of a complete, well-formed read raises."""
         items = []
         for page in range(1, MAX_PAGES + 1):
             params = filters | {"page": page, "per_page": PAGE_SIZE}
-            body = expect(self.request("GET", path, params=params, time_left=time_left), 200)
+            body = expect(self.request("GET", path, params=params), 200)
             batch, more, total = page_parts(body, key)
             items.extend(batch)
             if not more:
@@ -285,7 +305,7 @@ def parse_action(item):
         raise ProviderError("MALFORMED_RESPONSE")
     if resource_id is not None:
         whole_number(resource_id)
-    return {"id": item.get("id"), "type": kind, "resource_type": resource_type,
+    return {"id": whole_number(item.get("id")), "type": kind, "resource_type": resource_type,
             "resource_id": resource_id, "started_at": started, "status": status}
 
 

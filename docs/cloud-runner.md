@@ -348,10 +348,8 @@ Clearing a create that the provider never shows is one of the open cases listed
 under [Cases that hold](#cases-that-hold). In this slice such a run holds launches
 and its reservation indefinitely, which is the intended fail-closed result.
 
-The API documents no order for the action log, so every page is read. A read is
-complete only when the page count stays within bounds and the items collected
-match `meta.total`. An action with a status other than `in-progress`,
-`completed` or `errored` makes the read fail.
+The action log is read newest first and only back that far, as described under
+[Reading the action log](#reading-the-action-log).
 
 Listings are strict: a missing or wrongly typed `id`, `name`, `status`, `tags`,
 `created_at`, pagination link or `meta.total` makes the listing fail. It is never
@@ -368,7 +366,8 @@ only when both of these hold, in order:
    - A fresh by-ID read showed it with both tags, and the provider acknowledged our
      DELETE with a 2xx. A 404 on DELETE is not an acknowledgment. The
      acknowledgment is recorded durably on the run's resource before any later
-     read is trusted.
+     read is trusted, and it is final: the ID is never read for its tags or sent a
+     DELETE again, and only the checks in step 2 decide that it is gone.
    - The account action log shows a completed `destroy` action for that ID that
      started no earlier than the run's creation, less the five-minute clock-skew
      allowance. One that failed, is still in progress, names another ID or started
@@ -403,6 +402,19 @@ reads with both tags again, it is deleted then. The same rule applies to every
 run: a known ID, an adopted orphan, and a Droplet found for an unresolved
 create.
 
+A Droplet being destroyed can read back without its tags. So once a DELETE of ours
+has been sent for an ID, a read without both tags neither deletes it again nor
+gives it up: the ID stays on the run, and unless that DELETE was acknowledged, it
+can clear only on a completed destroy in the action log. Without one, the run is
+marked `cleanup_unverified` when the window ends. Only an ID with no DELETE of ours
+behind it is given up, as described under
+[IDs the controller may not delete](#ids-the-controller-may-not-delete). If a
+destroy fails after an acknowledged DELETE, the Droplet still reads back, so the
+run is marked `cleanup_unverified` and holds launches until the Droplet reads 404,
+for example once it is deleted by hand. The next teardown pass, from a controller
+tick or the reconciler, then clears it, with no second DELETE. Both rules fail
+closed: a Droplet not shown gone keeps its run held.
+
 Teardown deletes every recorded Droplet and every Droplet listed under the run tag
 that also carries the owner tag. Deletion is by ID only; the bulk delete-by-tag
 endpoint is never called. Powering a Droplet off never counts, because it still
@@ -417,15 +429,41 @@ controller tick or `bh cloud reconcile`, clears it.
 Resources without the owner tag, or with another controller's owner tag, are
 never deleted.
 
+### Reading the action log
+
+An account's action log can be far longer than a full read could cover, so it is
+read newest first from page 1, and only back as far as can matter: the run's
+creation, less the five-minute allowance, for teardown, and the create attempt,
+less the same allowance, for an unresolved create. The read stops after the first
+page whose last new entry started before that time, or when no page follows, and
+keeps the Droplet actions of the kind it needs that started at or after that time.
+Since it does not read every entry, it does not compare what it read with
+`meta.total`.
+
+The API documents no order for the log. Newest first is the order observed on a
+live account, and the read checks it rather than trusting it: each new entry must
+start no later than the new entry before it, across pages too, or the read fails
+with `ACTION_LOG_ORDER`. Newer actions arriving between page reads shift later
+pages, so a page can repeat entries already read. A repeated ID is not checked for
+order again, and its latest reading replaces the earlier one. An entry whose ID is
+not a whole number, or whose status is not `in-progress`, `completed` or
+`errored`, fails the read, and so does reaching the page bound before that time,
+with `TOO_MANY_PAGES`.
+
+The read fails closed. A read that fails clears nothing: teardown records it as
+`failed`, or `timed_out` when it ran out of time, and for an unresolved create it
+names nothing. A read that stops early can only miss evidence, which leaves a run
+held; it can never clear one.
+
 ### IDs the controller may not delete
 
 Two kinds of Droplet are never deleted, because the deletion filter needs both
 tags:
 
-- A recorded ID whose fresh read no longer shows both tags. The unmatched watch
-  is written first, and only then is the ID taken out of the run's deletable
-  set. A crash between the two writes leaves the ID in both places, and the
-  next pass repeats the step.
+- A recorded ID that reads without both tags before any DELETE of ours was sent
+  for it. The unmatched watch is written first, and only then is the ID taken out
+  of the run's deletable set. A crash between the two writes leaves the ID in both
+  places, and the next pass repeats the step.
 - An owner-tagged Droplet without exactly one usable run tag, found by the
   reconciler.
 
@@ -441,7 +479,8 @@ Two cases now clear on the action log, as described above, and still need the 40
 and the listing check that follow:
 
 - A DELETE whose acknowledgment was lost, for example to a crash before it was
-  recorded.
+  recorded or to a timeout after the provider accepted it, even while the
+  Droplet reads back untagged.
 - A Droplet deleted outside the controller, which reads 404 with no
   acknowledgment.
 

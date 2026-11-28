@@ -18,6 +18,12 @@ from .settings import run_tag
 LOOKUP_SECONDS = 60
 
 
+def earliest(record):
+    """The earliest start a destroy of ours can have: the run's creation, less the
+    clock-skew allowance."""
+    return record.created_at - timedelta(seconds=CLOCK_SKEW_SECONDS)
+
+
 class Teardown:
     def __init__(self, ledger, provider, settings, clock, sleep):
         self.ledger = ledger
@@ -88,7 +94,16 @@ class Teardown:
         return {d.id for d in droplets if tags <= set(d.tags)}
 
     def delete(self, record, droplet_id):
-        """Delete what a fresh read shows with both tags; False when this pass must retry."""
+        """Delete what a fresh read shows with both tags; False when this pass must retry.
+
+        An acknowledged DELETE is final: the ID is not read or deleted again, and only
+        verification decides that it is gone. A DELETE once sent never gives its ID up, so
+        the ID can still clear on the action log. Only an ID with no DELETE of ours behind
+        it goes to the unmatched watch when it reads without both tags.
+        """
+        resource = record.resource(droplet_id)
+        if resource.acknowledged_at is not None:
+            return True
         try:
             current = self.provider.get_droplet(droplet_id)
         except Exception:
@@ -98,10 +113,12 @@ class Teardown:
             # and before our DELETE is acknowledged, a 404 proves nothing.
             return True
         if not {self.settings.owner_tag, run_tag(record.run_id)} <= set(current.tags):
-            self.lose_ownership(record, droplet_id)
+            # A Droplet being destroyed can read back untagged.
+            if resource.delete_requested_at is None:
+                self.lose_ownership(record, droplet_id)
             return False
         # Durable before the request is sent, so a crash mid-request leaves the attempt known.
-        record.resource(droplet_id).delete_requested_at = self.clock()
+        resource.delete_requested_at = self.clock()
         self.ledger.save(record)
         try:
             acknowledged = self.provider.delete_droplet(droplet_id)
@@ -110,7 +127,7 @@ class Teardown:
         if not acknowledged:
             return False
         # Durable before any later read is trusted.
-        record.resource(droplet_id).acknowledged_at = self.clock()
+        resource.acknowledged_at = self.clock()
         self.ledger.save(record)
         return True
 
@@ -125,7 +142,8 @@ class Teardown:
         self.ledger.save(record)
 
     def corroborate(self, record, time_left):
-        """Read the action log, within `time_left`, and record what it showed for each ID.
+        """Read the action log back to the earliest start a destroy of ours can have,
+        within `time_left`, and record what it showed for each ID.
 
         Each ID records when the read ended, and how: found, not_found, failed, or
         timed_out when it ran out of time. A read cut off, or one that returns after its
@@ -138,7 +156,8 @@ class Teardown:
             return
         outcome = None
         try:
-            actions = self.provider.list_destroy_actions(time_left=time_left)
+            actions = self.provider.list_destroy_actions(since=earliest(record),
+                                                         time_left=time_left)
         except Exception as error:
             # NO_TIME_LEFT is the provider's code for a read that ran out of time.
             actions, outcome = [], "timed_out" if str(error) == "NO_TIME_LEFT" else "failed"
@@ -190,11 +209,10 @@ class Teardown:
         if resource.acknowledged_at is not None:
             return True
         evidence = resource.destroy_evidence
-        earliest = record.created_at - timedelta(seconds=CLOCK_SKEW_SECONDS)
         return (evidence is not None
                 and evidence.status == "completed"
                 and evidence.resource_id == resource.id
-                and evidence.started_at >= earliest)
+                and evidence.started_at >= earliest(record))
 
     def settle(self, record):
         """Charge the budget for the time actually elapsed, now that nothing bills, then
