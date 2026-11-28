@@ -14,7 +14,7 @@ export default defineConfig({
   projects: [
     {
       name: "dashboard",
-      testMatch: /(?:card-modifiers|claude-models|model-presets|cost-overrides|decisions|dev-trace(?:-ids)?|model-selection|polling|public-information|run-spend|runtime-connection|library-ux|launch-ux|explorer-ux|annotation-ux|navigation-ux|stop-control|cloud-runs|view-only)\.spec\.ts/,
+      testMatch: /(?:card-modifiers|claude-models|model-presets|cost-overrides|decisions|dev-trace(?:-ids)?|model-selection|polling|public-information|run-spend|runtime-connection|library-ux|launch-ux|explorer-ux|annotation-ux|navigation-ux|batch-report|stop-control|cloud-runs|view-only)\.spec\.ts/,
       use: { baseURL: "http://127.0.0.1:8766" },
     },
     {
