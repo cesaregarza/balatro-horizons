@@ -98,8 +98,8 @@ class DigitalOceanClient:
         attempts and waits are budgeted, but decoding a received page is not, so the
         caller rechecks the budget before trusting the result."""
         # The API documents no order for the action log. Newest first is the order observed
-        # live, and the read checks it rather than trusting it: a log in any other order
-        # fails the read, which then clears nothing.
+        # live, and the read checks it rather than trusting it: a disorder on the pages
+        # read fails the read, which then clears nothing.
         actions, last = {}, None
         for page in range(1, MAX_PAGES + 1):
             params = {"page": page, "per_page": PAGE_SIZE}

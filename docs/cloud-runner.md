@@ -391,14 +391,15 @@ action log once, so each run's record shows whether the action-log path would al
 have cleared it. One 60-second deadline covers the whole lookup: every page,
 attempt and wait. Each ID records when the lookup ended, how it ended (`found`,
 `unknown`, `failed` or `timed_out`; a record written by an earlier version may hold
-`not_found`, which reads as `unknown`) and the best destroy action it found. Only
-`found` is evidence. `unknown`, which a read that finished without a match records,
-`failed` and `timed_out` are not, and none of them proves that a destroy did not
-happen. A completed destroy, once recorded, is never replaced, because a later read
-may no longer list it. The lookup never changes the settled run: its state, verified
-time, settled cost and reservation stay as settling left them. It is not retried,
-so a crash between settling and the lookup leaves a settled run with no lookup
-recorded.
+`not_found`, which reads as `unknown`) and the best destroy action it found. `found`
+is recorded for any destroy that names the ID, an errored or unfinished one included.
+Only `found` can carry evidence, and only a completed destroy counts. `unknown`, which
+a read that finished without a match records, `failed` and `timed_out` carry none, and
+none of them proves that a destroy did not happen. A completed destroy, once recorded,
+is never replaced, because a later read may no longer list it. The lookup never
+changes the settled run: its state, verified time, settled cost and reservation stay
+as settling left them. It is not retried, so a crash between settling and the lookup
+leaves a settled run with no lookup recorded.
 
 Before either kind of evidence, a 404 or an empty listing proves nothing. The run
 keeps its state, reservation and slot, and later passes read again; if the ID
