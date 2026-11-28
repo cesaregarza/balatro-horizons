@@ -7,7 +7,7 @@ the driver sleeps, so every bound is exact.
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from local_api_support import HAND, FakeLocalApi
+from local_api_support import HAND, FakeLocalApi, refusal
 
 from balatro_horizons.cloud.worker import driver
 
@@ -19,6 +19,9 @@ START = datetime(2026, 11, 24, 12, 0, tzinfo=UTC)
 # One round: a blind, two discards while the pair is weak, the hand, the cash-out, the shop.
 ROUND = [("select", None), ("bh_action", "discard"), ("bh_action", "discard"),
          ("bh_action", "play_hand"), ("cash_out", None), ("next_round", None)]
+# The mod's own refusals put prose like this in the message, and their category in the
+# data's name.
+PROSE = "Method not available in the current state"
 
 
 class Clock:
@@ -189,6 +192,21 @@ def test_a_status_call_that_fails_ends_the_asking_at_once(failed_ask):
     assert asked_after_the_send(local_api) == [3, 5][:failed_ask]
 
 
+@pytest.mark.parametrize(("message", "data", "code"), [
+    ("NOT_READY", {"name": "INFRASTRUCTURE"}, "NOT_READY"),
+    (PROSE, {"name": "INVALID_STATE"}, "INVALID_STATE"),
+], ids=["patch-code", "prose-invalid-state"])
+def test_a_refused_status_call_names_its_code(message, data, code):
+    local_api = api()
+    local_api.faults = {("bh_action", 1): "pending", ("bh_request_status", 1): "refuse"}
+    local_api.lost_after = 3
+    local_api.refusal, local_api.refusal_data = message, data
+    outcome, _, _ = play(local_api)
+    assert outcome == ("failed: uncertain move: bh_action discard; answer TimeoutError after "
+                       f"3 s; status lookup refused {code}")
+    assert asked_after_the_send(local_api) == [3]
+
+
 @pytest.mark.parametrize(("fault", "status"), [("expire", "unknown"), ("lose", "unseen")])
 def test_an_unknown_status_tells_a_move_the_game_gave_up_on_from_one_it_never_saw(fault,
                                                                                    status):
@@ -246,14 +264,36 @@ def test_a_refused_move_is_named_with_its_code(message, code):
     assert local_api.bodies_for("bh_request_status") == [] and counts == [1, 2]
 
 
-def lost_move(action, kind):
-    """Why a bh_action move fails when its answer, a million seconds after the send, and then
-    its status call are both lost with `kind`, and the game has stopped."""
+@pytest.mark.parametrize(("message", "data", "code"), [
+    (PROSE, {"name": "INVALID_STATE"}, "INVALID_STATE"),
+    ("Not enough money", {"name": "NOT_ALLOWED"}, "NOT_ALLOWED"),
+    ("UNAFFORDABLE", {"name": "NOT_ALLOWED"}, "UNAFFORDABLE"),
+    (PROSE, {"name": "INFRASTRUCTURE"}, "other"),
+    (PROSE, None, "other"),
+    (PROSE, "INVALID_STATE", "other"),
+    (PROSE, {"name": ["INVALID_STATE"]}, "other"),
+], ids=["prose-invalid-state", "prose-not-allowed", "message-wins", "name-outside-the-four",
+        "no-data", "data-not-an-object", "name-not-a-string"])
+def test_a_refusal_in_prose_is_named_by_its_category(message, data, code):
+    local_api = api()
+    local_api.faults = {("bh_action", 1): "refuse"}
+    local_api.refusal, local_api.refusal_data = message, data
+    outcome, _, counts = play(local_api)
+    assert outcome == f"failed: move refused: bh_action discard: {code}"
+    assert local_api.bodies_for("bh_request_status") == [] and counts == [1, 2]
+
+
+def lost_move(action, kind, refused_with=None):
+    """Why a bh_action move fails when its answer, a million seconds after the send, is lost
+    with `kind`, and the game has stopped. Its status call is lost the same way, or refused
+    with `refused_with` as the error's message when that is given."""
     clock = Clock()
 
     def post(url, body, timeout):
         if body["method"] == "bh_action":
             clock.advance(10**6)
+        if refused_with is not None and body["method"] == "bh_request_status":
+            return refusal(body, refused_with, {"name": "INFRASTRUCTURE"})
         raise OSError(kind)
 
     game = driver.Game(driver.Rpc(post, URL, TOKEN), running=lambda: False,
@@ -264,11 +304,12 @@ def lost_move(action, kind):
 
 
 def test_the_longest_reason_fits_in_200_characters():
-    # The longest move is an action of 20 letters, and the longest kind has 40 characters.
-    action, kind = "a" * 20, "K" * 40
-    reason = lost_move(action, kind)
+    # The longest move is an action of 20 letters, and the longest kind and the longest code
+    # have 40 characters each. A refused status call gives the longest form.
+    action, kind, code = "a" * 20, "K" * 40, "C" * 40
+    reason = lost_move(action, kind, refused_with=code)
     assert reason == (f"game exited during bh_action {action}; answer {kind} after 1000000 s; "
-                      f"status lookup {kind}")
+                      f"status lookup refused {code}")
     assert len(reason) <= 200
 
 

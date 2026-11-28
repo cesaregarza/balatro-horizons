@@ -1,8 +1,9 @@
 """The game's local API, in process, for the driver and worker tests: no socket and no game.
 
 It answers JSON-RPC bodies the way the mod does. A move that commits leaves a record that
-`bh_request_status` returns by the move's own ID. Tests script faults by method and by
-the call's turn for that method. Given a clock, it keeps when each request came, and a
+`bh_request_status` returns by the move's own ID. A refusal comes back as the mod sends one,
+over HTTP 200: an error reply with the request's own ID. Tests script faults by method and
+by the call's turn for that method. Given a clock, it keeps when each request came, and a
 move's lost answer takes `lost_after` seconds on that clock.
 """
 
@@ -20,7 +21,7 @@ READS = ("bh_inspect", "bh_request_status")
 #   lose     no answer comes back, and nothing commits;
 #   drop     the move commits, then its answer is lost;
 #   stray    the move commits, and its answer carries another ID;
-#   refuse   the game answers with an error, and nothing commits;
+#   refuse   the game answers the call with an error, and nothing commits;
 #   reject   the game rejects the move, then the answer is lost;
 #   pending  the game admits the move and its answer is lost while the game settles it:
 #            the status reads pending for `pending_asks` asks and the move then commits,
@@ -51,8 +52,11 @@ class FakeLocalApi:
         self.faults = {}
         # How many inspects find the game busy after each committed move.
         self.busy_after_move = 0
-        # The error message a refused move gets.
+        # The message and the data of the error a refused call gets. The patch puts its code
+        # in the message and names a BUSY refusal INFRASTRUCTURE. With no data, the error
+        # carries none.
         self.refusal = "BUSY"
+        self.refusal_data = {"name": "INFRASTRUCTURE"}
         # How many asks find a pending move still pending; None keeps it pending.
         self.pending_asks = None
         self.lost_after = 0
@@ -83,13 +87,13 @@ class FakeLocalApi:
         if fault == "lose":
             raise self.lost(method)
         if params.get("_bh_token") != self.token:
-            return refusal(body, "UNAUTHORIZED")
+            return refusal(body, "UNAUTHORIZED", {"name": "HARNESS_FAULT"})
+        if fault == "refuse":
+            return refusal(body, self.refusal, self.refusal_data)
         if method == "bh_inspect":
             return answer(body, self.inspect())
         if method == "bh_request_status":
             return answer(body, self.status(params.get("request_id")))
-        if fault == "refuse":
-            return refusal(body, self.refusal)
         if fault == "exit":
             self.exited = True
             raise self.lost(method, CLOSED)
@@ -183,5 +187,11 @@ def answer(body, result):
     return {"jsonrpc": "2.0", "id": body["id"], "result": result}
 
 
-def refusal(body, message):
-    return {"jsonrpc": "2.0", "id": body["id"], "error": {"code": -32000, "message": message}}
+def refusal(body, message, data):
+    """An error reply in the mod's envelope: a code, a message and, unless `data` is None,
+    the data. The mod's own refusals put prose in the message and their category in the
+    data's name."""
+    error = {"code": -32000, "message": message}
+    if data is not None:
+        error["data"] = data
+    return {"jsonrpc": "2.0", "error": error, "id": body["id"]}
