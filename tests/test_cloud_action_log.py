@@ -2,6 +2,7 @@
 run's creation less the clock-skew allowance, proves the deletion. A 404 and a listing
 that omits the ID must still follow, and nothing else in the log counts."""
 
+import json
 from dataclasses import replace
 from datetime import timedelta
 
@@ -78,6 +79,24 @@ def test_nothing_else_in_the_log_clears_a_droplet_that_reads_404(cloud, case):
     assert cloud.provider.deleted() == []
     # The log was read, and what it showed is on the record.
     assert getattr(record.resources[0], "destroy_checked_at", None) is not None
+
+
+def test_a_completed_destroy_one_second_before_the_window_never_counts(cloud):
+    controller = cloud.launched()
+    cloud.provider.inventory.pop(cloud.owned_ids("r1")[0])
+    controller.cancel("r1", now=True)
+    record = assert_held(cloud)
+    resource = record.resources[0]
+    window = record.created_at - SKEW
+
+    def destroyed(started_at):
+        evidence = {"action_id": 1, "resource_id": resource.id, "status": "completed",
+                    "started_at": started_at}
+        return resource.model_validate(resource.model_dump() | {"destroy_evidence": evidence})
+
+    deleted = cloud.controller().teardown.deleted
+    assert deleted(record, destroyed(window - timedelta(seconds=1))) is False
+    assert deleted(record, destroyed(window)) is True
 
 
 def test_evidence_that_names_another_id_never_counts(cloud):
@@ -279,12 +298,27 @@ def test_every_log_read_reaches_back_to_the_run_start_less_the_allowance(cloud, 
         # The DELETE's answer is lost and the log never shows the destroy, so every pass
         # reads the log, and the run never settles to look its ID up.
         cloud.provider.partial_delete, cloud.provider.log_destroys = True, False
+    # Cancelled half an hour in, so the run's creation and the teardown's start differ.
+    cloud.clock.advance(1800)
     controller.cancel("r1", now=True)
     record = Ledger(cloud.root).get("r1")
     reads = [call[1] for call in cloud.provider.calls if call[0] == "destroys"]
     assert (record.state, reads) == (state, [record.created_at - SKEW] * len(reads))
     # An acknowledged run reads the log once, after settling.
     assert len(reads) > 1 if path == "held" else len(reads) == 1
+
+
+def test_a_destroy_before_the_teardown_began_clears_on_a_read_from_the_run_start(cloud):
+    controller = cloud.launched()
+    created = cloud.ledger.get("r1").created_at
+    # Deleted outside the controller half an hour into the run, then cancelled an hour in.
+    cloud.clock.advance(1800)
+    deleted_outside(cloud)
+    cloud.clock.advance(1800)
+    controller.cancel("r1", now=True)
+    resource = cloud.assert_torn_down("r1", "cancelled").resources[0]
+    reads = [call[1] for call in cloud.provider.calls if call[0] == "destroys"]
+    assert (resource.destroy_check, set(reads)) == ("found", {created - SKEW})
 
 
 class DecodedSlowly(httpx.Response):
@@ -378,5 +412,7 @@ def test_the_lookup_after_settling_records_how_it_ended_and_when(cloud, outcome)
     resource = record.resources[0]
     ended = record.verified_at + timedelta(seconds=60 if outcome == "timed_out" else 0)
     status = resource.destroy_evidence and resource.destroy_evidence.status
-    assert (getattr(resource, "destroy_check", None), resource.destroy_checked_at, status) == (
+    # The outcome as stored: a read turns an earlier record's `not_found` into `unknown`.
+    stored = json.loads((cloud.ledger.runs_dir / "r1.json").read_text())["resources"][0]
+    assert (stored["destroy_check"], resource.destroy_checked_at, status) == (
         outcome, ended, "completed" if outcome == "found" else None)
