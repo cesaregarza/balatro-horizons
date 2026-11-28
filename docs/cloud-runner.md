@@ -164,15 +164,16 @@ a refusal.
   has passed. Only `committed` lets play go on, with the stored response as the
   move's result. A move is never sent twice. Any other status, a status call that
   fails, or a move still pending when its window ends, ends play with
-  `uncertain move: <move>; answer <kind> after <n> s; status <value>`, or with
-  `status lookup <kind>` in place of `status <value>` when the status call failed.
+  `uncertain move: <move>; answer <kind> after <n> s; status <value>`. When the
+  status call fails, `status lookup <kind>` takes the place of `status <value>`, or
+  `status lookup refused <code>` when the game refused it, with `<code>` read as for
+  a refusal.
   - `<move>` is the method, or `bh_action <action>`, where `<action>` is the action
     when it is 1 to 20 lowercase letters and underscores, and `other` otherwise.
   - `<kind>` is how the answer was lost: the class of the transport's error, such
     as `TimeoutError` or `RemoteDisconnected`, or `HTTPError <code>` for an HTTP
-    error; `reply id mismatch` or `no result` for a reply that does not answer the
-    call; and `error reply` for a status call the game refused. Anything else reads
-    `other`.
+    error; and `reply id mismatch` or `no result` for a reply that does not answer
+    the call. Anything else reads `other`.
   - `<n>` is the whole seconds from the move's send to its lost answer.
   - `<value>` is `pending` or `rejected`; `unknown` when the game admitted the move
     and gave up on it, so its record keeps the move's intent; `unseen` when the game
@@ -182,9 +183,12 @@ a refusal.
 
   Every reason fits in 200 characters.
 - **A refusal.** An error reply to a move ends play with
-  `move refused: <move>: <code>`, where `<code>` is the error's message when it is
-  1 to 40 capital letters and underscores, and `other` otherwise. Nothing is
-  retried.
+  `move refused: <move>: <code>`. `<code>` is the error's message when it is 1 to 40
+  capital letters and underscores, which is how the game's patches send their codes.
+  The mod's own refusals carry prose there instead, so `<code>` is otherwise the
+  name in the error's `data`, when that is one of the mod's four: `INTERNAL_ERROR`,
+  `BAD_REQUEST`, `INVALID_STATE` or `NOT_ALLOWED`. Anything else reads `other`.
+  Nothing is retried.
 - **Timeouts.** 10 seconds for an inspect, 12 for a request-status and 85 for any
   other call. Each timeout bounds a single wait for the reply, not the whole call.
 - **The policy.** The pilot's scripted choices, from the public observation only,

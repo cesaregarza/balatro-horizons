@@ -58,6 +58,9 @@ UNPRICED = 10**9
 ACTION = re.compile(r"[a-z_]{1,20}")
 CODE = re.compile(r"[A-Z_]{1,40}")
 KIND = re.compile(r"[A-Za-z][A-Za-z0-9 ]{0,39}")
+# The names the pinned mod gives its own refusals, whose message is prose. The dispatch
+# patch's refusals carry their code in the message.
+MOD_ERROR_NAMES = ("INTERNAL_ERROR", "BAD_REQUEST", "INVALID_STATE", "NOT_ALLOWED")
 
 
 class PlayFailed(Exception):
@@ -184,7 +187,8 @@ class Game:
                 status = self.rpc.call("bh_request_status", {"request_id": request_id},
                                        STATUS_SECONDS)
             except RpcFailed as failure:
-                raise self.uncertain(move, answer, f"status lookup {failure}") from None
+                lookup = f"refused {failure.code}" if isinstance(failure, Refused) else failure
+                raise self.uncertain(move, answer, f"status lookup {lookup}") from None
             value = status_of(status)
             if value == "committed":
                 return status.get("response")
@@ -234,9 +238,15 @@ def kind_of(error):
 
 
 def code_of(error):
-    """An error reply's message, kept only when it is a code that fits CODE."""
-    message = error.get("message") if isinstance(error, dict) else None
-    return message if isinstance(message, str) and CODE.fullmatch(message) else "other"
+    """An error reply's code: its message when that fits CODE, or else its data's name when
+    that is one of MOD_ERROR_NAMES. Anything else reads `other`."""
+    if not isinstance(error, dict):
+        return "other"
+    message, data = error.get("message"), error.get("data")
+    name = data.get("name") if isinstance(data, dict) else None
+    if isinstance(message, str) and CODE.fullmatch(message):
+        return message
+    return name if name in MOD_ERROR_NAMES else "other"
 
 
 def status_of(status):
