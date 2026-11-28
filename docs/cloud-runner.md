@@ -70,8 +70,10 @@ unknown field, with `CLOUD_ACCESS_INVALID`.
 6. **Supervise.** Each tick re-reads the ledger, reads the worker's status, and
    tears the run down on the first reason that applies. See
    [Progress and the heartbeat](#progress-and-the-heartbeat).
-7. **Results.** Once a read finds the game finished, the controller copies the
-   results back, then tears the run down as `succeeded` in the same tick. See
+7. **Results.** Once a read finds the game finished, or finds that play failed, the
+   controller copies the results back, then tears the run down in the same tick:
+   as `succeeded` for a finished game, or as `worker_failed:play` for a failed
+   play. A failure in an earlier stage copies nothing. See
    [The results copy](#the-results-copy).
 8. **Tear down and settle.** Verified teardown settles the elapsed time against
    the infrastructure budget. The run record keeps the worker's latest report.
@@ -221,7 +223,8 @@ Each tick of a running run, in order:
    deadline, whichever is less.
 3. A fresh clock reading when the read returns, then the stop check again. A
    deadline that has passed by then wins over a finished report.
-4. A failed stage, or a status that does not parse, tears the run down at once.
+4. A failed stage, or a status that does not parse, tears the run down at once. A
+   failed play first copies the results, in the same tick.
 5. A finished game: the results copy, then teardown as `succeeded`, in the same
    tick.
 6. A higher count is recorded, and the grace restarts.
