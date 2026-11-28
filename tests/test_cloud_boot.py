@@ -144,6 +144,23 @@ def test_a_failed_stage_tears_down_with_the_stage_as_the_reason(cloud):
     assert record.worker_status.reason == "umu.deb sha256 mismatch"
 
 
+def test_while_a_run_boots_only_a_failed_play_has_its_results_copied(tmp_path):
+    # Each worker fails before the boot's first read could find it playing.
+    seen = {}
+    for stage in ("display", "game", "ready", "play"):
+        cloud = Cloud(tmp_path / stage)
+        actions = 2 if stage == "play" else None
+        cloud.transport.statuses = [worker_status("failed", stage, "a failure", actions)]
+        launched_and_ticked(cloud, 2)
+        record = cloud.assert_torn_down("r1", f"worker_failed:{stage}")
+        seen[stage] = (getattr(record, "results_copy", None),
+                       cloud.transport.steps()[len(INSTALL):],
+                       (cloud.root / "results" / "r1.json").exists())
+    assert seen == {"display": (None, ["status"], False), "game": (None, ["status"], False),
+                    "ready": (None, ["status"], False),
+                    "play": ("copied", ["status", "results"], True)}
+
+
 # These calls time out with time left. The bundle push may take all the time left, so
 # its timeout leaves none; the next test covers it.
 @pytest.mark.parametrize(("step", "outcome"), [

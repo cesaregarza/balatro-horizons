@@ -70,8 +70,10 @@ unknown field, with `CLOUD_ACCESS_INVALID`.
 6. **Supervise.** Each tick re-reads the ledger, reads the worker's status, and
    tears the run down on the first reason that applies. See
    [Progress and the heartbeat](#progress-and-the-heartbeat).
-7. **Results.** Once a read finds the game finished, the controller copies the
-   results back, then tears the run down as `succeeded` in the same tick. See
+7. **Results.** Once a read finds the game finished, or finds that play failed, the
+   controller copies the results back, then tears the run down in the same tick:
+   as `succeeded` for a finished game, or as `worker_failed:play` for a failed
+   play. A failure in an earlier stage copies nothing. See
    [The results copy](#the-results-copy).
 8. **Tear down and settle.** Verified teardown settles the elapsed time against
    the infrastructure budget. The run record keeps the worker's latest report.
@@ -124,9 +126,11 @@ and the game's stderr. The worker then exits.
 8. `play`: the driver plays one game, described below. The status file is written
    again after each committed move. Play ends at a game over, a win or the action
    cap, and the worker then writes its results and the `finished` status. Any
-   other end fails the stage with a named reason. Results that cannot be built
-   or written fail it too, with the reason `results not written: <code>`, where
-   the code is the errno name, such as `ENOSPC`, or else the error's type.
+   other end fails the stage with a named reason. When play ends normally, results
+   that cannot be built or written fail it too, with the reason
+   `results not written: <code>`, where the code is the errno name, such as
+   `ENOSPC`, or else the error's type. A failed play keeps its own reason, as
+   [the results copy](#the-results-copy) says.
 
 The game's token and instance ID are made on the Droplet and never leave it. They
 are taken out of the log tails, and they reach the game through an owner-only
@@ -154,14 +158,42 @@ a refusal.
   `game_over`. Once 200 moves have committed, play ends as `action_cap`. Every call
   but an inspect or a request-status counts as a move, `start` included.
 - **A lost answer.** When a move's answer is lost or does not answer the call, the
-  driver asks `bh_request_status` once, by the move's own ID. Only `committed` lets
-  play go on, with the stored response as the move's result. Anything else, or a
-  status call that fails, ends play with `uncertain move: <method>`. A move is
-  never sent twice.
-- **A refusal.** An error reply to a move ends play with `move refused: <method>`.
+  driver asks `bh_request_status` by the move's own ID, however late the answer
+  was lost. That lookup has its own 12-second timeout. The game settles every move
+  it admits within its own bound of at most 60 seconds, so a `pending` status is
+  asked about again every 2 seconds while the move's window lasts. The window is 85
+  seconds from the send. It limits only these repeats, and no repeat starts once it
+  has passed. Only `committed` lets play go on, with the stored response as the
+  move's result. A move is never sent twice. Any other status, a status call that
+  fails, or a move still pending when its window ends, ends play with
+  `uncertain move: <move>; answer <kind> after <n> s; status <value>`. When the
+  status call fails, `status lookup <kind>` takes the place of `status <value>`, or
+  `status lookup refused <code>` when the game refused it, with `<code>` read as for
+  a refusal.
+  - `<move>` is the method, or `bh_action <action>`, where `<action>` is the action
+    when it is 1 to 20 lowercase letters and underscores, and `other` otherwise.
+  - `<kind>` is how the answer was lost: the class of the transport's error, such
+    as `TimeoutError` or `RemoteDisconnected`, or `HTTPError <code>` for an HTTP
+    error; and `reply id mismatch` or `no result` for a reply that does not answer
+    the call. Anything else reads `other`.
+  - `<n>` is the whole seconds from the move's send to its lost answer.
+  - `<value>` is `pending` or `rejected`; `unknown` when the game admitted the move
+    and gave up on it, so its record keeps the move's intent; `unseen` when the game
+    has no record of it; or `invalid` for a status the driver cannot read.
+  - When the asking ends and systemctl reports the game's unit not active or
+    unknown, the reason begins `game exited during <move>` instead, with the same
+    detail after it. A check that fails leaves the move's own reason.
+
+  Every reason fits in 200 characters.
+- **A refusal.** An error reply to a move ends play with
+  `move refused: <move>: <code>`. `<code>` is the error's message when it is 1 to 40
+  capital letters and underscores, which is how the game's patches send their codes.
+  The mod's own refusals carry prose there instead, so `<code>` is otherwise the
+  name in the error's `data`, when that is one of the mod's four: `INTERNAL_ERROR`,
+  `BAD_REQUEST`, `INVALID_STATE` or `NOT_ALLOWED`. Anything else reads `other`.
   Nothing is retried.
 - **Timeouts.** 10 seconds for an inspect, 12 for a request-status and 85 for any
-  other call.
+  other call. Each timeout bounds a single wait for the reply, not the whole call.
 - **The policy.** The pilot's scripted choices, from the public observation only,
   never the seed or the undealt cards. It selects each blind and cashes out each
   round. It plays the best-scoring hand, discarding the rest first once a game and
@@ -181,6 +213,7 @@ a refusal.
 | `outcome` | Once finished: `game_over`, `won` or `action_cap`. |
 | `started_at`, `finished_at` | When each stage started, and when the worker ended. |
 | `observed` | What the run observed, listed above, including the seed. |
+| `observed.game_unit` | After a failure in the `game`, `ready` or `play` stage only: how the game's unit stood, in one line of closed values and numbers of at most 200 characters. It starts `running=yes`, `no` or `unavailable`. `no` means systemctl reported the unit not active or unknown, and a check that fails any other way reads `unavailable`. A running unit adds `memory.peak` and `memory.current`, then the `oom`, `oom_kill` and `max` counts from `memory.events`, read from the unit's cgroup through its `ControlGroup` property. Otherwise it adds `main=<how>/<status>`, where `<how>` is `exited`, `killed` or `dumped`, and the unit's `result`, such as `exit-code`, `signal`, `oom-kill` or `success`, both from the unit's journal records, since a transient unit is unloaded once it stops. At systemd's default log level the journal records how a main process ended only when it did not end cleanly, so after a clean end `main` reads `unavailable` though the journal was read. Last, `journal_oom=yes` or `no` says whether the journal records an out-of-memory kill for the unit, and either value shows the journal was read. A value that cannot be read or parsed is `unavailable`, and no journal or cgroup text is kept. |
 | `evidence` | On failure only: the capped log tails. |
 
 ### Progress and the heartbeat
@@ -199,7 +232,8 @@ Each tick of a running run, in order:
    deadline, whichever is less.
 3. A fresh clock reading when the read returns, then the stop check again. A
    deadline that has passed by then wins over a finished report.
-4. A failed stage, or a status that does not parse, tears the run down at once.
+4. A failed stage, or a status that does not parse, tears the run down at once. A
+   failed play first copies the results, in the same tick.
 5. A finished game: the results copy, then teardown as `succeeded`, in the same
    tick.
 6. A higher count is recorded, and the grace restarts.
@@ -212,19 +246,21 @@ run provisions.
 
 ### The results copy
 
-At the end of play the worker writes `results.json` in its directory, owner-only
-and atomically, before the `finished` status. It holds the outcome and the count,
+At the end of play, once a move has committed, the worker writes `results.json` in
+its directory, owner-only and atomically, before its final status, `finished` or
+`failed`. It holds the outcome, which is `null` after a failed play, and the count,
 the ante and round reached, the seed, deck and stake, each committed move with its
 method, its action if it has one and the state it left the game in, the stage
 start times and the observations. It never holds the token, the instance ID or a
-request ID.
+request ID. A failed play whose results cannot be written keeps its own reason,
+and the copy then finds no file.
 
-When a read finds the game finished, the controller reads the file with one SSH
-call. The call may take 60 seconds or the time left before the run deadline,
-whichever is less, and reads at most 1 MiB. The file must parse as a JSON object.
-The controller writes it owner-only to `cloud/results/<run_id>.json`, through the
-same durable write as the ledger. The run record's `results_copy`, which `bh cloud
-status` shows, names how it went:
+When a read finds the game finished, or finds that play failed, the controller
+reads the file with one SSH call. The call may take 60 seconds or the time left
+before the run deadline, whichever is less, and reads at most 1 MiB. The file must
+parse as a JSON object. The controller writes it owner-only to
+`cloud/results/<run_id>.json`, through the same durable write as the ledger. The
+run record's `results_copy`, which `bh cloud status` shows, names how it went:
 
 | `results_copy` | Meaning |
 | --- | --- |
@@ -239,8 +275,10 @@ status` shows, names how it went:
 Teardown follows in the same tick whatever the copy's outcome, and a failed copy
 never delays it. The status read decides the teardown reason: a finished report
 read before the run deadline means `succeeded`, and a copy cut short is named only
-in `results_copy`. A failed, cancelled, expired or heartbeat-lost run is torn down
-with no copy, and its kept status holds the evidence tails as before.
+in `results_copy`. A failed play read before the run deadline, while the run boots
+or once it runs, is copied the same way and torn down as `worker_failed:play`. A
+failure in an earlier stage, or a cancelled, expired or heartbeat-lost run, is torn
+down with no copy, and its kept status holds the evidence tails as before.
 
 ### Teardown reasons
 

@@ -1,9 +1,10 @@
-"""Copying a finished game's results to the controller host, in the tick that ends the run.
+"""Copying a game's results to the controller host, in the tick that ends the run, once
+the game has finished or play has failed.
 
-The worker writes its results file before its status says finished. The controller reads
-it with one SSH call, capped at 1 MiB and at the time left before the run deadline, and
-keeps it under the ledger's `results/` directory. The run names how the copy went, and
-its teardown follows either way, so a failed copy never delays it.
+Once a move has committed, the worker writes its results file before its final status.
+The controller reads it with one SSH call, capped at 1 MiB and at the time left before
+the run deadline, and keeps it under the ledger's `results/` directory. The run names how
+the copy went, and its teardown follows either way, so a failed copy never delays it.
 """
 
 import json
